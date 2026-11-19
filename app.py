@@ -139,8 +139,39 @@ with gr.Blocks(title="Receipt & Invoice Extractor API") as demo:
 
     btn.click(gradio_extract, inputs=[input_file], outputs=[output_display, output_json])
 
-# Register all FastAPI routes (/extract, /health, /receipts, /docs) into Gradio's internal FastAPI app
+from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
+
+# Register all FastAPI routes (/extract, /health, /receipts) into Gradio's internal FastAPI app
 demo.app.include_router(fastapi_app.router)
+
+
+@demo.app.get("/docs", include_in_schema=False)
+async def custom_swagger_ui_html():
+    """Serve interactive Swagger UI documentation."""
+    return get_swagger_ui_html(
+        openapi_url="/openapi.json",
+        title=f"{fastapi_app.title} - Swagger UI",
+        swagger_js_url="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js",
+        swagger_css_url="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css",
+    )
+
+
+@demo.app.get("/redoc", include_in_schema=False)
+async def custom_redoc_html():
+    """Serve alternative ReDoc interactive API documentation."""
+    return get_redoc_html(
+        openapi_url="/openapi.json",
+        title=f"{fastapi_app.title} - ReDoc",
+        redoc_js_url="https://cdn.jsdelivr.net/npm/redoc@next/bundles/redoc.standalone.js",
+    )
+
+
+@demo.app.get("/openapi.json", include_in_schema=False)
+async def custom_openapi():
+    """Serve the complete OpenAPI v3 schema JSON."""
+    return fastapi_app.openapi()
+
+
 app = demo.app
 
 # Launch native Gradio server (demo.launch() automatically detects Hugging Face Spaces)
