@@ -92,8 +92,8 @@ with gr.Blocks(title="Receipt & Invoice Extractor API") as demo:
 
 # Register all FastAPI routes (/extract, /health, /receipts, /docs) into Gradio's internal FastAPI app
 demo.app.include_router(fastapi_app.router)
+app = demo.app
 
-# Launch native Gradio server (Hugging Face expects demo.launch())
+# Launch native Gradio server (demo.launch() automatically detects Hugging Face Spaces)
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 7860))
-    demo.launch(server_name="0.0.0.0", server_port=port)
+    demo.launch()
