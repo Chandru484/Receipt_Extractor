@@ -1,3 +1,16 @@
+---
+title: Receipt Extractor
+emoji: 🧾
+colorFrom: purple
+colorTo: pink
+sdk: gradio
+sdk_version: 6.32.0
+python_version: '3.12'
+app_file: app.py
+pinned: false
+license: apache-2.0
+---
+
 # 🧾 Production Receipt & Invoice Extractor API
 
 An enterprise-ready, open-source receipt and invoice extraction service. It combines **local PaddleOCR 3.x** for high-precision text recognition with **Groq LLM (`qwen/qwen3.8-27b`)** for semantic entity extraction, automated tax and financial reconciliation, and direct persistence to **MongoDB**.
