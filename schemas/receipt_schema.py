@@ -144,7 +144,9 @@ class ReceiptData(BaseModel):
 
     # Document details
     invoice_number: Optional[str] = None
+    receipt_number: Optional[str] = None
     invoice_date: Optional[str] = None
+    date_paid: Optional[str] = None
     payment_mode: Optional[str] = None
     salesman: Optional[str] = None
     amount_in_words: Optional[str] = None
@@ -163,6 +165,9 @@ class ReceiptData(BaseModel):
     rounding_off: Optional[float] = None
     tax: Optional[float] = None
     grand_total: Optional[float] = None
+    amount_paid: Optional[float] = None
+    refunded_amount: Optional[float] = None
+    refunded_on: Optional[str] = None
     currency: Optional[str] = None
 
     # Bank Details
@@ -171,7 +176,7 @@ class ReceiptData(BaseModel):
     # Additional captured fields from receipt
     extra_fields: Dict[str, Any] = Field(default_factory=dict)
 
-    @field_validator("subtotal", "tax", "grand_total", "cgst", "sgst", "igst", "rounding_off", mode="before")
+    @field_validator("subtotal", "tax", "grand_total", "cgst", "sgst", "igst", "rounding_off", "amount_paid", "refunded_amount", mode="before")
     @classmethod
     def validate_totals(cls, v: Any) -> Optional[float]:
         return clean_numeric_value(v)
@@ -266,24 +271,112 @@ class ReceiptData(BaseModel):
         if self.tax is None and has_tax_component:
             self.tax = round(tax_sum, 2)
 
+        # Synchronize invoice_number and receipt_number
+        doc_num = self.invoice_number or self.receipt_number
+        if doc_num:
+            self.invoice_number = doc_num
+            self.receipt_number = doc_num
+
+        # Synchronize invoice_date and date_paid
+        doc_date = self.invoice_date or self.date_paid
+        if doc_date:
+            self.invoice_date = doc_date
+            self.date_paid = doc_date
+
+        # Clean invalid placeholder words from state fields
+        INVALID_STATE_WORDS = {
+            "zipcode", "zip", "code", "pin", "pincode", "postal",
+            "city", "country", "state", "name", "address", "phone", "email", "total"
+        }
+        if self.seller_state and self.seller_state.strip().lower() in INVALID_STATE_WORDS:
+            self.seller_state = None
+        if self.buyer_state and self.buyer_state.strip().lower() in INVALID_STATE_WORDS:
+            self.buyer_state = None
+
+        # Standard field mapping: never duplicate known/standard fields in extra_fields
+        KNOWN_STANDARD_ALIASES = {
+            "receipt_number": "receipt_number",
+            "invoice_number": "invoice_number",
+            "invoice_no": "invoice_number",
+            "bill_no": "invoice_number",
+            "bill_number": "invoice_number",
+            "receipt_no": "receipt_number",
+            "date_paid": "date_paid",
+            "invoice_date": "invoice_date",
+            "bill_date": "invoice_date",
+            "amount_paid": "amount_paid",
+            "refunded_amount": "refunded_amount",
+            "refund_amount": "refunded_amount",
+            "refunded_on": "refunded_on",
+            "refund_date": "refunded_on",
+            "contact_email": "seller_email",
+            "support_email": "seller_email",
+            "seller_email": "seller_email",
+            "buyer_email": "buyer_email",
+            "customer_email": "buyer_email",
+            "seller_phone": "seller_phone",
+            "buyer_phone": "buyer_phone",
+            "customer_name": "customer_name",
+            "buyer_name": "buyer_name",
+            "seller_name": "seller_name",
+            "vendor_name": "vendor_name",
+            "subtotal": "subtotal",
+            "tax": "tax",
+            "grand_total": "grand_total",
+            "total": "grand_total",
+            "total_amount": "grand_total",
+            "currency": "currency",
+            "payment_mode": "payment_mode",
+            "payment_method": "payment_mode",
+        }
+
         # Absorb any Pydantic extra fields (from ConfigDict extra="allow") into our extra_fields dict
-        # This captures fields the LLM returned that are not standard schema fields
         pydantic_extras = self.__pydantic_extra__ or {}
         _STANDARD_FIELDS = {
             "document_type", "vendor_name", "seller", "seller_name", "seller_address",
             "seller_gstin", "seller_state", "seller_state_code", "seller_email", "seller_phone",
             "customer_name", "buyer", "buyer_name", "buyer_address", "buyer_address_line_1",
             "buyer_address_line_2", "buyer_gstin", "buyer_state", "buyer_state_code",
-            "buyer_phone", "buyer_email", "gstin", "invoice_number", "invoice_date",
-            "payment_mode", "salesman", "amount_in_words", "items", "subtotal", "cgst",
-            "cgst_rate", "sgst", "sgst_rate", "igst", "igst_rate", "rounding_off", "tax",
-            "grand_total", "currency", "bank_details", "extra_fields"
+            "buyer_phone", "buyer_email", "gstin", "invoice_number", "receipt_number",
+            "invoice_date", "date_paid", "payment_mode", "salesman", "amount_in_words",
+            "items", "subtotal", "cgst", "cgst_rate", "sgst", "sgst_rate", "igst",
+            "igst_rate", "rounding_off", "tax", "grand_total", "amount_paid",
+            "refunded_amount", "refunded_on", "currency", "bank_details", "extra_fields"
         }
         if self.extra_fields is None:
             self.extra_fields = {}
         for k, v in pydantic_extras.items():
             if k not in _STANDARD_FIELDS and v is not None and k not in self.extra_fields:
                 self.extra_fields[k] = v
+
+        # If any extra_fields key matches a standard field alias, assign it if empty, and REMOVE it from extra_fields
+        keys_to_remove = []
+        for k, v in list(self.extra_fields.items()):
+            k_lower = k.lower().strip()
+            if k_lower in KNOWN_STANDARD_ALIASES:
+                target_field = KNOWN_STANDARD_ALIASES[k_lower]
+                if getattr(self, target_field, None) is None:
+                    # Parse numeric or string properly
+                    if target_field in ["amount_paid", "refunded_amount"]:
+                        clean_val = clean_numeric_value(v)
+                        setattr(self, target_field, clean_val)
+                    else:
+                        setattr(self, target_field, str(v).strip())
+                keys_to_remove.append(k)
+
+        for k in keys_to_remove:
+            self.extra_fields.pop(k, None)
+
+        # Synchronize invoice_number and receipt_number again in case populated from alias
+        doc_num = self.invoice_number or self.receipt_number
+        if doc_num:
+            self.invoice_number = doc_num
+            self.receipt_number = doc_num
+
+        doc_date = self.invoice_date or self.date_paid
+        if doc_date:
+            self.invoice_date = doc_date
+            self.date_paid = doc_date
 
         return self
 

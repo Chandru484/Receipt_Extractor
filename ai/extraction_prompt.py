@@ -29,23 +29,28 @@ STANDARD FIELDS TO EXTRACT:
   "buyer_phone": "Buyer mobile / phone number",
   "buyer_email": "Buyer email if present",
 
-  "invoice_number": "Invoice No / Bill No / Receipt Number / ST.No / Cash Memo No",
+  "invoice_number": "Invoice No / Bill No / ST.No / Cash Memo No",
+  "receipt_number": "Receipt Number (e.g. '123')",
   "invoice_date": "Date in YYYY-MM-DD format",
-  "payment_mode": "Payment mode / terms (e.g. 'Cash', 'ACH', 'UPI', 'Credit', 'Card')",
+  "date_paid": "Date paid in YYYY-MM-DD format",
+  "payment_mode": "Payment mode / method (e.g. 'Cash', 'ACH', 'UPI', 'Credit Card')",
   "salesman": "Salesman / executive name if listed",
 
-  "subtotal": 100.00,
-  "cgst": 9.00,
-  "cgst_rate": "9%",
-  "sgst": 9.00,
-  "sgst_rate": "9%",
+  "subtotal": 19.00,
+  "cgst": null,
+  "cgst_rate": null,
+  "sgst": null,
+  "sgst_rate": null,
   "igst": null,
   "igst_rate": null,
   "rounding_off": 0.00,
-  "tax": 18.00,
-  "grand_total": 118.00,
+  "tax": 1.12,
+  "grand_total": 20.12,
+  "amount_paid": 20.12,
+  "refunded_amount": 5.00,
+  "refunded_on": "2026-09-21",
   "amount_in_words": "Amount in words if present",
-  "currency": "INR",
+  "currency": "USD",
 
   "bank_details": {
     "bank_name": "Bank Name if present",
@@ -62,44 +67,55 @@ STANDARD FIELDS TO EXTRACT:
       "hsn_sac": "HSN/SAC code if present",
       "quantity": 1.0,
       "uom": "Unit of measure",
-      "unit_price": 100.00,
-      "rate_incl_tax": 118.00,
-      "gst_rate": "18%",
-      "total_price": 100.00
+      "unit_price": 19.00,
+      "rate_incl_tax": 20.12,
+      "gst_rate": null,
+      "total_price": 19.00
     }
   ],
 
   "extra_fields": {
-    "<<any_field_label_from_document>>": "<<its value>>",
-    "IMPORTANT: Put ALL fields found in the document that do NOT fit the standard fields above into this object.",
-    "Use the exact label from the document (snake_case), and preserve the value as-is.",
-    "Examples of what belongs here: receipt_number, amount_paid, refunded_amount, refunded_on,",
-    "  payment_reference, transaction_id, order_id, customer_id, loyalty_points, barcode,",
-    "  discount, coupon_code, shipping_charges, handling_fee, company_pan, vat_number,",
-    "  place_of_supply, reverse_charge, e_way_bill_no, vehicle_no, delivery_note,",
-    "  purchase_order, terms_and_conditions, authorized_signatory, etc."
+    "<<custom_field_label>>": "<<value>>"
   }
 }
 
 CRITICAL RULES:
 1. BILL TITLES: "CASH BILL", "CASH", "BILL", "TAX INVOICE", "CASH MEMO", "ESTIMATE" are DOCUMENT TITLES, NOT buyer/seller names.
-2. BUYER: "Bill To", "Customer", "Billed To", "Ship To" sections → buyer_name, buyer_address.
-3. PHONE vs GSTIN: A 10-digit Indian number starting with 6-9 is ALWAYS a phone, never a GSTIN.
-4. GSTIN: Must be exactly 15 alphanumeric characters, all CAPITALS.
-5. DATES: Always output as YYYY-MM-DD.
-6. EXTRA FIELDS — MANDATORY: ANY field label that appears in the document that is not in the standard schema MUST be added to extra_fields with its value. Do not silently drop any field. Use snake_case for the key (e.g. "Amount paid" → "amount_paid", "Refunded on" → "refunded_on").
-7. NUMERIC FIELDS in extra_fields: If the value is a monetary amount, store it as a number (e.g. 5.00). If it's a date, store as YYYY-MM-DD string. Otherwise store as string.
-8. ITEMS: Extract EVERY single line item. Never omit or truncate items.
-9. SELLER UNDEFINED: If no seller/vendor name exists, set seller_name to "Unknown".
-10. Return valid JSON only. No markdown fences, no explanatory text."""
+2. "BILL TO" SECTION IS ALWAYS THE BUYER:
+   - "Bill To" or "Billed To" or "Customer" or "Sold To" ALWAYS designates the BUYER / CUSTOMER.
+   - Any name, address, and email under "Bill To" belong to the BUYER.
+     Example:
+       Bill To
+       Customer
+       Address
+       City, State Zipcode
+       customer@example.org
+     -> buyer_name: "Customer", buyer_address: "Address, City, State Zipcode", buyer_email: "customer@example.org".
+   - The company / merchant issuing the bill (e.g. "Example, LLC" or "A GO RAILS", with contact email "support@example.com", phone "(555) 867-5309", address "123 Fake Street, New York City, NY 10012") is the SELLER / VENDOR.
+   - NEVER invert Seller and Buyer!
+   - NEVER use the word "Zipcode", "State", or "City" as a state name! State names must be actual states (e.g. "NY", "New York", "California").
+3. DO NOT PUT STANDARD VALUES IN EXTRA_FIELDS:
+   - If a field is clearly a standard field (receipt_number, invoice_number, invoice_date, date_paid, amount_paid, refunded_amount, refunded_on, seller_email, buyer_email, seller_phone, buyer_phone, etc.), put it in its respective top-level standard field!
+   - DO NOT duplicate standard fields into extra_fields!
+   - Only place truly unmapped custom fields in extra_fields (e.g. customer_id, order_id, transaction_id, tracking_no, reference_no, etc.).
+4. PHONE vs GSTIN: A 10-digit Indian number starting with 6-9 is ALWAYS a phone, never a GSTIN.
+5. GSTIN: Must be exactly 15 alphanumeric characters, all CAPITALS.
+6. DATES: Always output as YYYY-MM-DD.
+7. ITEMS: Extract EVERY single line item. Never omit or truncate items.
+8. SELLER UNDEFINED: If no seller/vendor name exists, set seller_name to "Unknown".
+9. Return valid JSON only. No markdown fences, no explanatory text."""
 
-    user_prompt = f"""Extract all receipt and party details from this OCR text. Put every field found in the document into the JSON — standard fields in their proper place, and any additional/unrecognized fields into extra_fields:
+    user_prompt = f"""Extract all receipt and party details from this OCR text:
 
 \"\"\"
 {ocr_text}
 \"\"\"
 
-Remember: extra_fields must capture ALL fields visible in the document that are not in the standard schema (e.g. receipt_number, amount_paid, refunded_on, refunded_amount, transaction details, discounts, etc.)."""
+Remember:
+- 'Bill To' designates the BUYER details (buyer_name, buyer_address, buyer_email).
+- The issuing merchant/company is the SELLER (seller_name, seller_address, seller_phone, seller_email).
+- Put standard fields (receipt_number, date_paid, amount_paid, refunded_amount, refunded_on) directly into their respective top-level fields — do NOT put them in extra_fields!
+- Only put new/custom fields not covered in the standard schema into extra_fields."""
 
     return [
         {"role": "system", "content": system_prompt},
