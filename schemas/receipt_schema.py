@@ -266,6 +266,25 @@ class ReceiptData(BaseModel):
         if self.tax is None and has_tax_component:
             self.tax = round(tax_sum, 2)
 
+        # Absorb any Pydantic extra fields (from ConfigDict extra="allow") into our extra_fields dict
+        # This captures fields the LLM returned that are not standard schema fields
+        pydantic_extras = self.__pydantic_extra__ or {}
+        _STANDARD_FIELDS = {
+            "document_type", "vendor_name", "seller", "seller_name", "seller_address",
+            "seller_gstin", "seller_state", "seller_state_code", "seller_email", "seller_phone",
+            "customer_name", "buyer", "buyer_name", "buyer_address", "buyer_address_line_1",
+            "buyer_address_line_2", "buyer_gstin", "buyer_state", "buyer_state_code",
+            "buyer_phone", "buyer_email", "gstin", "invoice_number", "invoice_date",
+            "payment_mode", "salesman", "amount_in_words", "items", "subtotal", "cgst",
+            "cgst_rate", "sgst", "sgst_rate", "igst", "igst_rate", "rounding_off", "tax",
+            "grand_total", "currency", "bank_details", "extra_fields"
+        }
+        if self.extra_fields is None:
+            self.extra_fields = {}
+        for k, v in pydantic_extras.items():
+            if k not in _STANDARD_FIELDS and v is not None and k not in self.extra_fields:
+                self.extra_fields[k] = v
+
         return self
 
 

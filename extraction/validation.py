@@ -146,10 +146,51 @@ def format_receipt_display(receipt: ReceiptData) -> str:
 
     # === OTHER DETAILS ===
     if receipt.extra_fields:
+        shown_extra = False
+        _SKIP_IN_DISPLAY = {
+            "buyer_address", "buyer_gstin", "payment_mode",
+            "bank_name", "account_no", "ifsc_code", "branch"
+        }
         for k, v in receipt.extra_fields.items():
-            if v and k not in ["buyer_address", "buyer_gstin", "payment_mode", "bank_name", "account_no", "ifsc_code", "branch"]:
-                lbl = "Company PAN" if k.lower() in ["company_pan", "pan"] else k.replace('_', ' ').title()
-                lines.append(f"{lbl} : {v}")
+            if not v or k in _SKIP_IN_DISPLAY:
+                continue
+            if not shown_extra:
+                lines.append("")
+                lines.append("Additional Fields :")
+                shown_extra = True
+            # Format key: snake_case → Title Case label
+            lbl = k.replace("_", " ").title()
+            # Override specific known keys to prettier labels
+            _LABEL_MAP = {
+                "company_pan": "Company PAN",
+                "amount_paid": "Amount Paid",
+                "refunded_amount": "Refunded Amount",
+                "refunded_on": "Refunded On",
+                "receipt_number": "Receipt Number",
+                "transaction_id": "Transaction ID",
+                "order_id": "Order ID",
+                "customer_id": "Customer ID",
+                "place_of_supply": "Place of Supply",
+                "e_way_bill_no": "E-Way Bill No",
+                "reverse_charge": "Reverse Charge",
+                "vehicle_no": "Vehicle No",
+                "delivery_note": "Delivery Note",
+                "purchase_order": "Purchase Order",
+                "loyalty_points": "Loyalty Points",
+                "discount": "Discount",
+                "coupon_code": "Coupon Code",
+                "shipping_charges": "Shipping Charges",
+                "handling_fee": "Handling Fee",
+            }
+            lbl = _LABEL_MAP.get(k, lbl)
+            # Format value based on type
+            if isinstance(v, float):
+                val_str = f"{v:.2f}"
+            elif isinstance(v, bool):
+                val_str = "Yes" if v else "No"
+            else:
+                val_str = str(v)
+            lines.append(f"  {lbl} : {val_str}")
 
     return "\n".join(lines).strip()
 

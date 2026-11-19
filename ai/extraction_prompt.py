@@ -7,11 +7,11 @@ def build_extraction_messages(ocr_result: Dict[str, Any]) -> List[Dict[str, str]
 
     system_prompt = """You are an expert document extraction system. Extract ALL available information from the receipt/invoice OCR text into a single JSON object.
 
-EXTRACTION SCHEMA & FIELDS:
+STANDARD FIELDS TO EXTRACT:
 {
   "document_type": "invoice" or "receipt",
 
-  "seller_name": "Business / Shop / Vendor name from header (e.g. store or company name)",
+  "seller_name": "Business / Shop / Vendor name from header",
   "seller_address": "Full address of seller/vendor",
   "seller_gstin": "Seller's 15-character GSTIN/Tax ID in CAPITAL LETTERS ONLY",
   "seller_state": "Seller State name",
@@ -21,17 +21,17 @@ EXTRACTION SCHEMA & FIELDS:
 
   "buyer_name": "Buyer / Customer / Bill To name",
   "buyer_address": "Full multi-line address of buyer",
-  "buyer_address_line_1": "Primary line of buyer address (building / premises / plot / street)",
-  "buyer_address_line_2": "Secondary line of buyer address (floor / suite / road / area / locality)",
+  "buyer_address_line_1": "Primary line of buyer address",
+  "buyer_address_line_2": "Secondary line of buyer address",
   "buyer_gstin": "Buyer's 15-character GSTIN/Tax ID in CAPITAL LETTERS ONLY",
   "buyer_state": "Buyer State name",
   "buyer_state_code": "Buyer State code",
-  "buyer_phone": "Buyer mobile / phone number (10-digit number)",
+  "buyer_phone": "Buyer mobile / phone number",
   "buyer_email": "Buyer email if present",
 
-  "invoice_number": "Invoice No / Bill No / ST.No / Cash Memo No",
+  "invoice_number": "Invoice No / Bill No / Receipt Number / ST.No / Cash Memo No",
   "invoice_date": "Date in YYYY-MM-DD format",
-  "payment_mode": "Payment mode / terms (e.g. 'Cash', 'G Pay', 'UPI', 'Credit', 'Card')",
+  "payment_mode": "Payment mode / terms (e.g. 'Cash', 'ACH', 'UPI', 'Credit', 'Card')",
   "salesman": "Salesman / executive name if listed",
 
   "subtotal": 100.00,
@@ -48,15 +48,11 @@ EXTRACTION SCHEMA & FIELDS:
   "currency": "INR",
 
   "bank_details": {
-    "bank_name": "Bank Name if present on the document",
+    "bank_name": "Bank Name if present",
     "account_holder": "Account Holder Name",
     "account_no": "Clean bank account number (digits only)",
-    "ifsc_code": "11-character alphanumeric IFS Code in CAPITAL LETTERS ONLY",
+    "ifsc_code": "11-character IFS Code in CAPITAL LETTERS ONLY",
     "branch": "Branch name"
-  },
-
-  "extra_fields": {
-    "company_pan": "10-character alphanumeric PAN if present on invoice (e.g. Company's PAN)"
   },
 
   "items": [
@@ -65,52 +61,48 @@ EXTRACTION SCHEMA & FIELDS:
       "item_name": "Full product description or item name",
       "hsn_sac": "HSN/SAC code if present",
       "quantity": 1.0,
-      "uom": "Unit of measure (e.g. 'No', 'nos', 'kg', 'pcs')",
+      "uom": "Unit of measure",
       "unit_price": 100.00,
       "rate_incl_tax": 118.00,
       "gst_rate": "18%",
       "total_price": 100.00
     }
-  ]
+  ],
+
+  "extra_fields": {
+    "<<any_field_label_from_document>>": "<<its value>>",
+    "IMPORTANT: Put ALL fields found in the document that do NOT fit the standard fields above into this object.",
+    "Use the exact label from the document (snake_case), and preserve the value as-is.",
+    "Examples of what belongs here: receipt_number, amount_paid, refunded_amount, refunded_on,",
+    "  payment_reference, transaction_id, order_id, customer_id, loyalty_points, barcode,",
+    "  discount, coupon_code, shipping_charges, handling_fee, company_pan, vat_number,",
+    "  place_of_supply, reverse_charge, e_way_bill_no, vehicle_no, delivery_note,",
+    "  purchase_order, terms_and_conditions, authorized_signatory, etc."
+  }
 }
 
-CRITICAL UNIVERSAL EXTRACTION RULES:
-1. UNIVERSAL TAX ID / GSTIN, PHONE & BUYER RULES:
-   - "CASH BILL", "CASH", "BILL", "TAX INVOICE", "CASH MEMO", "ESTIMATE" are BILL TITLES or PAYMENT MODES, NEVER a buyer_name or seller_name!
-   - If 'Buyer' has a customer name (e.g. 'TEKIS'), extract that name into 'buyer_name'. NEVER set buyer_name to 'CASH BILL'.
-   - 'buyer_phone': Look for 'Mobile No', 'Mob', 'Phone' in the Buyer section (e.g. 'Mobile No : 9087043339') and extract it into 'buyer_phone'.
-   - An Indian GSTIN MUST be strictly 15 alphanumeric characters in CAPITAL LETTERS ONLY.
-   - A 10-digit number (e.g. 10 digits starting with 6, 7, 8, or 9) is ALWAYS a PHONE / MOBILE NUMBER, NEVER a GSTIN. Put it in seller_phone or buyer_phone.
-   - Never confuse a phone number with a GSTIN.
-2. UNIVERSAL BUYER & SELLER ADDRESS DECOMPOSITION:
-   - Capture the complete multi-line address in 'buyer_address' or 'seller_address'.
-   - Extract 'buyer_address_line_1' as the primary building/complex/street name.
-   - Extract 'buyer_address_line_2' as the secondary floor/street/area/locality name.
-3. FINANCIAL TOTALS & TAX BREAKDOWN (GENERATE BEFORE ITEMS):
-   - Always extract subtotal, cgst, sgst, tax, grand_total, and amount_in_words.
-   - Map CGST, SGST, and IGST components and their percentage rates with '%' (e.g. '9%', '14%', '18%').
-   - subtotal + tax = grand_total.
-4. UNIVERSAL BANK DETAILS EXTRACTION:
-   - 'account_no': Extract the clean bank account number (9 to 18 digits).
-   - 'ifsc_code': Must be strictly 11 alphanumeric characters in CAPITAL LETTERS ONLY. 5th character is always digit 0.
-5. EXTRA FIELDS:
-   - If 'Company's PAN' or 'PAN' is present (e.g. 'Company's PAN : AABFE3454B'), extract it into extra_fields: {"company_pan": "..."}.
-6. COMPLETE & ACCURATE ITEM EXTRACTION:
-   - Extract EVERY SINGLE product/line item listed in the table (do NOT omit or truncate any item). If there are 4 items (SL No 1, 2, 3, 4), extract all 4 items!
-   - For every item, correlate SL No, Item Name, HSN/SAC, Quantity, Unit Price / Rate, Rate (Incl. of Tax), GST Rate, and Total Price / Amount from its table row.
-   - Total price for each item must match: total_price = quantity * unit_price (e.g. 2 * 33.90 = 67.80). Never assign rates or amounts from one row to a different row!
-7. UNDEFINED SELLER OR BUYER:
-   - If the receipt does not define or specify a seller/vendor/store name (e.g. simple cash memos or slips without a store header), set 'seller_name' to "Unknown".
-   - If it does not define or specify a buyer/customer name, set 'buyer_name' to "Unknown".
-8. Return valid JSON only. No markdown fences, no explanatory text."""
+CRITICAL RULES:
+1. BILL TITLES: "CASH BILL", "CASH", "BILL", "TAX INVOICE", "CASH MEMO", "ESTIMATE" are DOCUMENT TITLES, NOT buyer/seller names.
+2. BUYER: "Bill To", "Customer", "Billed To", "Ship To" sections → buyer_name, buyer_address.
+3. PHONE vs GSTIN: A 10-digit Indian number starting with 6-9 is ALWAYS a phone, never a GSTIN.
+4. GSTIN: Must be exactly 15 alphanumeric characters, all CAPITALS.
+5. DATES: Always output as YYYY-MM-DD.
+6. EXTRA FIELDS — MANDATORY: ANY field label that appears in the document that is not in the standard schema MUST be added to extra_fields with its value. Do not silently drop any field. Use snake_case for the key (e.g. "Amount paid" → "amount_paid", "Refunded on" → "refunded_on").
+7. NUMERIC FIELDS in extra_fields: If the value is a monetary amount, store it as a number (e.g. 5.00). If it's a date, store as YYYY-MM-DD string. Otherwise store as string.
+8. ITEMS: Extract EVERY single line item. Never omit or truncate items.
+9. SELLER UNDEFINED: If no seller/vendor name exists, set seller_name to "Unknown".
+10. Return valid JSON only. No markdown fences, no explanatory text."""
 
-    user_prompt = f"""Extract all receipt and party details from this OCR text:
+    user_prompt = f"""Extract all receipt and party details from this OCR text. Put every field found in the document into the JSON — standard fields in their proper place, and any additional/unrecognized fields into extra_fields:
 
 \"\"\"
 {ocr_text}
-\"\"\""""
+\"\"\"
+
+Remember: extra_fields must capture ALL fields visible in the document that are not in the standard schema (e.g. receipt_number, amount_paid, refunded_on, refunded_amount, transaction details, discounts, etc.)."""
 
     return [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt}
     ]
+
