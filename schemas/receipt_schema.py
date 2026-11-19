@@ -1,6 +1,139 @@
 import re
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Union
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic_core import core_schema
+
+
+CURRENCY_CODE_TO_SYMBOL = {
+    "USD": "$",
+    "INR": "₹",
+    "EUR": "€",
+    "GBP": "£",
+    "JPY": "¥",
+    "CAD": "C$",
+    "AUD": "A$",
+    "AED": "AED ",
+    "SGD": "S$",
+}
+
+
+class CurrencyValue(str):
+    """String representation of a monetary value with currency symbol and 2 decimal places.
+
+    Behaves as a string (e.g. '$93.50') for JSON serialization and user display,
+    while supporting numerical equality comparisons (e.g. v == 93.50, v == 93.5)
+    and float operations.
+    """
+
+    @classmethod
+    def __get_pydantic_core_schema__(cls, source_type, handler):
+        return core_schema.no_info_after_validator_function(
+            cls,
+            core_schema.str_schema()
+        )
+
+    def __float__(self) -> float:
+        cleaned = re.sub(r"[^\d.-]", "", str(self))
+        return float(cleaned) if cleaned else 0.0
+
+    def __int__(self) -> int:
+        return int(self.__float__())
+
+    def __eq__(self, other: Any) -> bool:
+        if isinstance(other, (int, float)):
+            try:
+                cleaned = re.sub(r"[^\d.-]", "", str(self))
+                return abs(float(cleaned) - float(other)) < 1e-4
+            except Exception:
+                pass
+        return super().__eq__(other)
+
+    def __hash__(self) -> int:
+        return super().__hash__()
+
+    def __add__(self, other: Any) -> Any:
+        if isinstance(other, (int, float, CurrencyValue)):
+            return float(self) + float(other)
+        return super().__add__(other)
+
+    def __radd__(self, other: Any) -> Any:
+        if isinstance(other, (int, float)):
+            return float(other) + float(self)
+        return super().__radd__(other)
+
+    def __sub__(self, other: Any) -> Any:
+        if isinstance(other, (int, float, CurrencyValue)):
+            return float(self) - float(other)
+        return super().__sub__(other)
+
+    def __rsub__(self, other: Any) -> Any:
+        if isinstance(other, (int, float)):
+            return float(other) - float(self)
+        return super().__rsub__(other)
+
+    def __mul__(self, other: Any) -> Any:
+        if isinstance(other, (int, float)):
+            return float(self) * float(other)
+        return super().__mul__(other)
+
+    def __rmul__(self, other: Any) -> Any:
+        if isinstance(other, (int, float)):
+            return float(other) * float(self)
+        return super().__rmul__(other)
+
+    def __truediv__(self, other: Any) -> Any:
+        if isinstance(other, (int, float)):
+            return float(self) / float(other)
+        return super().__truediv__(other)
+
+    def __gt__(self, other: Any) -> bool:
+        if isinstance(other, (int, float, CurrencyValue)):
+            return float(self) > float(other)
+        return super().__gt__(other)
+
+    def __ge__(self, other: Any) -> bool:
+        if isinstance(other, (int, float, CurrencyValue)):
+            return float(self) >= float(other)
+        return super().__ge__(other)
+
+    def __lt__(self, other: Any) -> bool:
+        if isinstance(other, (int, float, CurrencyValue)):
+            return float(self) < float(other)
+        return super().__lt__(other)
+
+    def __le__(self, other: Any) -> bool:
+        if isinstance(other, (int, float, CurrencyValue)):
+            return float(self) <= float(other)
+        return super().__le__(other)
+
+
+def format_currency_value(value: Any, default_currency: str = "USD") -> Optional[CurrencyValue]:
+    """Format any monetary value to CurrencyValue (e.g. '$93.50', '₹100.00')."""
+    if value is None:
+        return None
+    val_str = str(value).strip()
+    if not val_str:
+        return None
+
+    # Detect currency symbol
+    symbol = None
+    for s in ["$", "₹", "€", "£", "¥", "C$", "A$", "AED", "S$"]:
+        if s in val_str:
+            symbol = s
+            break
+    if not symbol:
+        symbol = CURRENCY_CODE_TO_SYMBOL.get(str(default_currency).upper(), "$")
+
+    cleaned = val_str.replace(",", "")
+    cleaned = re.sub(r"(\d+)-(\d{2})\b", r"\1.\2", cleaned)
+    match = re.search(r"[-+]?\d+(?:\.\d+)?", cleaned)
+    if not match:
+        return None
+    try:
+        num = float(match.group(0))
+        return CurrencyValue(f"{symbol}{num:.2f}")
+    except ValueError:
+        return None
 
 
 def clean_numeric_value(value: Any) -> Optional[float]:
@@ -76,10 +209,10 @@ class ReceiptItem(BaseModel):
     hsn_sac: Optional[str] = None
     quantity: Optional[float] = None
     uom: Optional[str] = None
-    unit_price: Optional[float] = None
-    rate_incl_tax: Optional[float] = None
+    unit_price: Optional[CurrencyValue] = None
+    rate_incl_tax: Optional[CurrencyValue] = None
     gst_rate: Optional[str] = None
-    total_price: Optional[float] = None
+    total_price: Optional[CurrencyValue] = None
 
     @model_validator(mode="before")
     @classmethod
@@ -96,10 +229,15 @@ class ReceiptItem(BaseModel):
 
         return data
 
-    @field_validator("quantity", "unit_price", "rate_incl_tax", "total_price", mode="before")
+    @field_validator("quantity", mode="before")
     @classmethod
     def validate_numeric(cls, v: Any) -> Optional[float]:
         return clean_numeric_value(v)
+
+    @field_validator("unit_price", "rate_incl_tax", "total_price", mode="before")
+    @classmethod
+    def validate_currency_fields(cls, v: Any) -> Optional[CurrencyValue]:
+        return format_currency_value(v)
 
     @field_validator("item_name", "sl_no", "hsn_sac", "uom", "gst_rate", mode="before")
     @classmethod
@@ -154,19 +292,19 @@ class ReceiptData(BaseModel):
     # Line items
     items: List[ReceiptItem] = Field(default_factory=list)
 
-    # Financial totals & tax breakdown
-    subtotal: Optional[float] = None
-    cgst: Optional[float] = None
+    # Financial totals & tax breakdown (with currency symbol and 2 decimal places e.g. '$93.50')
+    subtotal: Optional[CurrencyValue] = None
+    cgst: Optional[CurrencyValue] = None
     cgst_rate: Optional[str] = None
-    sgst: Optional[float] = None
+    sgst: Optional[CurrencyValue] = None
     sgst_rate: Optional[str] = None
-    igst: Optional[float] = None
+    igst: Optional[CurrencyValue] = None
     igst_rate: Optional[str] = None
-    rounding_off: Optional[float] = None
-    tax: Optional[float] = None
-    grand_total: Optional[float] = None
-    amount_paid: Optional[float] = None
-    refunded_amount: Optional[float] = None
+    rounding_off: Optional[CurrencyValue] = None
+    tax: Optional[CurrencyValue] = None
+    grand_total: Optional[CurrencyValue] = None
+    amount_paid: Optional[CurrencyValue] = None
+    refunded_amount: Optional[CurrencyValue] = None
     refunded_on: Optional[str] = None
     currency: Optional[str] = None
 
@@ -178,8 +316,8 @@ class ReceiptData(BaseModel):
 
     @field_validator("subtotal", "tax", "grand_total", "cgst", "sgst", "igst", "rounding_off", "amount_paid", "refunded_amount", mode="before")
     @classmethod
-    def validate_totals(cls, v: Any) -> Optional[float]:
-        return clean_numeric_value(v)
+    def validate_totals(cls, v: Any) -> Optional[CurrencyValue]:
+        return format_currency_value(v)
 
     @model_validator(mode="before")
     @classmethod
@@ -261,15 +399,32 @@ class ReceiptData(BaseModel):
             if not s_igst.endswith("%"):
                 self.igst_rate = f"{s_igst}%"
 
+        # Determine currency symbol from document currency
+        curr_sym = CURRENCY_CODE_TO_SYMBOL.get((self.currency or "").upper(), "$")
+
         # Calculate combined tax if individual components exist and tax is None
         tax_sum = 0.0
         has_tax_component = False
         for comp in [self.cgst, self.sgst, self.igst]:
             if comp is not None:
-                tax_sum += comp
+                tax_sum += float(comp)
                 has_tax_component = True
         if self.tax is None and has_tax_component:
-            self.tax = round(tax_sum, 2)
+            self.tax = format_currency_value(tax_sum, curr_sym)
+
+        # Standardize all financial amounts to CurrencyValue with symbol and 2 decimals (e.g. '$93.50')
+        for f in ["subtotal", "tax", "grand_total", "cgst", "sgst", "igst", "rounding_off", "amount_paid", "refunded_amount"]:
+            val = getattr(self, f, None)
+            if val is not None:
+                setattr(self, f, format_currency_value(val, curr_sym))
+
+        for it in self.items:
+            if it.unit_price is not None:
+                it.unit_price = format_currency_value(it.unit_price, curr_sym)
+            if it.rate_incl_tax is not None:
+                it.rate_incl_tax = format_currency_value(it.rate_incl_tax, curr_sym)
+            if it.total_price is not None:
+                it.total_price = format_currency_value(it.total_price, curr_sym)
 
         # Synchronize invoice_number and receipt_number
         doc_num = self.invoice_number or self.receipt_number

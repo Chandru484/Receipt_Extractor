@@ -81,11 +81,11 @@ def format_receipt_display(receipt: ReceiptData) -> str:
             if it.quantity is not None:
                 parts.append(f"Qty: {it.quantity} {it.uom or ''}".strip())
             if it.unit_price is not None:
-                parts.append(f"Rate: {it.unit_price:.2f}")
+                parts.append(f"Rate: {it.unit_price}")
             if it.rate_incl_tax is not None:
-                parts.append(f"Rate(Incl.Tax): {it.rate_incl_tax:.2f}")
+                parts.append(f"Rate(Incl.Tax): {it.rate_incl_tax}")
             if it.total_price is not None:
-                parts.append(f"Amount: {it.total_price:.2f}")
+                parts.append(f"Amount: {it.total_price}")
 
             lines.append("  " + ", ".join(parts))
         lines.append("]")
@@ -93,37 +93,37 @@ def format_receipt_display(receipt: ReceiptData) -> str:
 
     # === FINANCIAL BREAKDOWN ===
     if receipt.subtotal is not None:
-        lines.append(f"Subtotal : {receipt.subtotal:.2f}")
+        lines.append(f"Subtotal : {receipt.subtotal}")
 
     if receipt.sgst is not None:
         rate_str = f" ({receipt.sgst_rate})" if receipt.sgst_rate else ""
-        lines.append(f"SGST{rate_str} : {receipt.sgst:.2f}")
+        lines.append(f"SGST{rate_str} : {receipt.sgst}")
 
     if receipt.cgst is not None:
         rate_str = f" ({receipt.cgst_rate})" if receipt.cgst_rate else ""
-        lines.append(f"CGST{rate_str} : {receipt.cgst:.2f}")
+        lines.append(f"CGST{rate_str} : {receipt.cgst}")
 
     if receipt.igst is not None:
         rate_str = f" ({receipt.igst_rate})" if receipt.igst_rate else ""
-        lines.append(f"IGST{rate_str} : {receipt.igst:.2f}")
+        lines.append(f"IGST{rate_str} : {receipt.igst}")
 
     if receipt.tax is not None:
-        lines.append(f"Total Tax : {receipt.tax:.2f}")
+        lines.append(f"Total Tax : {receipt.tax}")
 
     if receipt.rounding_off is not None:
-        lines.append(f"Rounding Off : {receipt.rounding_off:.2f}")
+        lines.append(f"Rounding Off : {receipt.rounding_off}")
 
     if receipt.grand_total is not None:
-        lines.append(f"Grand Total : {receipt.grand_total:.2f}")
+        lines.append(f"Grand Total : {receipt.grand_total}")
 
     if receipt.amount_paid is not None:
-        lines.append(f"Amount Paid : {receipt.amount_paid:.2f}")
+        lines.append(f"Amount Paid : {receipt.amount_paid}")
 
     if receipt.refunded_on:
         lines.append(f"Refunded On : {receipt.refunded_on}")
 
     if receipt.refunded_amount is not None:
-        lines.append(f"Refunded Amount : {receipt.refunded_amount:.2f}")
+        lines.append(f"Refunded Amount : {receipt.refunded_amount}")
 
     if receipt.amount_in_words:
         lines.append(f"Amount in Words : {receipt.amount_in_words}")
