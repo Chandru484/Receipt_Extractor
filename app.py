@@ -7,6 +7,26 @@ import numpy as np
 os.environ["GRADIO_SSR_MODE"] = "false"
 os.environ["GRADIO_ANALYTICS_ENABLED"] = "False"
 
+# Patch Gradio schema parser bug when dealing with Pydantic v2 additionalProperties: bool
+try:
+    import gradio_client.utils
+
+    _orig_get_type = gradio_client.utils.get_type
+    def _safe_get_type(schema):
+        if isinstance(schema, bool):
+            return "bool"
+        return _orig_get_type(schema)
+    gradio_client.utils.get_type = _safe_get_type
+
+    _orig_schema = gradio_client.utils._json_schema_to_python_type
+    def _safe_schema(schema, defs=None):
+        if isinstance(schema, bool):
+            return "bool"
+        return _orig_schema(schema, defs)
+    gradio_client.utils._json_schema_to_python_type = _safe_schema
+except Exception:
+    pass
+
 import gradio as gr
 from app.main import app as fastapi_app
 from core.receipt_extractor import process_receipt
