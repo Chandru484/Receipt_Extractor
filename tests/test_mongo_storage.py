@@ -3,6 +3,7 @@ from bson import ObjectId
 from core.config import settings
 from storage.mongo_client import (
     save_extraction_to_mongodb,
+    find_extraction_by_invoice_number,
     get_stored_extractions,
     get_stored_extraction_by_id,
     check_mongo_connection,
@@ -78,3 +79,68 @@ def test_check_mongo_connection_disabled():
     with patch.object(settings, "MONGODB_ENABLED", False):
         diag = check_mongo_connection()
         assert diag["status"] == "disabled"
+
+
+def test_save_extraction_skips_duplicate_invoice():
+    existing_id = ObjectId("507f1f77bcf86cd799439011")
+    mock_collection = MagicMock()
+    # Simulate existing record found in MongoDB
+    mock_collection.find_one.return_value = {
+        "_id": existing_id,
+        "data": {"invoice_number": "INV-3337"}
+    }
+
+    with patch("storage.mongo_client.get_receipt_collection", return_value=mock_collection):
+        payload = {
+            "success": True,
+            "message": "Receipt extracted successfully",
+            "data": {"invoice_number": "INV-3337", "vendor_name": "Test Business"},
+        }
+        ret_id = save_extraction_to_mongodb(payload)
+        # Verify NO insertion occurred
+        mock_collection.insert_one.assert_not_called()
+        # Verify existing document ID was returned and is_duplicate flag set
+        assert ret_id == str(existing_id)
+        assert payload.get("is_duplicate") is True
+
+
+def test_save_extraction_inserts_when_invoice_not_found():
+    new_id = ObjectId("507f1f77bcf86cd799439022")
+    mock_collection = MagicMock()
+    # Simulate not found
+    mock_collection.find_one.return_value = None
+    mock_collection.insert_one.return_value.inserted_id = new_id
+
+    with patch("storage.mongo_client.get_receipt_collection", return_value=mock_collection):
+        payload = {
+            "success": True,
+            "message": "Receipt extracted successfully",
+            "data": {"invoice_number": "INV-9999", "vendor_name": "New Vendor"},
+        }
+        ret_id = save_extraction_to_mongodb(payload)
+        # Verify insertion occurred
+        mock_collection.insert_one.assert_called_once()
+        assert ret_id == str(new_id)
+        assert payload.get("is_duplicate") is False
+
+
+def test_find_extraction_by_invoice_number():
+    fake_id = ObjectId("507f1f77bcf86cd799439033")
+    mock_collection = MagicMock()
+    mock_collection.find_one.return_value = {
+        "_id": fake_id,
+        "data": {"invoice_number": "INV-123"}
+    }
+
+    with patch("storage.mongo_client.get_receipt_collection", return_value=mock_collection):
+        doc = find_extraction_by_invoice_number("INV-123")
+        assert doc is not None
+        assert doc["_id"] == str(fake_id)
+        mock_collection.find_one.assert_called_once()
+
+        # Empty / None invoice returns None without calling find_one
+        mock_collection.reset_mock()
+        assert find_extraction_by_invoice_number("") is None
+        assert find_extraction_by_invoice_number(None) is None
+        mock_collection.find_one.assert_not_called()
+

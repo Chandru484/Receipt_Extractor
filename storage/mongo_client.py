@@ -1,5 +1,6 @@
 import copy
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from bson import ObjectId
@@ -54,12 +55,67 @@ def get_receipt_collection() -> Optional[Collection]:
         return None
 
 
+def find_extraction_by_invoice_number(invoice_number: str) -> Optional[Dict[str, Any]]:
+    """
+    Search MongoDB for an existing extraction record by invoice/receipt number.
+
+    Performs a case-insensitive exact match and checks both string and integer representations.
+    Returns the matched document dict (with stringified '_id') if found, or None.
+    """
+    if not settings.MONGODB_ENABLED or not invoice_number:
+        return None
+
+    clean_inv = str(invoice_number).strip()
+    if not clean_inv:
+        return None
+
+    collection = get_receipt_collection()
+    if collection is None:
+        return None
+
+    try:
+        escaped = re.escape(clean_inv)
+        or_conditions: List[Dict[str, Any]] = [
+            {"data.invoice_number": {"$regex": f"^{escaped}$", "$options": "i"}},
+            {"data.receipt_number": {"$regex": f"^{escaped}$", "$options": "i"}},
+            {"invoice_number": {"$regex": f"^{escaped}$", "$options": "i"}},
+            {"receipt_number": {"$regex": f"^{escaped}$", "$options": "i"}},
+        ]
+        if clean_inv.isdigit():
+            int_val = int(clean_inv)
+            or_conditions.extend([
+                {"data.invoice_number": int_val},
+                {"data.receipt_number": int_val},
+                {"invoice_number": int_val},
+                {"receipt_number": int_val},
+            ])
+
+        doc = collection.find_one({"$or": or_conditions})
+        if doc:
+            doc["_id"] = str(doc["_id"])
+            return doc
+        return None
+    except Exception as exc:
+        logger.warning(f"Error querying existing invoice number '{clean_inv}' in MongoDB: {exc}")
+        return None
+
+
 def save_extraction_to_mongodb(response_payload: Dict[str, Any]) -> Optional[str]:
     """
-    Persist the receipt extraction JSON response into the MongoDB Receipt_Extraction collection.
-    
-    Returns the inserted document ID string if successful, or None if MongoDB is unavailable.
-    Does not raise exceptions to ensure API extraction never fails due to DB connectivity.
+    Persist the receipt extraction JSON response into the MongoDB Receipt_Extraction collection
+    ONLY if not already present based on invoice number.
+
+    If an extraction with the same invoice number already exists in MongoDB:
+      - Does NOT insert a duplicate document into the database.
+      - Sets response_payload["is_duplicate"] = True (if payload is a dict).
+      - Returns the existing document's ID string.
+
+    If no matching invoice is found (or no invoice number is present):
+      - Inserts the new extraction document.
+      - Sets response_payload["is_duplicate"] = False (if payload is a dict).
+      - Returns the newly inserted document's ID string.
+
+    Returns None if MongoDB is unavailable or disabled.
     """
     if not settings.MONGODB_ENABLED:
         return None
@@ -70,15 +126,39 @@ def save_extraction_to_mongodb(response_payload: Dict[str, Any]) -> Optional[str
             logger.warning("MongoDB collection is unavailable; skipping storage.")
             return None
 
-        # Make a deep copy to avoid mutating the original response dictionary
+        # 1. Locate invoice / receipt number from the payload
+        data = response_payload.get("data", {}) if isinstance(response_payload.get("data"), dict) else {}
+        invoice_num = (
+            data.get("invoice_number")
+            or data.get("receipt_number")
+            or response_payload.get("invoice_number")
+            or response_payload.get("receipt_number")
+        )
+
+        # 2. Check if already present in MongoDB using the invoice number
+        if invoice_num:
+            clean_inv = str(invoice_num).strip()
+            if clean_inv:
+                existing_doc = find_extraction_by_invoice_number(clean_inv)
+                if existing_doc:
+                    existing_id = str(existing_doc["_id"])
+                    logger.info(
+                        f"Invoice number '{clean_inv}' is already present in MongoDB with ID {existing_id}. "
+                        f"Skipping duplicate save."
+                    )
+                    if isinstance(response_payload, dict):
+                        response_payload["is_duplicate"] = True
+                    return existing_id
+
+        # 3. Not found or no invoice number — store in database as normal
         doc_to_save = copy.deepcopy(response_payload)
-        
-        # Attach ISO timestamp for auditing and query convenience
         doc_to_save["stored_at"] = datetime.now(timezone.utc).isoformat()
 
         insert_result = collection.insert_one(doc_to_save)
         doc_id = str(insert_result.inserted_id)
         logger.info(f"Receipt extraction stored in MongoDB with ID: {doc_id}")
+        if isinstance(response_payload, dict):
+            response_payload["is_duplicate"] = False
         return doc_id
 
     except (ServerSelectionTimeoutError, PyMongoError) as exc:

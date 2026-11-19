@@ -11,6 +11,7 @@ from processing.image_processor import preprocess_image
 from schemas.receipt_schema import ReceiptResponse
 from storage.mongo_client import (
     save_extraction_to_mongodb,
+    find_extraction_by_invoice_number,
     get_stored_extractions,
     get_stored_extraction_by_id,
     check_mongo_connection,
@@ -58,6 +59,18 @@ async def list_stored_receipts(
         "skip": skip,
         "receipts": records
     }
+
+
+@app.get("/receipts/by-invoice/{invoice_number}", summary="Get stored receipt by invoice number")
+async def get_receipt_by_invoice(invoice_number: str):
+    """Retrieve a stored receipt from MongoDB by its invoice number."""
+    record = await run_in_threadpool(find_extraction_by_invoice_number, invoice_number)
+    if not record:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Stored receipt with invoice number '{invoice_number}' not found."
+        )
+    return record
 
 
 @app.get("/receipts/{receipt_id}", summary="Get stored receipt extraction by ID")
@@ -133,9 +146,12 @@ async def extract_receipt(
         }
 
         # Persist extracted JSON to MongoDB Receipt_Extraction collection
+        # (automatically checks invoice_number and skips duplicate saving)
         doc_id = await run_in_threadpool(save_extraction_to_mongodb, response_payload)
         if doc_id:
             response_payload["document_id"] = doc_id
+            if response_payload.get("is_duplicate"):
+                response_payload["message"] = "Receipt extracted successfully (existing record found in database, duplicate save skipped)"
 
         return response_payload
 

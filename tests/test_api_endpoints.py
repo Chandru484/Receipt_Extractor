@@ -36,13 +36,13 @@ def test_health_endpoint():
 
 
 def test_extract_unsupported_file_extension():
-    fake_file = io.BytesIO(b"fake pdf content")
+    fake_file = io.BytesIO(b"fake txt content")
     response = client.post(
         "/extract",
-        files={"file": ("test.pdf", fake_file, "application/pdf")}
+        files={"file": ("test.xyz", fake_file, "text/plain")}
     )
     assert response.status_code == 400
-    assert "Unsupported image format" in response.json()["detail"]
+    assert "Unsupported format" in response.json()["detail"]
 
 
 def test_extract_empty_file():

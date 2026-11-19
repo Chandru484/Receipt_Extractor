@@ -105,7 +105,10 @@ def gradio_extract(file):
 
         summary = result.get("formatted_display", "")
         if doc_id:
-            summary += f"\n\n[Saved in MongoDB Atlas with ID: {doc_id}]"
+            if response_payload.get("is_duplicate"):
+                summary += f"\n\n[Existing record found in MongoDB Atlas with ID: {doc_id} (duplicate save skipped)]"
+            else:
+                summary += f"\n\n[Saved in MongoDB Atlas with ID: {doc_id}]"
 
         return summary, json.dumps(response_payload, indent=2)
 

@@ -601,9 +601,12 @@ class OCRDiagnostics(BaseModel):
 
 
 class ReceiptResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
     success: bool = True
     message: str = "Receipt extracted successfully"
     formatted_display: Optional[str] = None
     data: ReceiptData
     ocr: OCRDiagnostics
     document_id: Optional[str] = Field(default=None, description="MongoDB document ID if persisted")
+    is_duplicate: Optional[bool] = Field(default=None, description="True if record already existed in MongoDB")
