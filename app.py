@@ -27,6 +27,15 @@ try:
 except Exception:
     pass
 
+try:
+    import spaces
+    gpu_decorator = spaces.GPU
+except Exception:
+    def gpu_decorator(fn=None, **kwargs):
+        if callable(fn):
+            return fn
+        return lambda f: f
+
 import gradio as gr
 from app.main import app as fastapi_app
 from core.receipt_extractor import process_receipt
@@ -34,6 +43,7 @@ from processing.image_processor import preprocess_image
 from storage.mongo_client import save_extraction_to_mongodb
 
 
+@gpu_decorator
 def gradio_extract(image):
     if image is None:
         return "Please upload an image.", "{}"
