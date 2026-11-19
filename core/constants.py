@@ -6,11 +6,20 @@ ALLOWED_IMAGE_EXTENSIONS = {
     ".bmp"
 }
 
+ALLOWED_PDF_EXTENSIONS = {".pdf"}
+
+ALLOWED_EXTENSIONS = ALLOWED_IMAGE_EXTENSIONS | ALLOWED_PDF_EXTENSIONS
+
 ALLOWED_IMAGE_CONTENT_TYPES = {
     "image/jpeg",
     "image/png",
     "image/webp",
     "image/bmp"
+}
+
+ALLOWED_PDF_CONTENT_TYPES = {
+    "application/pdf",
+    "application/x-pdf",
 }
 
 RECEIPT_OUTPUT_FIELDS = [

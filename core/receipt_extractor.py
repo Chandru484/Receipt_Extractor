@@ -43,3 +43,44 @@ def process_receipt(image: np.ndarray) -> Dict[str, Any]:
         },
         "diagnostics": diagnostics
     }
+
+
+def process_receipt_from_text(full_text: str, combined_ocr: Dict[str, Any]) -> Dict[str, Any]:
+    """Run Groq extraction on pre-assembled OCR text (used for multi-page PDFs).
+
+    Args:
+        full_text: Combined OCR text from all PDF pages (page-separated).
+        combined_ocr: OCR metadata dict with 'full_text', 'lines', 'total_pages'.
+
+    Returns:
+        Same dict structure as process_receipt().
+    """
+    if not full_text.strip():
+        raise ValueError("No readable text found in the uploaded PDF.")
+
+    raw_receipt: ReceiptData = extract_receipt_with_groq(combined_ocr)
+
+    validated_receipt, diagnostics = validate_and_reconcile_receipt(
+        raw_receipt,
+        ocr_text=full_text
+    )
+
+    formatted_display = format_receipt_display(validated_receipt)
+
+    clean_lines = [
+        line["text"] if isinstance(line, dict) and "text" in line else str(line)
+        for line in combined_ocr.get("lines", [])
+    ]
+
+    return {
+        "receipt": validated_receipt.model_dump(),
+        "formatted_display": formatted_display,
+        "ocr": {
+            "full_text": full_text,
+            "lines": clean_lines,
+            "line_count": len(clean_lines),
+            "total_pages": combined_ocr.get("total_pages", 1)
+        },
+        "diagnostics": diagnostics
+    }
+
