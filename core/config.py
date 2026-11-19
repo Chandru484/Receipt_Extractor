@@ -6,9 +6,14 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Ensure Paddle and PaddleX caches are initialized inside workspace cache
-os.environ.setdefault("PADDLE_PDX_CACHE_HOME", str(BASE_DIR / ".cache" / "paddlex"))
-os.environ.setdefault("PADDLE_HOME", str(BASE_DIR / ".cache" / "paddle"))
+# Ensure Paddle and PaddleX caches are initialized inside workspace or /tmp for cloud containers
+if os.environ.get("SPACE_ID") or not os.access(str(BASE_DIR), os.W_OK):
+    cache_base = Path("/tmp/.cache")
+else:
+    cache_base = BASE_DIR / ".cache"
+
+os.environ.setdefault("PADDLE_PDX_CACHE_HOME", str(cache_base / "paddlex"))
+os.environ.setdefault("PADDLE_HOME", str(cache_base / "paddle"))
 os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
 
 

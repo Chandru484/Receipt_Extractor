@@ -1,5 +1,6 @@
 import os
 os.environ["GRADIO_SSR_MODE"] = "false"
+os.environ["GRADIO_ANALYTICS_ENABLED"] = "False"
 
 import uvicorn
 from app.main import app

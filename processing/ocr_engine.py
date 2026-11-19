@@ -6,8 +6,13 @@ import numpy as np
 from core.config import BASE_DIR, settings
 
 # Ensure environment variables are configured before PaddleOCR imports
-os.environ.setdefault("PADDLE_PDX_CACHE_HOME", str(BASE_DIR / ".cache" / "paddlex"))
-os.environ.setdefault("PADDLE_HOME", str(BASE_DIR / ".cache" / "paddle"))
+if os.environ.get("SPACE_ID") or not os.access(str(BASE_DIR), os.W_OK):
+    cache_base = Path("/tmp/.cache")
+else:
+    cache_base = BASE_DIR / ".cache"
+
+os.environ.setdefault("PADDLE_PDX_CACHE_HOME", str(cache_base / "paddlex"))
+os.environ.setdefault("PADDLE_HOME", str(cache_base / "paddle"))
 os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
 
 # Monkey-patch MKLDNN_BLOCKLIST for Windows CPU compatibility in PaddlePaddle 3.4.0
