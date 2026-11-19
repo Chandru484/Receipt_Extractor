@@ -8,6 +8,8 @@ from extraction.field_extractor import (
     validate_and_format_gstin,
     validate_and_format_ifsc,
     clean_bank_account_number,
+    clean_bsb_number,
+    clean_bank_name,
     KNOWN_VENDORS,
     KNOWN_BUYERS,
 )
@@ -131,7 +133,11 @@ def format_receipt_display(receipt: ReceiptData) -> str:
     # === BANK DETAILS ===
     if receipt.bank_details:
         bd = receipt.bank_details
-        has_bank_info = any([bd.bank_name, bd.account_holder, bd.account_no, bd.ifsc_code, bd.branch])
+        has_bank_info = any([
+            bd.bank_name, bd.account_holder, bd.account_no,
+            bd.ifsc_code, bd.branch,
+            getattr(bd, "bsb_number", None), getattr(bd, "swift_code", None)
+        ])
         if has_bank_info:
             lines.append("")
             lines.append("Company's Bank Details :")
@@ -141,6 +147,10 @@ def format_receipt_display(receipt: ReceiptData) -> str:
                 lines.append(f"  Bank Name : {bd.bank_name}")
             if bd.account_no:
                 lines.append(f"  A/c No : {bd.account_no}")
+            if getattr(bd, "bsb_number", None):
+                lines.append(f"  BSB No : {bd.bsb_number}")
+            if getattr(bd, "swift_code", None):
+                lines.append(f"  SWIFT / BIC : {bd.swift_code}")
             if bd.branch and bd.ifsc_code:
                 lines.append(f"  Branch & IFS Code : {bd.branch} & {bd.ifsc_code}")
             elif bd.branch:
@@ -158,11 +168,12 @@ def format_receipt_display(receipt: ReceiptData) -> str:
         shown_extra = False
         _SKIP_IN_DISPLAY = {
             "buyer_address", "buyer_gstin", "payment_mode",
-            "bank_name", "account_no", "ifsc_code", "branch",
+            "bank_name", "account_no", "ifsc_code", "branch", "bsb_number", "swift_code",
             "receipt_number", "invoice_number", "date_paid", "invoice_date",
             "amount_paid", "refunded_amount", "refunded_on",
             "contact_email", "support_email", "seller_email", "buyer_email",
-            "seller_phone", "buyer_phone"
+            "seller_phone", "buyer_phone", "total_due", "balance_due",
+            "amount_due", "total_amount", "sub_total"
         }
         for k, v in receipt.extra_fields.items():
             if not v or k in _SKIP_IN_DISPLAY:
@@ -270,7 +281,7 @@ def validate_and_reconcile_receipt(
     # 4a. OCR Fallbacks for Totals if missing from LLM response
     if ocr_text:
         if receipt.subtotal is None:
-            sub_m = re.search(r"(?:Subtotal|Taxable\s*(?:Amount|Value)?|Total\s*(?:Amount)?)\s*[:=]?\s*([0-9,]+\.\d{2})\s*(?:\n|\r|\s)*(?:CGST|SGST|IGST)", ocr_text, re.IGNORECASE)
+            sub_m = re.search(r"(?:Subtotal|Sub\s*Total|Taxable\s*(?:Amount|Value)?|Total\s*(?:Amount)?)\s*[:=]?\s*[$₹€£]?\s*([0-9,]+\.\d{2})", ocr_text, re.IGNORECASE)
             if not sub_m:
                 sub_m = re.search(r"([0-9,]+\.\d{2})\s*(?:\n|\r|\s)*(?:CGST|SGST)", ocr_text, re.IGNORECASE)
             if sub_m:
@@ -278,18 +289,23 @@ def validate_and_reconcile_receipt(
             elif valid_item_prices > 0 and items_total_sum > 0:
                 receipt.subtotal = items_total_sum
 
+        if receipt.tax is None:
+            tax_m = re.search(r"(?:Total\s*Tax|Tax)\s*[:=]?\s*[$₹€£]?\s*([0-9,]+\.\d{2})", ocr_text, re.IGNORECASE)
+            if tax_m:
+                receipt.tax = float(tax_m.group(1).replace(",", ""))
+
         if receipt.cgst is None:
-            cgst_m = re.search(r"CGST(?:\s*@\s*\d+%)?(?:\s*Output)?\s*[:=]?\s*([0-9,]+\.\d{2})", ocr_text, re.IGNORECASE)
+            cgst_m = re.search(r"CGST(?:\s*@\s*\d+%)?(?:\s*Output)?\s*[:=]?\s*[$₹€£]?\s*([0-9,]+\.\d{2})", ocr_text, re.IGNORECASE)
             if cgst_m:
                 receipt.cgst = float(cgst_m.group(1).replace(",", ""))
 
         if receipt.sgst is None:
-            sgst_m = re.search(r"SGST(?:\s*@\s*\d+%)?(?:\s*Output)?\s*[:=]?\s*([0-9,]+\.\d{2})", ocr_text, re.IGNORECASE)
+            sgst_m = re.search(r"SGST(?:\s*@\s*\d+%)?(?:\s*Output)?\s*[:=]?\s*[$₹€£]?\s*([0-9,]+\.\d{2})", ocr_text, re.IGNORECASE)
             if sgst_m:
                 receipt.sgst = float(sgst_m.group(1).replace(",", ""))
 
         if receipt.grand_total is None:
-            gt_m = re.search(r"(?:Grand\s*Total|Total(?:\s*\d+(?:\.\d+)?\s*No)?)\s*[:=]?\s*([0-9,]+\.\d{2})", ocr_text, re.IGNORECASE)
+            gt_m = re.search(r"(?:Grand\s*Total|Total\s*Due|Balance\s*Due|Total(?:\s*\d+(?:\.\d+)?\s*No)?)\s*[:=]?\s*[$₹€£]?\s*([0-9,]+\.\d{2})", ocr_text, re.IGNORECASE)
             if gt_m:
                 receipt.grand_total = float(gt_m.group(1).replace(",", ""))
 
@@ -712,27 +728,30 @@ def validate_and_reconcile_receipt(
                 receipt.buyer_phone = cand_phone
 
     # 10. Universal Bank Details Extraction & Cleansing
-    if ocr_text and any(k in ocr_text.lower() for k in ["bank", "a/c", "account", "ifsc", "branch"]):
+    bank_keywords = ["bank", "a/c", "account", "acc", "bsb", "ifsc", "branch", "swift"]
+    if ocr_text and any(k in ocr_text.lower() for k in bank_keywords):
         if not receipt.bank_details:
             receipt.bank_details = BankDetails()
         bd = receipt.bank_details
+
+        # Extract or clean bank_name
+        if not bd.bank_name:
+            bd.bank_name = clean_bank_name(None, ocr_text)
+
+        # Extract BSB number if present
+        if not getattr(bd, "bsb_number", None):
+            bd.bsb_number = clean_bsb_number(None, ocr_text)
 
         if not bd.account_holder and (receipt.seller or receipt.vendor_name):
             holder_m = re.search(r"(?:A/c\s*Holder(?:'s)?\s*Name\s*[:=]?\s*)([A-Za-z\s]+)", ocr_text, re.IGNORECASE)
             if holder_m:
                 bd.account_holder = holder_m.group(1).strip()
-            else:
+            elif any(k in ocr_text.lower() for k in ["a/c no", "account no", "ifsc"]) and not getattr(bd, "bsb_number", None):
+                # Only default to seller in Indian invoice formats where seller is account holder
                 bd.account_holder = receipt.seller or receipt.vendor_name
 
-        if not bd.bank_name:
-            bank_m = re.search(r"Bank\s*Name\s*[:=]?\s*([A-Za-z\s]+?)(?:\s*(?:A/c|Account|Branch|IFSC|CC|\n|$))", ocr_text, re.IGNORECASE)
-            if bank_m:
-                bd.bank_name = bank_m.group(1).strip()
-
         if not bd.account_no:
-            acc_m = re.search(r"(?:A/c\s*(?:No\.?)?|Account\s*(?:No\.?)?|CC Account)\s*[:=]?\s*(\d{9,18})", ocr_text, re.IGNORECASE)
-            if acc_m:
-                bd.account_no = acc_m.group(1).strip()
+            bd.account_no = clean_bank_account_number(None, ocr_text)
 
         # Extract IFSC BEFORE branch — look for IFSC pattern after '&' in Branch & IFS Code lines first
         if not bd.ifsc_code:
@@ -764,13 +783,9 @@ def validate_and_reconcile_receipt(
     # Strictly validate and format Bank Details
     if receipt.bank_details:
         bd = receipt.bank_details
-        # Clean account number of stamp/seal ink artifacts universally
+        bd.bank_name = clean_bank_name(bd.bank_name, ocr_text)
         bd.account_no = clean_bank_account_number(bd.account_no, ocr_text)
-        # IFS code strictly 11 characters in CAPITAL LETTERS ONLY
-        bd.ifsc_code = validate_and_format_ifsc(bd.ifsc_code)
-        # Clean account number of stamp/seal ink artifacts
-        bd.account_no = clean_bank_account_number(bd.account_no, ocr_text)
-        # IFS code strictly 11 characters in CAPITAL LETTERS ONLY
+        bd.bsb_number = clean_bsb_number(getattr(bd, "bsb_number", None), ocr_text)
         bd.ifsc_code = validate_and_format_ifsc(bd.ifsc_code)
 
     # 11. Extract Company PAN into extra_fields

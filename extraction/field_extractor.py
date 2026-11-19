@@ -140,25 +140,92 @@ def validate_and_format_ifsc(val: Optional[str]) -> Optional[str]:
 
 
 def clean_bank_account_number(val: Optional[str], ocr_text: str = "") -> Optional[str]:
-    """Clean and validate bank account number, filtering out seal/stamp ink artifacts universally."""
-    # First priority: look for unstamped account number in OCR text using universal account number patterns
+    """Clean and validate bank account number, supporting international spaced formats (e.g. '1234 1234')
+    and filtering out seal/stamp ink artifacts universally.
+    """
+    # First priority: if val provided, clean and validate it
+    if val:
+        s = str(val).strip()
+        # Strip prefixes like ACC #, A/c No, Account No, CC Account, etc.
+        s_clean = re.sub(
+            r"^(?:ACC\s*#?|A/C\s*(?:No\.?|#)?|Account\s*(?:No\.?|#)?|Acc\.?\s*(?:No\.?|#)?|CC\s*Account)\s*[:=#]?\s*",
+            "",
+            s,
+            flags=re.IGNORECASE
+        ).strip()
+        digits_only = re.sub(r"\D", "", s_clean)
+        # Bank accounts internationally range from 6 to 24 digits (e.g. AU 8 digits '1234 1234', UK 8, US 8-12, IN 9-18)
+        if 6 <= len(digits_only) <= 24:
+            if re.match(r"^[0-9\s-]+$", s_clean):
+                return s_clean
+            return digits_only
+
+    # Second priority: look for unstamped account number in OCR text using universal account number patterns
     if ocr_text:
         unstamped_match = re.search(
-            r"(?:CC\s*Account|A/C\s*(?:No\.?)?|Account\s*(?:No\.?)?|Acc\.?\s*(?:No\.?)?)\s*[:=]?\s*(\d{9,18})\b",
+            r"(?:ACC(?:\s*#|\s*No\.?)?|A/C\s*(?:No\.?|#)?|Account\s*(?:No\.?|#)?|CC Account)\s*[:=#]?\s*([0-9\s-]{6,24})\b",
             ocr_text,
             re.IGNORECASE
         )
         if unstamped_match:
-            return unstamped_match.group(1).strip()
+            cand = unstamped_match.group(1).strip()
+            digits = re.sub(r"\D", "", cand)
+            if 6 <= len(digits) <= 24:
+                return cand
 
-    if not val:
-        return None
+    return None
 
-    s = str(val).strip()
-    # Strip any trailing/leading letters caused by ink stamps / seals (e.g. 92403003007324AM -> 924030030073241)
-    digits_only = re.sub(r"\D", "", s)
-    if 9 <= len(digits_only) <= 18:
-        return digits_only
+
+def clean_bsb_number(val: Optional[str], ocr_text: str = "") -> Optional[str]:
+    """Clean and validate Australian / New Zealand BSB (Bank-State-Branch) number (e.g. '4321 432', '432-143')."""
+    if val:
+        s = str(val).strip()
+        s_clean = re.sub(r"^(?:BSB(?:\s*#|\s*No\.?|\s*Code)?)\s*[:=#]?\s*", "", s, flags=re.IGNORECASE).strip()
+        digits = re.sub(r"\D", "", s_clean)
+        if 5 <= len(digits) <= 8:
+            if re.match(r"^[0-9\s-]+$", s_clean):
+                return s_clean
+            return digits
+
+    if ocr_text:
+        bsb_match = re.search(
+            r"\bBSB(?:\s*#|\s*No\.?|\s*Code)?\s*[:=#]?\s*([0-9\s-]{5,10})\b",
+            ocr_text,
+            re.IGNORECASE
+        )
+        if bsb_match:
+            cand = bsb_match.group(1).strip()
+            digits = re.sub(r"\D", "", cand)
+            if 5 <= len(digits) <= 8:
+                return cand
+
+    return None
+
+
+def clean_bank_name(val: Optional[str], ocr_text: str = "") -> Optional[str]:
+    """Clean and validate bank name (e.g. 'ANZ Bank', 'Axis Bank'), falling back to OCR pattern matching."""
+    if val:
+        s = str(val).strip()
+        # Remove any leading numbers or currency symbols from OCR misgrouping
+        s = re.sub(r"^[$₹€£0-9.,\s]+", "", s).strip()
+        if len(s) >= 3 and s.lower() not in ["the bank", "my bank", "food bank", "bank"]:
+            return s
+
+    if ocr_text:
+        m1 = re.search(r"Bank\s*Name\s*[:=]?\s*([A-Za-z\s]+?)(?:\s*(?:A/c|Account|Branch|IFSC|CC|BSB|\n|$))", ocr_text, re.IGNORECASE)
+        if m1:
+            cand = m1.group(1).strip()
+            if cand and cand.lower() not in ["the bank", "my bank"]:
+                return cand
+
+        # Match bank line on single line without absorbing preceding lines / numbers
+        m2 = re.search(r"^[^\S\r\n]*([A-Za-z0-9\t &]{2,30}\s*Bank)\b", ocr_text, re.MULTILINE | re.IGNORECASE)
+        if m2:
+            cand = m2.group(1).strip()
+            # Strip leading digits or noise
+            cand = re.sub(r"^[$₹€£0-9.,\s]+", "", cand).strip()
+            if cand and cand.lower() not in ["the bank", "my bank", "food bank"]:
+                return cand
 
     return None
 

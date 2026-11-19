@@ -173,13 +173,21 @@ class BankDetails(BaseModel):
     bank_name: Optional[str] = None
     account_holder: Optional[str] = None
     account_no: Optional[str] = None
+    bsb_number: Optional[str] = None
     ifsc_code: Optional[str] = None
+    swift_code: Optional[str] = None
     branch: Optional[str] = None
 
     @model_validator(mode="before")
     @classmethod
     def resolve_bank_aliases(cls, data: Any) -> Any:
         if isinstance(data, dict):
+            # bank name alias
+            if not data.get("bank_name"):
+                for k in ["bank", "bank_name", "bank_title", "Bank"]:
+                    if data.get(k):
+                        data["bank_name"] = str(data[k]).strip()
+                        break
             # account holder alias
             if not data.get("account_holder"):
                 for k in ["account_holder_name", "ac_holders_name", "ac_holder", "A/c Holder's Name", "holder_name"]:
@@ -188,9 +196,21 @@ class BankDetails(BaseModel):
                         break
             # account number alias
             if not data.get("account_no"):
-                for k in ["account_number", "ac_no", "A/c No", "A/c No.", "account_num"]:
+                for k in ["account_number", "ac_no", "A/c No", "A/c No.", "account_num", "ACC #", "acc_#", "acc", "acc_no", "Account #", "Account No", "acc_num"]:
                     if data.get(k):
                         data["account_no"] = str(data[k]).strip()
+                        break
+            # bsb number alias
+            if not data.get("bsb_number"):
+                for k in ["bsb", "bsb_no", "bsb_number", "BSB #", "BSB No", "bsb_code", "BSB", "bsb_num"]:
+                    if data.get(k):
+                        data["bsb_number"] = str(data[k]).strip()
+                        break
+            # swift code alias
+            if not data.get("swift_code"):
+                for k in ["swift", "swift_code", "bic", "bic_code", "SWIFT", "SWIFT / BIC", "swift_bic"]:
+                    if data.get(k):
+                        data["swift_code"] = str(data[k]).strip()
                         break
             # ifsc code alias
             if not data.get("ifsc_code"):
@@ -476,10 +496,14 @@ class ReceiptData(BaseModel):
             "seller_name": "seller_name",
             "vendor_name": "vendor_name",
             "subtotal": "subtotal",
+            "sub_total": "subtotal",
             "tax": "tax",
             "grand_total": "grand_total",
             "total": "grand_total",
             "total_amount": "grand_total",
+            "total_due": "grand_total",
+            "balance_due": "grand_total",
+            "amount_due": "grand_total",
             "currency": "currency",
             "payment_mode": "payment_mode",
             "payment_method": "payment_mode",
@@ -504,6 +528,35 @@ class ReceiptData(BaseModel):
             if k not in _STANDARD_FIELDS and v is not None and k not in self.extra_fields:
                 self.extra_fields[k] = v
 
+        # Absorb any bank details accidentally placed in extra_fields
+        if self.extra_fields:
+            bank_alias_map = {
+                "bank_name": "bank_name",
+                "bank": "bank_name",
+                "account_no": "account_no",
+                "account_number": "account_no",
+                "acc": "account_no",
+                "acc_no": "account_no",
+                "acc_#": "account_no",
+                "bsb": "bsb_number",
+                "bsb_no": "bsb_number",
+                "bsb_number": "bsb_number",
+                "bsb_#": "bsb_number",
+                "ifsc": "ifsc_code",
+                "ifsc_code": "ifsc_code",
+                "swift": "swift_code",
+                "swift_code": "swift_code",
+            }
+            for k in list(self.extra_fields.keys()):
+                k_clean = k.lower().replace(" ", "_")
+                if k_clean in bank_alias_map:
+                    if not self.bank_details:
+                        self.bank_details = BankDetails()
+                    target_b = bank_alias_map[k_clean]
+                    if getattr(self.bank_details, target_b, None) is None:
+                        setattr(self.bank_details, target_b, str(self.extra_fields[k]).strip())
+                    self.extra_fields.pop(k, None)
+
         # If any extra_fields key matches a standard field alias, assign it if empty, and REMOVE it from extra_fields
         keys_to_remove = []
         for k, v in list(self.extra_fields.items()):
@@ -512,15 +565,20 @@ class ReceiptData(BaseModel):
                 target_field = KNOWN_STANDARD_ALIASES[k_lower]
                 if getattr(self, target_field, None) is None:
                     # Parse numeric or string properly
-                    if target_field in ["amount_paid", "refunded_amount"]:
-                        clean_val = clean_numeric_value(v)
-                        setattr(self, target_field, clean_val)
+                    if target_field in ["amount_paid", "refunded_amount", "subtotal", "tax", "grand_total", "cgst", "sgst", "igst", "rounding_off"]:
+                        setattr(self, target_field, format_currency_value(v, curr_sym))
                     else:
                         setattr(self, target_field, str(v).strip())
                 keys_to_remove.append(k)
 
         for k in keys_to_remove:
             self.extra_fields.pop(k, None)
+
+        # Ensure all financial amounts are CurrencyValue with symbol and 2 decimals (e.g. '$93.50')
+        for f in ["subtotal", "tax", "grand_total", "cgst", "sgst", "igst", "rounding_off", "amount_paid", "refunded_amount"]:
+            val = getattr(self, f, None)
+            if val is not None:
+                setattr(self, f, format_currency_value(val, curr_sym))
 
         # Synchronize invoice_number and receipt_number again in case populated from alias
         doc_num = self.invoice_number or self.receipt_number

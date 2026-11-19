@@ -50,3 +50,50 @@ def test_validation_items_total_calculation():
     validated, diag = validate_and_reconcile_receipt(receipt)
     assert validated.items[0].total_price == 20.00
     assert diag["calculated_items_sum"] == 70.00
+
+
+def test_bank_details_anz_and_bsb_formatting():
+    from extraction.field_extractor import clean_bank_account_number, clean_bsb_number, clean_bank_name
+    from schemas.receipt_schema import BankDetails, ReceiptData
+    from extraction.validation import format_receipt_display, validate_and_reconcile_receipt
+
+    # Test clean_bank_account_number
+    assert clean_bank_account_number("ACC # 1234 1234") == "1234 1234"
+    assert clean_bank_account_number("ACC #12341234") == "12341234"
+    assert clean_bank_account_number(None, "ANZ Bank\nACC # 1234 1234\nBSB # 4321 432") == "1234 1234"
+
+    # Test clean_bsb_number
+    assert clean_bsb_number("BSB # 4321 432") == "4321 432"
+    assert clean_bsb_number("4321 432") == "4321 432"
+    assert clean_bsb_number(None, "ANZ Bank\nACC # 1234 1234\nBSB # 4321 432") == "4321 432"
+
+    # Test clean_bank_name
+    assert clean_bank_name("ANZ Bank") == "ANZ Bank"
+    assert clean_bank_name(None, "Total Due\n$93.50\nANZ Bank\nACC # 1234 1234") == "ANZ Bank"
+
+    # Test BankDetails alias resolution
+    bd = BankDetails(**{"bank": "ANZ Bank", "ACC #": "1234 1234", "BSB #": "4321 432"})
+    assert bd.bank_name == "ANZ Bank"
+    assert bd.account_no == "1234 1234"
+    assert bd.bsb_number == "4321 432"
+
+    # Test full receipt validation & display
+    receipt = ReceiptData(
+        vendor_name="DEMO - Sliced Invoices",
+        invoice_number="INV-3337",
+        subtotal="$85.00",
+        tax="$8.50",
+        grand_total="$93.50",
+        currency="USD",
+        bank_details=bd
+    )
+    assert receipt.subtotal == "$85.00"
+    assert receipt.tax == "$8.50"
+    assert receipt.grand_total == "$93.50"
+
+    val_receipt, _ = validate_and_reconcile_receipt(receipt)
+    disp = format_receipt_display(val_receipt)
+    assert "Bank Name : ANZ Bank" in disp
+    assert "A/c No : 1234 1234" in disp
+    assert "BSB No : 4321 432" in disp
+

@@ -36,27 +36,29 @@ STANDARD FIELDS TO EXTRACT:
   "payment_mode": "Payment mode / method (e.g. 'Cash', 'ACH', 'UPI', 'Credit Card')",
   "salesman": "Salesman / executive name if listed",
 
-  "subtotal": 19.00,
+  "subtotal": "$19.00",
   "cgst": null,
   "cgst_rate": null,
   "sgst": null,
   "sgst_rate": null,
   "igst": null,
   "igst_rate": null,
-  "rounding_off": 0.00,
-  "tax": 1.12,
-  "grand_total": 20.12,
-  "amount_paid": 20.12,
-  "refunded_amount": 5.00,
+  "rounding_off": "$0.00",
+  "tax": "$1.12",
+  "grand_total": "$20.12",
+  "amount_paid": "$20.12",
+  "refunded_amount": "$5.00",
   "refunded_on": "2026-09-21",
   "amount_in_words": "Amount in words if present",
   "currency": "USD",
 
   "bank_details": {
-    "bank_name": "Bank Name if present",
+    "bank_name": "Bank Name if present (e.g. 'ANZ Bank', 'Axis Bank')",
     "account_holder": "Account Holder Name",
-    "account_no": "Clean bank account number (digits only)",
-    "ifsc_code": "11-character IFS Code in CAPITAL LETTERS ONLY",
+    "account_no": "Account Number (e.g. '1234 1234' from 'ACC # 1234 1234' or '924030030073241')",
+    "bsb_number": "BSB Number if present (e.g. '4321 432' from 'BSB # 4321 432')",
+    "ifsc_code": "11-character IFS Code in CAPITAL LETTERS ONLY (e.g. 'UTIB0000118')",
+    "swift_code": "SWIFT / BIC code if present",
     "branch": "Branch name"
   },
 
@@ -67,10 +69,10 @@ STANDARD FIELDS TO EXTRACT:
       "hsn_sac": "HSN/SAC code if present",
       "quantity": 1.0,
       "uom": "Unit of measure",
-      "unit_price": 19.00,
-      "rate_incl_tax": 20.12,
+      "unit_price": "$19.00",
+      "rate_incl_tax": "$20.12",
       "gst_rate": null,
-      "total_price": 19.00
+      "total_price": "$19.00"
     }
   ],
 
@@ -98,12 +100,19 @@ CRITICAL RULES:
    - If a field is clearly a standard field (receipt_number, invoice_number, invoice_date, date_paid, amount_paid, refunded_amount, refunded_on, seller_email, buyer_email, seller_phone, buyer_phone, etc.), put it in its respective top-level standard field!
    - DO NOT duplicate standard fields into extra_fields!
    - Only place truly unmapped custom fields in extra_fields (e.g. customer_id, order_id, transaction_id, tracking_no, reference_no, etc.).
-4. PHONE vs GSTIN: A 10-digit Indian number starting with 6-9 is ALWAYS a phone, never a GSTIN.
-5. GSTIN: Must be exactly 15 alphanumeric characters, all CAPITALS.
-6. DATES: Always output as YYYY-MM-DD.
-7. ITEMS: Extract EVERY single line item. Never omit or truncate items.
-8. SELLER UNDEFINED: If no seller/vendor name exists, set seller_name to "Unknown".
-9. Return valid JSON only. No markdown fences, no explanatory text."""
+4. CURRENCY & FINANCIAL PRECISION:
+   - All financial amounts ('subtotal', 'tax', 'grand_total', 'amount_paid', 'refunded_amount', 'unit_price', 'rate_incl_tax', 'total_price') must include the currency symbol (e.g. '$', '₹', '€', '£') and exactly two decimal places (e.g. '$93.50', '$85.00', '$8.50', never '93.5' or 93.5).
+   - "Total Due" or "Balance Due" or "Amount Due" corresponds to "grand_total".
+5. BANK DETAILS (INTERNATIONAL & DOMESTIC):
+   - Always extract bank name (e.g. "ANZ Bank"), account number (e.g. "1234 1234" from "ACC # 1234 1234"), and BSB number (e.g. "4321 432" from "BSB # 4321 432") into the "bank_details" object.
+   - For account numbers like "ACC # 1234 1234" or "ACC #12341234", strip the "ACC #" prefix and keep the digits/spacing (e.g. "1234 1234" or "12341234").
+   - For BSB numbers like "BSB # 4321 432" or "BSB#4321432", strip the "BSB #" prefix and keep the code (e.g. "4321 432").
+6. PHONE vs GSTIN: A 10-digit Indian number starting with 6-9 is ALWAYS a phone, never a GSTIN.
+7. GSTIN: Must be exactly 15 alphanumeric characters, all CAPITALS.
+8. DATES: Always output as YYYY-MM-DD.
+9. ITEMS: Extract EVERY single line item. Never omit or truncate items.
+10. SELLER UNDEFINED: If no seller/vendor name exists, set seller_name to "Unknown".
+11. Return valid JSON only. No markdown fences, no explanatory text."""
 
     user_prompt = f"""Extract all receipt and party details from this OCR text:
 
@@ -113,6 +122,8 @@ CRITICAL RULES:
 
 Remember:
 - 'Bill To' designates the BUYER details (buyer_name, buyer_address, buyer_email).
+- Financial fields must have currency symbol and two decimal places (e.g. '$93.50').
+- Extract bank details (bank name, ACC #, BSB #) into bank_details.
 - The issuing merchant/company is the SELLER (seller_name, seller_address, seller_phone, seller_email).
 - Put standard fields (receipt_number, date_paid, amount_paid, refunded_amount, refunded_on) directly into their respective top-level fields — do NOT put them in extra_fields!
 - Only put new/custom fields not covered in the standard schema into extra_fields."""
