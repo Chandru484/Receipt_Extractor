@@ -88,6 +88,20 @@ STANDARD FIELDS TO EXTRACT:
     }
   ],
 
+  "hsn_tax_summary": [
+    {
+      "hsn_sac": "39172390",
+      "taxable_value": "₹3026.00",
+      "cgst_rate": "2.5%",
+      "cgst_amount": "₹75.65",
+      "sgst_rate": "2.5%",
+      "sgst_amount": "₹75.65",
+      "igst_rate": null,
+      "igst_amount": null,
+      "total_tax_amount": "₹151.30"
+    }
+  ],
+
   "extra_fields": {
     "<<custom_field_label>>": "<<value>>"
   }
@@ -98,61 +112,41 @@ CRITICAL RULES:
 2. "BILL TO" SECTION IS ALWAYS THE BUYER:
    - "Bill To" or "Billed To" or "Customer" or "Sold To" ALWAYS designates the BUYER / CUSTOMER.
    - Any name, address, and email under "Bill To" belong to the BUYER.
-     Example:
-       Bill To
-       Customer
-       Address
-       City, State Zipcode
-       customer@example.org
-     -> buyer_name: "Customer", buyer_address: "Address, City, State Zipcode", buyer_email: "customer@example.org".
-   - The company / merchant issuing the bill (e.g. "Example, LLC" or "A GO RAILS", with contact email "support@example.com", phone "(555) 867-5309", address "123 Fake Street, New York City, NY 10012") is the SELLER / VENDOR.
-   - NEVER invert Seller and Buyer!
-   - NEVER use the word "Zipcode", "State", or "City" as a state name! State names must be actual states (e.g. "NY", "New York", "California").
+   - The merchant issuing the bill is the SELLER / VENDOR. NEVER invert Seller and Buyer!
 3. PHONE AND MOBILE SEPARATION (SELLER vs BUYER):
-   - A phone or mobile number listed under "Buyer" or "Bill To" (e.g. under "Buyer (Bill To)", or near "Contact Person: SURESH") belongs EXCLUSIVELY to the Buyer ("buyer_phone" or "buyer_mobile")!
-   - NEVER copy or assign the Buyer's contact / mobile number to the Seller ("seller_phone", "seller_mobile", or "phone")!
-   - If the Seller section has an empty "Contact :" or no phone number, leave "seller_phone", "seller_mobile", and "phone" as null!
+   - Contact numbers listed under "Buyer" or "Bill To" belong EXCLUSIVELY to the Buyer ("buyer_phone" or "buyer_mobile")!
+   - NEVER copy or assign the Buyer's contact / mobile number to the Seller!
+   - If the Seller section has no phone number, leave "seller_phone", "seller_mobile", and "phone" as null.
    - If a party lists both "Phone" (landline) and "Mobile", extract them into separate fields ("phone"/"seller_phone" and "mobile"/"seller_mobile").
 4. ADDRESS LINES (INCLUDING SAMPLE / PLACEHOLDER LABELS LIKE ADD1, ADD2, ADD3, ADD4):
-   - Any address lines under the Seller header (e.g. "ADD1", "ADD2", "ADD3", "ADD4") are the SELLER ADDRESS! Extract:
-     "seller_address": "ADD1, ADD2, ADD3, ADD4",
-     "seller_address_line_1": "ADD1",
-     "seller_address_line_2": "ADD2, ADD3, ADD4"
-   - Any address lines under the Buyer / Bill To header (e.g. "ADD2", "ADD3") are the BUYER ADDRESS! Extract:
-     "buyer_address": "ADD2, ADD3",
-     "buyer_address_line_1": "ADD2",
-     "buyer_address_line_2": "ADD3"
-   - NEVER omit or discard address lines just because they say "ADD1", "ADD2", etc. Always capture them as address lines!
+   - Address lines under Seller header (e.g. "ADD1", "ADD2", "ADD3", "ADD4") are SELLER ADDRESS.
+   - Address lines under Buyer header (e.g. "ADD2", "ADD3") are BUYER ADDRESS.
 5. TWO-COLUMN INVOICE HEADERS & BUYER ADDRESS CLEANING:
-   - Invoices often have two-column headers where Buyer details are on the left, and Transport/Shipping fields (such as "Transport", "Despatch Through", "E-Way Bill No", "Vehicle No") are on the right.
-   - OCR often concatenates left and right columns horizontally (e.g. "274/6,SASTHIRI NAGAR Extn., Sdsd").
-   - The Buyer Address MUST ONLY contain genuine address text (e.g. "274/6,SASTHIRI NAGAR Extn., KPN COLONY (PO) NEAR G.H., DHARAPURAM ROAD, TIRUPUR - 641608").
-   - NEVER leak or include transport names (e.g. "Sdsd"), transport labels, vehicle numbers, or dispatch details into buyer_address or buyer_address_line_1!
-   - Put transport into the "transport" field (e.g. "transport": "Sdsd").
+   - NEVER leak transport names (e.g. "Sdsd"), vehicle numbers, or dispatch details into buyer_address.
+   - Put transport into the "transport" field.
 6. DO NOT PUT STANDARD VALUES IN EXTRA_FIELDS:
-   - If a field is clearly a standard field (receipt_number, invoice_number, invoice_date, date_paid, amount_paid, refunded_amount, refunded_on, seller_email, buyer_email, seller_phone, seller_mobile, phone, mobile, buyer_phone, buyer_mobile, transport, despatch_through, eway_bill_no, etc.), put it in its respective top-level standard field!
-   - DO NOT duplicate standard fields into extra_fields!
-   - Only place truly unmapped custom fields in extra_fields (e.g. customer_id, order_id, transaction_id, tracking_no, reference_no, etc.).
+   - Standard fields must go into their respective top-level standard fields.
 7. CURRENCY & FINANCIAL PRECISION:
-   - All financial amounts ('subtotal', 'tax', 'grand_total', 'amount_paid', 'refunded_amount', 'unit_price', 'rate_incl_tax', 'total_price') must include the currency symbol (e.g. '$', '₹', '€', '£') and exactly two decimal places (e.g. '$93.50', '$85.00', '$8.50', never '93.5' or 93.5).
-   - "Total Due" or "Balance Due" or "Amount Due" corresponds to "grand_total".
-8. BANK DETAILS (INTERNATIONAL & DOMESTIC):
-   - Always extract bank name (e.g. "ANZ Bank"), account number (e.g. "1234 1234" from "ACC # 1234 1234"), and BSB number (e.g. "4321 432" from "BSB # 4321 432") into the "bank_details" object.
-   - For account numbers like "ACC # 1234 1234" or "ACC #12341234", strip the "ACC #" prefix and keep the digits/spacing (e.g. "1234 1234" or "12341234").
-   - For BSB numbers like "BSB # 4321 432" or "BSB#4321432", strip the "BSB #" prefix and keep the code (e.g. "4321 432").
-9. PHONE vs GSTIN: A 10-digit Indian number starting with 6-9 is ALWAYS a phone, never a GSTIN.
+   - All financial amounts must include currency symbol (e.g. '$', '₹') and two decimal places (e.g. '₹93.50').
+   - In Indian invoices, ALL monetary amounts across all pages must use '₹'.
+8. BANK DETAILS:
+   - Extract bank name, account number, IFSC code, branch, or BSB number into "bank_details".
+9. PHONE vs GSTIN: 10-digit Indian numbers starting with 6-9 are phones, never GSTINs.
 10. GSTIN: Must be exactly 15 alphanumeric characters, all CAPITALS.
-11. DATES: Always output in DD-MM-YYYY format (e.g. '01-01-2023', '21-09-2026', '01-04-2021'). Never output YYYY-MM-DD.
+11. DATES: Always output in DD-MM-YYYY format (e.g. '01-01-2023', '01-04-2021'). Never output YYYY-MM-DD.
 12. MULTI-PAGE & COMPLETE ITEM EXTRACTION:
-   - The document may span multiple pages marked with '--- Page 1 ---', '--- Page 2 ---', etc.
-   - You MUST extract EVERY SINGLE product / line item from ALL pages without omitting, grouping, or truncating any rows.
-   - Tag each item with its 1-indexed integer 'page' number (e.g. 1, 2) indicating which page it appears on (based on the '--- Page N ---' section). If single page, set 'page': 1.
-   - NEVER stop early (e.g. after 10 items). If an invoice has 20, 30, or more items across page 1 and page 2, extract ALL of them (e.g. items 1 to 20).
+   - Extract EVERY SINGLE product / line item from ALL pages without omitting or truncating any rows.
+   - Items immediately preceding "Continue..." or page boundaries (e.g. items 16, 17) MUST NOT be skipped.
+   - Tag each item with its 1-indexed integer 'page' number (e.g. 1, 2).
 13. DISCOUNT PERCENTAGE (Dis%):
-   - If the items table contains a "Dis%" or "Dis %" or "Discount %" or "Disc %" column, extract the discount percentage into "discount_percent" for each line item (e.g. "0.00%", "5.00%", "10%").
-   - Do NOT omit the discount column if it is present in the table.
-14. UNIFIED CURRENCY ACROSS MULTI-PAGE DOCUMENTS:
-   - If the document is in Indian Rupees (INR / ₹ / Rs), ALL monetary amounts and rates across ALL pages (Page 1, Page 2, Page 3, etc.) must use the "₹" symbol (e.g. "₹145.00", NOT "$145.00")!
+   - If present in the table, extract into "discount_percent" for each line item (e.g. "0.00%", "5%").
+14. HSN/SAC TAX SUMMARY TABLE & COMBINED TOTALS:
+   - When an HSN/SAC tax breakdown table is present at the end, extract each combination row into "hsn_tax_summary".
+   - Top-level "cgst" and "sgst" must be the TOTAL CGST and TOTAL SGST amounts (from the Total row of the tax table or sum of all rates), NOT an individual rate row!
+   - "tax" must be the total tax (Total CGST + Total SGST + Total IGST).
+   - "subtotal" is the total taxable amount (e.g. '₹19963.26').
+   - "rounding_off" is the round off amount (e.g. '₹-0.20').
+   - "grand_total" is the net final payable amount (e.g. '₹22917.00').
 15. MISSING FIELDS & NULLS:
    - If a field is not present in the document, set it to null. Do NOT invent or hallucinate values.
 16. SELLER UNDEFINED: If no seller/vendor name exists, set seller_name to "Unknown".
@@ -164,16 +158,7 @@ CRITICAL RULES:
 {ocr_text}
 \"\"\"
 
-Remember:
-- Dates MUST ALWAYS be in DD-MM-YYYY format (e.g. '01-01-2023').
-- Capture sample address lines like 'ADD1', 'ADD2', 'ADD3', 'ADD4' under seller and buyer addresses.
-- Buyer's contact number (e.g. near 'Contact Person') belongs to BUYER ('buyer_mobile' / 'buyer_phone'), NEVER to the seller!
-- If Seller has no phone number, leave seller_phone as null.
-- Extract EVERY SINGLE line item across ALL pages without stopping or truncating (set "page" to the integer page number where each item appears).
-- 'Bill To' designates the BUYER details (buyer_name, buyer_address, buyer_email).
-- Financial fields must have currency symbol and two decimal places (e.g. '$93.50').
-- Extract bank details (bank name, ACC #, BSB #) into bank_details.
-- Put standard fields directly into their respective top-level fields — do NOT put them in extra_fields!"""
+Produce the valid JSON object adhering strictly to the schema and rules."""
 
     return [
         {"role": "system", "content": system_prompt},

@@ -24,7 +24,8 @@ class Settings(BaseSettings):
     GROQ_FALLBACK_MODEL: str = "openai/gpt-oss-20b"
     GROQ_TIMEOUT_SECONDS: float = 60.0
     GROQ_MAX_RETRIES: int = 2
-    GROQ_MAX_COMPLETION_TOKENS: int = 4096
+    GROQ_MAX_COMPLETION_TOKENS: int = 2500
+    GROQ_REASONING_EFFORT: str = "low"
 
     @model_validator(mode="before")
     @classmethod

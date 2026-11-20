@@ -274,5 +274,100 @@ def test_dis_percent_and_currency_unification():
     assert "$" not in disp
 
 
+def test_hsn_tax_summary_and_combined_totals_reconciliation():
+    from extraction.validation import extract_hsn_tax_summary, reconcile_missing_ocr_items
+
+    ocr_text = """
+--- Page 1 ---
+GANAPATHY ELECTRICALS
+97, KAMARAJ ROAD 12 01/04/2021
+GSTIN/UIN :33AACFG7274J1ZA
+Buyer : MORNING STAAR APPARELS
+274/6,SASTHIRI NAGAR Extn., Sdsd
+SNo Description Of Goods HSN/SAC GST% Qty Unit Rate Dis % Amount
+1 11/2" CPVC (11-5M) (ASH) 39172390 5 2.00 % LTH 1513.00 3026.00
+15 11/2" C.COUPLING (ASH) 39172390 18 4.00 % NOS 70.34 281.36
+16 0.75*3C FLEX CABLE(E-FAB) 85446090 18 1.00 % MTR 37.70 37.70
+17 1000L WHITE SAFE (VECTUS) 39251000 18 1.00 % NOS 10.00 10.00
+Continue...
+
+--- Page 2 ---
+18 0.5 HP OPENWELL SUB 84137010 12 1.00 % NOS 100.00 100.00
+19 100A FIBER 8538 18 1.00 % LTH 350.00 350.00
+20 0.5*3C FLEX CABLE 85446090 18 1.00 % MTR 35.00 35.00
+Total Items : 20 79.00 Total 19963.26
+HSN/SAC Taxable SGST Tax CGST Tax Sub Total 19963.26
+Value Rate Amount Rate Amount
+39172390 3026.00 2.50 75.65 2.50 75.65
+SGST @ 2.5 % 75.65
+39172390 ,84137010 5089.28 6.00 305.36 6.00 305.36 CGST @ 2.5 % 75.65
+SGST @ 6 % 305.36
+8481,39172390 11258.90 9.00 1013.29 9.00 1013.29 CGST @ 6% 305.36
+,3920,3824,35061000 SGST @ 9% 1013.29
+39172390 589.08 14.00 82.47 14.00 82.47 CGST @ 9% 1013.29
+SGST @ 14% 82.47
+Total 19963.26 1476.77 1476.77 CGST @ 14% 82.47
+Round Off -0.20
+Amount Chargeable (in Words) NET TOTAL 22917.00
+Rupees Twenty Two Thousand Nine Hundred And Seventeen Only
+"""
+
+    # Simulate receipt where LLM missed items 16 & 17 and had incomplete totals
+    receipt = ReceiptData(
+        seller_name="GANAPATHY ELECTRICALS",
+        buyer_name="MORNING STAAR APPARELS",
+        currency="₹",
+        invoice_number="56789",
+        invoice_date="01-04-2021",
+        items=[
+            ReceiptItem(page=1, sl_no="1", item_name='11/2" CPVC (11-5M) (ASH)', hsn_sac="39172390", quantity=2.0, uom="LTH", unit_price="1513.00", total_price="3026.00"),
+            ReceiptItem(page=1, sl_no="15", item_name='11/2" C.COUPLING (ASH)', hsn_sac="39172390", quantity=4.0, uom="NOS", unit_price="70.34", total_price="281.36"),
+            ReceiptItem(page=2, sl_no="18", item_name="0.5 HP OPENWELL SUB", hsn_sac="84137010", quantity=1.0, uom="NOS", unit_price="100.00", total_price="100.00"),
+            ReceiptItem(page=2, sl_no="19", item_name="100A FIBER", hsn_sac="8538", quantity=1.0, uom="LTH", unit_price="350.00", total_price="350.00"),
+            ReceiptItem(page=2, sl_no="20", item_name="0.5*3C FLEX CABLE", hsn_sac="85446090", quantity=1.0, uom="MTR", unit_price="35.00", total_price="35.00"),
+        ]
+    )
+
+    val_receipt, diag = validate_and_reconcile_receipt(receipt, ocr_text)
+
+    # 1. Missing items 16 and 17 must be recovered and ordered
+    sl_nos = [it.sl_no for it in val_receipt.items]
+    assert "16" in sl_nos
+    assert "17" in sl_nos
+    assert len(val_receipt.items) == 7
+
+    # 2. HSN tax summary must be populated with 4 rows
+    assert val_receipt.hsn_tax_summary is not None
+    assert len(val_receipt.hsn_tax_summary) == 4
+    assert val_receipt.hsn_tax_summary[0].hsn_sac == "39172390"
+    assert val_receipt.hsn_tax_summary[0].taxable_value == 3026.00
+    assert val_receipt.hsn_tax_summary[0].cgst_amount == 75.65
+    assert val_receipt.hsn_tax_summary[0].sgst_amount == 75.65
+
+    # Check comma-separated HSN continuation in row 3
+    assert "8481" in val_receipt.hsn_tax_summary[2].hsn_sac
+    assert "35061000" in val_receipt.hsn_tax_summary[2].hsn_sac
+    assert val_receipt.hsn_tax_summary[2].taxable_value == 11258.90
+
+    # 3. Authoritative totals must match the invoice
+    assert val_receipt.subtotal == 19963.26
+    assert val_receipt.cgst == 1476.77
+    assert val_receipt.sgst == 1476.77
+    assert val_receipt.tax == 2953.54
+    assert val_receipt.rounding_off == -0.20
+    assert val_receipt.grand_total == 22917.00
+
+    # 4. Formatted display must include HSN / Tax Summary
+    disp = format_receipt_display(val_receipt)
+    assert "HSN / Tax Summary :" in disp
+    assert "Subtotal : ₹19963.26" in disp
+    assert "CGST : ₹1476.77" in disp
+    assert "SGST : ₹1476.77" in disp
+    assert "Total Tax : ₹2953.54" in disp
+    assert "Rounding Off : ₹-0.20" in disp
+    assert "Grand Total : ₹22917.00" in disp
+
+
+
 
 

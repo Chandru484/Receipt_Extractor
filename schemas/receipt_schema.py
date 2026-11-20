@@ -309,6 +309,33 @@ class ReceiptItem(BaseModel):
         return s if s else None
 
 
+class HSNTaxSummaryItem(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    hsn_sac: Optional[str] = None
+    taxable_value: Optional[CurrencyValue] = None
+    cgst_rate: Optional[str] = None
+    cgst_amount: Optional[CurrencyValue] = None
+    sgst_rate: Optional[str] = None
+    sgst_amount: Optional[CurrencyValue] = None
+    igst_rate: Optional[str] = None
+    igst_amount: Optional[CurrencyValue] = None
+    total_tax_amount: Optional[CurrencyValue] = None
+
+    @field_validator("taxable_value", "cgst_amount", "sgst_amount", "igst_amount", "total_tax_amount", mode="before")
+    @classmethod
+    def validate_amounts(cls, v: Any) -> Optional[CurrencyValue]:
+        return format_currency_value(v)
+
+    @field_validator("hsn_sac", "cgst_rate", "sgst_rate", "igst_rate", mode="before")
+    @classmethod
+    def validate_strings(cls, v: Any) -> Optional[str]:
+        if v is None:
+            return None
+        s = str(v).strip()
+        return s if s else None
+
+
 class ReceiptData(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -384,6 +411,9 @@ class ReceiptData(BaseModel):
 
     # Bank Details
     bank_details: Optional[BankDetails] = None
+
+    # HSN / SAC Tax Summary Breakdown
+    hsn_tax_summary: Optional[List[HSNTaxSummaryItem]] = None
 
     # Additional captured fields from receipt
     extra_fields: Dict[str, Any] = Field(default_factory=dict)
@@ -568,6 +598,19 @@ class ReceiptData(BaseModel):
             if it.total_price is not None:
                 it.total_price = format_currency_value(it.total_price, curr_sym)
 
+        if self.hsn_tax_summary:
+            for item in self.hsn_tax_summary:
+                if item.taxable_value is not None:
+                    item.taxable_value = format_currency_value(item.taxable_value, curr_sym)
+                if item.cgst_amount is not None:
+                    item.cgst_amount = format_currency_value(item.cgst_amount, curr_sym)
+                if item.sgst_amount is not None:
+                    item.sgst_amount = format_currency_value(item.sgst_amount, curr_sym)
+                if item.igst_amount is not None:
+                    item.igst_amount = format_currency_value(item.igst_amount, curr_sym)
+                if item.total_tax_amount is not None:
+                    item.total_tax_amount = format_currency_value(item.total_tax_amount, curr_sym)
+
         # Synchronize invoice_number and receipt_number
         doc_num = self.invoice_number or self.receipt_number
         if doc_num:
@@ -654,7 +697,7 @@ class ReceiptData(BaseModel):
             "invoice_date", "date_paid", "payment_mode", "salesman", "amount_in_words",
             "items", "subtotal", "cgst", "cgst_rate", "sgst", "sgst_rate", "igst",
             "igst_rate", "rounding_off", "tax", "grand_total", "amount_paid",
-            "refunded_amount", "refunded_on", "currency", "bank_details", "extra_fields"
+            "refunded_amount", "refunded_on", "currency", "bank_details", "hsn_tax_summary", "extra_fields"
         }
         if self.extra_fields is None:
             self.extra_fields = {}

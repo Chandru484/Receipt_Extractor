@@ -146,6 +146,31 @@ def format_receipt_display(receipt: ReceiptData) -> str:
     if receipt.amount_in_words:
         lines.append(f"Amount in Words : {receipt.amount_in_words}")
 
+    # === HSN / TAX SUMMARY ===
+    if receipt.hsn_tax_summary:
+        lines.append("")
+        lines.append("HSN / Tax Summary :")
+        lines.append("[")
+        for h in receipt.hsn_tax_summary:
+            parts = []
+            if h.hsn_sac:
+                parts.append(f"HSN/SAC : {h.hsn_sac}")
+            if h.taxable_value is not None:
+                parts.append(f"Taxable : {h.taxable_value}")
+            if h.sgst_amount is not None:
+                r = f" ({h.sgst_rate})" if h.sgst_rate else ""
+                parts.append(f"SGST{r} : {h.sgst_amount}")
+            if h.cgst_amount is not None:
+                r = f" ({h.cgst_rate})" if h.cgst_rate else ""
+                parts.append(f"CGST{r} : {h.cgst_amount}")
+            if h.igst_amount is not None:
+                r = f" ({h.igst_rate})" if h.igst_rate else ""
+                parts.append(f"IGST{r} : {h.igst_amount}")
+            if h.total_tax_amount is not None:
+                parts.append(f"Tax : {h.total_tax_amount}")
+            lines.append(f"  {', '.join(parts)}")
+        lines.append("]")
+
     # === BANK DETAILS ===
     if receipt.bank_details:
         bd = receipt.bank_details
@@ -235,6 +260,142 @@ def format_receipt_display(receipt: ReceiptData) -> str:
     return "\n".join(lines).strip()
 
 
+def extract_hsn_tax_summary(ocr_text: str) -> Tuple[List[Dict[str, Any]], Dict[str, float]]:
+    """Parse HSN/SAC-wise tax breakdown table and authoritative totals from invoice OCR."""
+    if not ocr_text:
+        return [], {}
+
+    # Check for HSN / Tax table header
+    has_hsn_table = bool(re.search(r"HSN/SAC\s+(?:Taxable|Amount|GST%|SGST|CGST|Rate)", ocr_text, re.IGNORECASE))
+    if not has_hsn_table:
+        return [], {}
+
+    m = re.search(r"HSN/SAC\s+Taxable.*?(?=Amount Chargeable|Bank Details|Rupees|\bTerms\b|$)", ocr_text, re.DOTALL | re.IGNORECASE)
+    if not m:
+        return [], {}
+
+    block = m.group(0)
+    lines = [l.strip() for l in block.splitlines() if l.strip()]
+    rows: List[Dict[str, Any]] = []
+    totals: Dict[str, float] = {}
+
+    for line in lines:
+        tot_m = re.match(r"^Total\s+([0-9,]+\.\d{2})\s+([0-9,]+\.\d{2})\s+([0-9,]+\.\d{2})", line, re.IGNORECASE)
+        if tot_m:
+            totals["subtotal"] = float(tot_m.group(1).replace(",", ""))
+            totals["sgst"] = float(tot_m.group(2).replace(",", ""))
+            totals["cgst"] = float(tot_m.group(3).replace(",", ""))
+            totals["tax"] = round(totals["sgst"] + totals["cgst"], 2)
+            continue
+
+        row_m = re.search(r"([\d,\s]+?)\s+([0-9,]+\.\d{2})\s+(\d+(?:\.\d+)?)\s+([0-9,]+\.\d{2})\s+(\d+(?:\.\d+)?)\s+([0-9,]+\.\d{2})", line)
+        if row_m:
+            hsn = re.sub(r"\s+", "", row_m.group(1)).strip(",")
+            taxable = float(row_m.group(2).replace(",", ""))
+            sgst_r = f"{float(row_m.group(3)):g}%"
+            sgst_a = float(row_m.group(4).replace(",", ""))
+            cgst_r = f"{float(row_m.group(5)):g}%"
+            cgst_a = float(row_m.group(6).replace(",", ""))
+            rows.append({
+                "hsn_sac": hsn,
+                "taxable_value": taxable,
+                "sgst_rate": sgst_r,
+                "sgst_amount": sgst_a,
+                "cgst_rate": cgst_r,
+                "cgst_amount": cgst_a,
+                "total_tax_amount": round(sgst_a + cgst_a, 2)
+            })
+        elif rows and (line.startswith(",") or re.match(r"^[,\d\s]+", line)):
+            m_cont = re.match(r"^[,\d\s]+", line)
+            if m_cont:
+                extra = re.sub(r"\s+", "", m_cont.group(0)).strip(",")
+                if extra:
+                    rows[-1]["hsn_sac"] += "," + extra
+
+    sub_m = re.search(r"Sub\s*Total\s*[:=]?\s*([0-9,]+\.\d{2})", ocr_text, re.IGNORECASE)
+    if sub_m:
+        totals["subtotal"] = float(sub_m.group(1).replace(",", ""))
+
+    net_m = re.search(r"(?:NET\s*TOTAL|Grand\s*Total)\s*[:=]?\s*([0-9,]+\.\d{2})", ocr_text, re.IGNORECASE)
+    if net_m:
+        totals["grand_total"] = float(net_m.group(1).replace(",", ""))
+
+    ro_m = re.search(r"Round\s*Off\s*[:=]?\s*([-+]?[0-9,]+\.\d{2})", ocr_text, re.IGNORECASE)
+    if ro_m:
+        totals["rounding_off"] = float(ro_m.group(1).replace(",", ""))
+
+    if rows and ("cgst" not in totals or "sgst" not in totals):
+        sum_taxable = round(sum(r["taxable_value"] for r in rows), 2)
+        sum_sgst = round(sum(r["sgst_amount"] for r in rows if "sgst_amount" in r), 2)
+        sum_cgst = round(sum(r["cgst_amount"] for r in rows if "cgst_amount" in r), 2)
+        totals.setdefault("subtotal", sum_taxable)
+        totals.setdefault("sgst", sum_sgst)
+        totals.setdefault("cgst", sum_cgst)
+        totals.setdefault("tax", round(sum_sgst + sum_cgst, 2))
+
+    return rows, totals
+
+
+def reconcile_missing_ocr_items(receipt: ReceiptData, ocr_text: str) -> None:
+    """Scan OCR text for numbered line items missing from LLM extraction and add them."""
+    if not ocr_text or not receipt.items:
+        return
+
+    existing_sl_nos = set()
+    for it in receipt.items:
+        if it.sl_no:
+            clean_sl = re.sub(r"[^\d]", "", str(it.sl_no))
+            if clean_sl:
+                existing_sl_nos.add(clean_sl)
+
+    page_blocks = re.split(r"(?:^|\n)---\s*Page\s+(\d+)\s*---", ocr_text, flags=re.IGNORECASE)
+    pages_to_check = []
+    if len(page_blocks) > 1:
+        for i in range(1, len(page_blocks), 2):
+            p_num = int(page_blocks[i])
+            p_txt = page_blocks[i + 1] if i + 1 < len(page_blocks) else ""
+            pages_to_check.append((p_num, p_txt))
+    else:
+        pages_to_check.append((1, ocr_text))
+
+    from schemas.receipt_schema import ReceiptItem
+    new_items_added = False
+
+    for p_num, p_txt in pages_to_check:
+        for line in p_txt.splitlines():
+            l_str = line.strip()
+            m = re.match(r"^(\d{1,3})\s+(.+?)\s+(\d{4,8})\s+(\d+)\s+([0-9,]+(?:\.\d+)?)\s*(?:%\s*)?([A-Za-z]+)\s+([0-9,]+\.\d{2})\s+([0-9,]+\.\d{2})$", l_str)
+            if m:
+                sl = m.group(1)
+                if sl not in existing_sl_nos:
+                    u_p = float(m.group(7).replace(",", ""))
+                    t_p = float(m.group(8).replace(",", ""))
+                    new_item = ReceiptItem(
+                        page=p_num,
+                        sl_no=sl,
+                        item_name=m.group(2).strip(),
+                        hsn_sac=m.group(3),
+                        gst_rate=f"{m.group(4)}%",
+                        quantity=float(m.group(5).replace(",", "")),
+                        uom=m.group(6),
+                        unit_price=u_p,
+                        total_price=t_p,
+                        discount_percent="0.00%"
+                    )
+                    receipt.items.append(new_item)
+                    existing_sl_nos.add(sl)
+                    new_items_added = True
+
+    if new_items_added:
+        def sort_key(it):
+            try:
+                sl_int = int(re.sub(r"[^\d]", "", str(it.sl_no or "0")))
+            except Exception:
+                sl_int = 0
+            return (it.page or 1, sl_int)
+        receipt.items.sort(key=sort_key)
+
+
 def validate_and_reconcile_receipt(
     receipt: ReceiptData,
     ocr_text: str = ""
@@ -259,6 +420,9 @@ def validate_and_reconcile_receipt(
             receipt.currency = detected_curr
 
     # 3. Item totals check and price mathematical consistency check
+    if ocr_text:
+        reconcile_missing_ocr_items(receipt, ocr_text)
+
     items_total_sum = 0.0
     valid_item_prices = 0
     if receipt.items:
@@ -296,8 +460,28 @@ def validate_and_reconcile_receipt(
 
     items_total_sum = round(items_total_sum, 2)
 
-    # 4a. OCR Fallbacks for Totals if missing from LLM response
+    # 4a. HSN/SAC Tax Summary Table and Authoritative Totals
     if ocr_text:
+        hsn_rows, hsn_totals = extract_hsn_tax_summary(ocr_text)
+        if hsn_rows:
+            from schemas.receipt_schema import HSNTaxSummaryItem
+            receipt.hsn_tax_summary = [HSNTaxSummaryItem(**r) for r in hsn_rows]
+
+        if hsn_totals:
+            if "subtotal" in hsn_totals:
+                receipt.subtotal = hsn_totals["subtotal"]
+            if "cgst" in hsn_totals:
+                receipt.cgst = hsn_totals["cgst"]
+            if "sgst" in hsn_totals:
+                receipt.sgst = hsn_totals["sgst"]
+            if "tax" in hsn_totals:
+                receipt.tax = hsn_totals["tax"]
+            if "rounding_off" in hsn_totals:
+                receipt.rounding_off = hsn_totals["rounding_off"]
+            if "grand_total" in hsn_totals:
+                receipt.grand_total = hsn_totals["grand_total"]
+
+        # Fallbacks for any still-missing totals
         if receipt.subtotal is None:
             sub_m = re.search(r"(?:Subtotal|Sub\s*Total|Taxable\s*(?:Amount|Value)?|Total\s*(?:Amount)?)\s*[:=]?\s*[$₹€£]?\s*([0-9,]+\.\d{2})", ocr_text, re.IGNORECASE)
             if not sub_m:
@@ -443,8 +627,12 @@ def validate_and_reconcile_receipt(
                         receipt.sgst_rate = half_str
                     break
 
-    # Fallback: compute from tax amounts and subtotal
-    if receipt.subtotal and receipt.subtotal > 0:
+    # Fallback: compute from tax amounts and subtotal (only for single-rate invoices)
+    if receipt.hsn_tax_summary and len(receipt.hsn_tax_summary) > 1:
+        receipt.cgst_rate = None
+        receipt.sgst_rate = None
+        receipt.igst_rate = None
+    elif receipt.subtotal and receipt.subtotal > 0:
         if receipt.cgst and not receipt.cgst_rate:
             r = round((receipt.cgst / receipt.subtotal) * 100, 1)
             receipt.cgst_rate = f"{int(r)}%" if r.is_integer() else f"{r}%"

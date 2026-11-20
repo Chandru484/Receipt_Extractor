@@ -66,43 +66,57 @@ def _repair_truncated_json(raw: str) -> str:
     return text
 
 
-def _call_groq(client: Groq, model: str, messages: list, max_tokens: int) -> str:
+def _call_groq(client: Groq, model: str, messages: list, max_tokens: int, json_mode: bool = True) -> str:
     """Execute a single Groq chat completion and return the raw content string."""
-    completion = client.chat.completions.create(
-        model=model,
-        messages=messages,
-        temperature=0.0,
-        max_completion_tokens=max_tokens,
-        response_format={"type": "json_object"}
-    )
+    kwargs: Dict[str, Any] = {
+        "model": model,
+        "messages": messages,
+        "temperature": 0.0,
+        "max_completion_tokens": max_tokens,
+    }
+    if json_mode:
+        kwargs["response_format"] = {"type": "json_object"}
+
+    # For reasoning models (e.g. openai/gpt-oss-120b, openai/gpt-oss-20b), keep reasoning low so output is not exhausted
+    if any(m in model.lower() for m in ["gpt-oss", "o1", "o3"]):
+        kwargs["reasoning_effort"] = getattr(settings, "GROQ_REASONING_EFFORT", "low")
+
+    completion = client.chat.completions.create(**kwargs)
     content = completion.choices[0].message.content or ""
     return content
 
 
 def _extract_with_single_client(client: Groq, model: str, messages: list) -> ReceiptData:
     """Send extraction request to a specific Groq client instance and validate response."""
-    tokens = settings.GROQ_MAX_COMPLETION_TOKENS
+    tokens = min(settings.GROQ_MAX_COMPLETION_TOKENS, 2500)
+    raw = None
+
     try:
-        raw = _call_groq(client, model=model, messages=messages, max_tokens=tokens)
-    except RateLimitError as rle:
-        err_str = str(rle).lower()
-        # If rate limit exceeded because requested output tokens exceeded quota limit (e.g. OTPM 1000 on Qwen)
-        if "reduce max_tokens" in err_str or "tokens" in err_str or "otpm" in err_str:
-            if "qwen" in model.lower():
-                alt_model = "openai/gpt-oss-120b"
-                logger.warning(
-                    f"Model {model} hit OTPM rate limit. Auto-switching to higher quota model: {alt_model}..."
-                )
-                try:
-                    raw = _call_groq(client, model=alt_model, messages=messages, max_tokens=tokens)
-                except Exception:
-                    raw = _call_groq(client, model="openai/gpt-oss-20b", messages=messages, max_tokens=tokens)
-            else:
-                reduced_tokens = 950 if "limit 1000" in err_str else max(900, tokens // 2)
-                logger.warning(f"Rate limit hit requesting {tokens} tokens. Retrying with reduced tokens: {reduced_tokens}")
-                raw = _call_groq(client, model=model, messages=messages, max_tokens=reduced_tokens)
-        else:
-            raise
+        raw = _call_groq(client, model=model, messages=messages, max_tokens=tokens, json_mode=True)
+    except Exception as exc:
+        err_str = str(exc).lower()
+        # 1. Handle JSON validation failure in Groq (e.g. code: json_validate_failed)
+        if "json_validate_failed" in err_str or "failed to validate json" in err_str:
+            logger.warning(f"Groq json_object validation failed on model {model}. Retrying in raw mode...")
+            try:
+                raw = _call_groq(client, model=model, messages=messages, max_tokens=tokens, json_mode=False)
+            except Exception as e2:
+                err_str = str(e2).lower()
+                exc = e2
+
+        # 2. Handle TPM / OTPM / Rate limit / Request too large
+        if raw is None and any(w in err_str for w in ["limit 8000", "reduce max_tokens", "tokens", "otpm", "tpm", "413", "rate_limit_exceeded"]):
+            reduced_tokens = 1500 if tokens > 1500 else 1000
+            logger.warning(f"Token limit exceeded requesting {tokens} tokens on {model}. Retrying with {reduced_tokens} tokens...")
+            try:
+                raw = _call_groq(client, model=model, messages=messages, max_tokens=reduced_tokens, json_mode=False)
+            except Exception:
+                # Try fallback model if on primary
+                alt_model = "openai/gpt-oss-20b" if "120b" in model else "openai/gpt-oss-120b"
+                raw = _call_groq(client, model=alt_model, messages=messages, max_tokens=1500, json_mode=False)
+
+        if raw is None:
+            raise exc
 
     if not raw:
         raise GroqExtractionError("Groq returned an empty response.")
@@ -174,11 +188,16 @@ def _merge_receipt_pages(page_results: List[tuple[int, ReceiptData]]) -> Receipt
             if key in {"items", "extra_fields", "bank_details"}:
                 continue
             if value not in (None, "", [], {}):
-                if key not in merged or merged[key] in (None, "", [], {}):
+                # For financial totals and tax summaries, the LAST page that contains them is authoritative
+                if key in {"subtotal", "tax", "grand_total", "cgst", "sgst", "igst", "rounding_off", "amount_in_words", "hsn_tax_summary"}:
+                    merged[key] = value
+                elif key not in merged or merged[key] in (None, "", [], {}):
                     merged[key] = value
 
         if receipt.bank_details:
             merged["bank_details"] = receipt.bank_details.model_dump(exclude_none=True)
+        if receipt.hsn_tax_summary:
+            merged["hsn_tax_summary"] = [h.model_dump(exclude_none=True) for h in receipt.hsn_tax_summary]
 
     merged["items"] = items
     if extra_fields:

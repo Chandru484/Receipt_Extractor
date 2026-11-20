@@ -233,35 +233,51 @@ async def extract_receipt(
 
 
 def _extract_from_pdf(pdf_bytes: bytes) -> Dict[str, Any]:
-    """Convert PDF pages to images and run OCR + LLM extraction on each page.
+    """Convert PDF pages to text and run extraction.
 
-    For multi-page PDFs, full_text from all pages is concatenated and fed to the LLM
-    once so that invoice headers on page 1 and line items on page 2 are unified.
+    For digitally-generated PDFs, extracts clean embedded text directly in milliseconds.
+    For scanned/photographed PDFs, falls back to PaddleOCR image processing.
     """
+    import pypdfium2
     from processing.pdf_processor import pdf_bytes_to_images
     from processing.ocr_engine import extract_ocr_text
 
-    page_images = pdf_bytes_to_images(pdf_bytes, dpi=200)
-
-    # OCR every page and concatenate full text with a page separator
+    pdf = pypdfium2.PdfDocument(pdf_bytes)
+    total_pages = len(pdf)
     all_lines = []
     all_texts = []
-    for page_num, page_img in enumerate(page_images, start=1):
-        processed = preprocess_image_from_array(page_img)
-        ocr_result = extract_ocr_text(processed)
-        page_lines = ocr_result.get("lines", [])
-        page_text = ocr_result.get("full_text", "")
-        # Tag each line with the originating page number
-        for line in page_lines:
-            line["page"] = page_num
-        all_lines.extend(page_lines)
-        if page_text:
-            all_texts.append(f"--- Page {page_num} ---\n{page_text}")
+    has_digital_text = True
+
+    for page_num, page in enumerate(pdf, start=1):
+        text_page = page.get_textpage()
+        page_text = text_page.get_text_range().strip()
+        if len(page_text) < 40:
+            has_digital_text = False
+            break
+        for l in page_text.splitlines():
+            l_str = l.strip()
+            if l_str:
+                all_lines.append({"text": l_str, "page": page_num})
+        all_texts.append(f"--- Page {page_num} ---\n{page_text}")
+
+    if not has_digital_text:
+        all_lines = []
+        all_texts = []
+        page_images = pdf_bytes_to_images(pdf_bytes, dpi=200)
+        for page_num, page_img in enumerate(page_images, start=1):
+            processed = preprocess_image_from_array(page_img)
+            ocr_result = extract_ocr_text(processed)
+            page_lines = ocr_result.get("lines", [])
+            page_text = ocr_result.get("full_text", "")
+            for line in page_lines:
+                line["page"] = page_num
+            all_lines.extend(page_lines)
+            if page_text:
+                all_texts.append(f"--- Page {page_num} ---\n{page_text}")
 
     combined_text = "\n\n".join(all_texts)
-    combined_ocr = {"full_text": combined_text, "lines": all_lines, "total_pages": len(page_images)}
+    combined_ocr = {"full_text": combined_text, "lines": all_lines, "total_pages": total_pages}
 
-    # Run LLM extraction on the merged full text (more context = better accuracy)
     from core.receipt_extractor import process_receipt_from_text
     return process_receipt_from_text(combined_text, combined_ocr)
 
