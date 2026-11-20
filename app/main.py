@@ -2,12 +2,15 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile, status
 from starlette.concurrency import run_in_threadpool
+from fastapi.responses import HTMLResponse
 
+from ai.chatbot import ask_chatbot
 from ai.groq_client import GroqExtractionError
 from core.config import settings
 from core.constants import ALLOWED_IMAGE_EXTENSIONS, ALLOWED_PDF_EXTENSIONS, ALLOWED_EXTENSIONS
 from core.receipt_extractor import process_receipt
 from processing.image_processor import preprocess_image
+from schemas.chat_schema import ChatRequest, ChatResponse
 from schemas.receipt_schema import ReceiptResponse
 from storage.mongo_client import (
     save_extraction_to_mongodb,
@@ -83,6 +86,26 @@ async def get_stored_receipt(receipt_id: str):
             detail=f"Stored receipt with ID '{receipt_id}' not found."
         )
     return record
+
+@app.get("/chat", response_class=HTMLResponse, include_in_schema=False)
+async def live_chat_page():
+    with open("test_chat.html", "r", encoding="utf-8") as f:
+        return HTMLResponse(content=f.read())
+
+
+@app.post(
+    "/chat/ask",
+    response_model=ChatResponse,
+    summary="Ask project AI chatbot",
+    description=(
+        "Ask automated questions about the Receipt Extractor platform. "
+        "Answers pre-trained FAQs, explains API parameters and features, "
+        "and automatically flags when escalation to human support on Tawk.to is needed."
+    )
+)
+async def chat_with_bot(request: ChatRequest):
+    """Answer questions about the project using Groq LLM with Tawk.to human escalation."""
+    return await run_in_threadpool(ask_chatbot, request)
 
 
 @app.post(

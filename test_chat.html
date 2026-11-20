@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Receipt Extractor AI Assistant & Live Support</title>
+    <style>
+        :root {
+            --primary: #10a37f;
+            --primary-hover: #0e8466;
+            --bg-color: #f7f9fb;
+            --chat-bg: #ffffff;
+            --user-bubble: #10a37f;
+            --bot-bubble: #f0f2f5;
+            --text-main: #1f2937;
+            --text-muted: #6b7280;
+            --border-color: #e5e7eb;
+            --tawk-color: #03a84e;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        body {
+            background: linear-gradient(135deg, #eef2f7 0%, #e0e7f1 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            color: var(--text-main);
+        }
+
+        .chat-container {
+            width: 100%;
+            max-width: 720px;
+            height: 85vh;
+            max-height: 820px;
+            background: var(--chat-bg);
+            border-radius: 16px;
+            box-shadow: 0 12px 36px rgba(0, 0, 0, 0.12);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            border: 1px solid var(--border-color);
+        }
+
+        /* Header */
+        .chat-header {
+            padding: 16px 20px;
+            background: #ffffff;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .bot-avatar {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #10a37f 0%, #0d9488 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 22px;
+            box-shadow: 0 2px 6px rgba(16, 163, 127, 0.25);
+        }
+
+        .header-title h2 {
+            font-size: 17px;
+            font-weight: 600;
+            color: #111827;
+        }
+
+        .status-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            color: #059669;
+            font-weight: 500;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            background: #10b981;
+            border-radius: 50%;
+            display: inline-block;
+            box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.6); }
+            70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+        }
+
+        .btn-live-human {
+            background: #f0fdf4;
+            color: #15803d;
+            border: 1px solid #bbf7d0;
+            padding: 8px 14px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.2s;
+        }
+
+        .btn-live-human:hover {
+            background: #dcfce7;
+            border-color: #86efac;
+            transform: translateY(-1px);
+        }
+
+        /* Message Area */
+        .chat-messages {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            background: #fafbfc;
+        }
+
+        .message-row {
+            display: flex;
+            gap: 10px;
+            max-width: 82%;
+        }
+
+        .message-row.user {
+            align-self: flex-end;
+            flex-direction: row-reverse;
+        }
+
+        .message-row.bot {
+            align-self: flex-start;
+        }
+
+        .msg-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 15px;
+            flex-shrink: 0;
+            margin-top: 2px;
+        }
+
+        .msg-avatar.bot-av {
+            background: #10a37f;
+            color: white;
+        }
+
+        .msg-avatar.user-av {
+            background: #4b5563;
+            color: white;
+        }
+
+        .bubble {
+            padding: 12px 16px;
+            border-radius: 14px;
+            font-size: 14.5px;
+            line-height: 1.55;
+            word-wrap: break-word;
+            position: relative;
+        }
+
+        .message-row.user .bubble {
+            background: var(--user-bubble);
+            color: #ffffff;
+            border-bottom-right-radius: 3px;
+        }
+
+        .message-row.bot .bubble {
+            background: #ffffff;
+            color: var(--text-main);
+            border: 1px solid var(--border-color);
+            border-bottom-left-radius: 3px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+        }
+
+        .bubble p {
+            margin-bottom: 8px;
+        }
+        .bubble p:last-child {
+            margin-bottom: 0;
+        }
+        .bubble ul, .bubble ol {
+            margin-left: 20px;
+            margin-bottom: 8px;
+        }
+        .bubble code {
+            background: rgba(0, 0, 0, 0.06);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+        .message-row.user .bubble code {
+            background: rgba(255, 255, 255, 0.2);
+            color: #fff;
+        }
+        .bubble a {
+            color: #0284c7;
+            text-decoration: underline;
+        }
+
+        /* Action buttons inside bot messages */
+        .bot-actions {
+            margin-top: 10px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .action-chip {
+            background: #ecfdf5;
+            color: #047857;
+            border: 1px solid #a7f3d0;
+            padding: 6px 12px;
+            border-radius: 16px;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .action-chip:hover {
+            background: #d1fae5;
+            border-color: #6ee7b7;
+        }
+
+        /* Quick suggestions at bottom */
+        .suggestions-bar {
+            padding: 8px 16px;
+            background: #ffffff;
+            border-top: 1px solid #f1f5f9;
+            display: flex;
+            gap: 8px;
+            overflow-x: auto;
+            white-space: nowrap;
+            scrollbar-width: thin;
+        }
+
+        .suggestion-pill {
+            background: #f3f4f6;
+            color: #374151;
+            padding: 6px 12px;
+            border-radius: 14px;
+            font-size: 12.5px;
+            border: 1px solid #e5e7eb;
+            cursor: pointer;
+            transition: all 0.2s;
+            flex-shrink: 0;
+        }
+
+        .suggestion-pill:hover {
+            background: #e5e7eb;
+            border-color: #d1d5db;
+        }
+
+        /* Input Area */
+        .chat-input-area {
+            padding: 14px 18px;
+            background: #ffffff;
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .input-tools {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .tool-btn {
+            background: transparent;
+            border: 1px solid #e5e7eb;
+            border-radius: 50%;
+            width: 38px;
+            height: 38px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            color: #4b5563;
+            font-size: 16px;
+            transition: all 0.2s;
+        }
+
+        .tool-btn:hover {
+            background: #f3f4f6;
+            color: #111827;
+            border-color: #d1d5db;
+        }
+
+        .chat-input-area input {
+            flex: 1;
+            padding: 11px 16px;
+            border-radius: 24px;
+            border: 1px solid var(--border-color);
+            font-size: 14.5px;
+            outline: none;
+            transition: border-color 0.2s;
+            background: #f9fafb;
+        }
+
+        .chat-input-area input:focus {
+            border-color: var(--primary);
+            background: #ffffff;
+        }
+
+        .send-btn {
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 16px;
+            transition: all 0.2s;
+            box-shadow: 0 2px 6px rgba(16, 163, 127, 0.3);
+        }
+
+        .send-btn:hover {
+            background: var(--primary-hover);
+            transform: scale(1.05);
+        }
+
+        /* Typing indicator */
+        .typing-indicator {
+            display: none;
+            align-self: flex-start;
+            background: #ffffff;
+            border: 1px solid var(--border-color);
+            padding: 10px 16px;
+            border-radius: 14px;
+            gap: 4px;
+        }
+
+        .typing-indicator.active {
+            display: inline-flex;
+        }
+
+        .typing-indicator span {
+            width: 6px;
+            height: 6px;
+            background: #9ca3af;
+            border-radius: 50%;
+            animation: bounce 1.4s infinite ease-in-out both;
+        }
+
+        .typing-indicator span:nth-child(1) { animation-delay: -0.32s; }
+        .typing-indicator span:nth-child(2) { animation-delay: -0.16s; }
+
+        @keyframes bounce {
+            0%, 80%, 100% { transform: scale(0); }
+            40% { transform: scale(1.0); }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="chat-container">
+        <!-- Header -->
+        <div class="chat-header">
+            <div class="header-left">
+                <div class="bot-avatar">🤖</div>
+                <div class="header-title">
+                    <h2>Receipt Extractor AI</h2>
+                    <span class="status-pill"><span class="status-dot"></span> Powered by Groq • Online</span>
+                </div>
+            </div>
+            <div>
+                <button class="btn-live-human" id="btn-escalate" onclick="triggerTawkLiveSupport('Visitor requested human support')">
+                    💬 Talk to Human / Attach Media
+                </button>
+            </div>
+        </div>
+
+        <!-- Chat Message Thread -->
+        <div class="chat-messages" id="chat-messages">
+            <!-- Welcome message -->
+            <div class="message-row bot">
+                <div class="msg-avatar bot-av">🤖</div>
+                <div class="bubble">
+                    <p>👋 Hello! I am the <strong>Receipt Extractor AI Assistant</strong>.</p>
+                    <p>I can help you with questions about extracting invoices/receipts, supported formats, API documentation, or MongoDB duplicate checking.</p>
+                    <p><em>Need to upload an image to ask queries or send a voice message? Click <strong>Talk to Human / Attach Media</strong> to chat directly with our team!</em></p>
+                    <div class="bot-actions">
+                        <span class="action-chip" onclick="askQuickQuestion('What file formats are supported?')">📄 Supported Formats</span>
+                        <span class="action-chip" onclick="askQuickQuestion('How do I extract a receipt via API?')">⚡ How to Extract</span>
+                        <span class="action-chip" onclick="askQuickQuestion('Where can I see the Swagger API documentation?')">📖 Swagger Docs</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="typing-indicator" id="typing-indicator">
+                <span></span><span></span><span></span>
+            </div>
+        </div>
+
+        <!-- Suggestions bar -->
+        <div class="suggestions-bar">
+            <div class="suggestion-pill" onclick="askQuickQuestion('What file formats are supported?')">📄 Supported Formats</div>
+            <div class="suggestion-pill" onclick="askQuickQuestion('How does duplicate invoice detection work?')">🔄 Duplicate Detection</div>
+            <div class="suggestion-pill" onclick="askQuickQuestion('What fields are extracted in the JSON?')">🔍 Extracted Fields</div>
+            <div class="suggestion-pill" onclick="askQuickQuestion('How to test using Swagger UI?')">🚀 Swagger /docs</div>
+            <div class="suggestion-pill" onclick="triggerTawkLiveSupport('Visitor selected Talk to Human Agent')">👤 Talk to Live Human</div>
+        </div>
+
+        <!-- Input Area -->
+        <div class="chat-input-area">
+            <div class="input-tools">
+                <button class="tool-btn" title="Upload Image to Human Agent on Tawk.to" onclick="triggerTawkLiveSupport('Visitor clicked Upload Image button')">📎</button>
+                <button class="tool-btn" title="Send Voice Message to Human Agent on Tawk.to" onclick="triggerTawkLiveSupport('Visitor clicked Voice Message button')">🎙️</button>
+            </div>
+            <input type="text" id="user-input" placeholder="Ask about the Receipt Extractor API or request human support..." autocomplete="off">
+            <button class="send-btn" id="send-btn" onclick="sendMessage()">➤</button>
+        </div>
+    </div>
+
+    <!-- Tawk.to Script Integration -->
+    <!--Start of Tawk.to Script-->
+    <script type="text/javascript">
+    var Tawk_API = Tawk_API || {}, Tawk_LoadStart = new Date();
+    (function(){
+        var s1 = document.createElement("script"), s0 = document.getElementsByTagName("script")[0];
+        s1.async = true;
+        s1.src = 'https://embed.tawk.to/6afff70e6c90d43c92f4c111/1k7rtq4pg';
+        s1.charset = 'UTF-8';
+        s1.setAttribute('crossorigin','*');
+        s0.parentNode.insertBefore(s1, s0);
+    })();
+    </script>
+    <!--End of Tawk.to Script-->
+
+    <!-- Chat Widget Logic -->
+    <script>
+        const chatMessages = document.getElementById('chat-messages');
+        const userInput = document.getElementById('user-input');
+        const typingIndicator = document.getElementById('typing-indicator');
+        const chatHistory = [];
+
+        userInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+
+        function askQuickQuestion(text) {
+            userInput.value = text;
+            sendMessage();
+        }
+
+        async function sendMessage() {
+            const text = userInput.value.trim();
+            if (!text) return;
+
+            // Append user message to UI
+            appendMessage('user', text);
+            userInput.value = '';
+            chatHistory.push({ role: 'user', content: text });
+
+            // Show typing indicator
+            showTyping(true);
+
+            try {
+                const response = await fetch('/chat/ask', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        message: text,
+                        history: chatHistory
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error ${response.status}`);
+                }
+
+                const data = await response.json();
+                showTyping(false);
+
+                // Append bot reply to UI
+                appendMessage('bot', data.reply, data.escalate_to_tawk);
+                chatHistory.push({ role: 'assistant', content: data.reply });
+
+                // If Groq indicates human escalation is required (e.g. image upload, voice note, human request)
+                if (data.escalate_to_tawk) {
+                    setTimeout(() => {
+                        triggerTawkLiveSupport(text);
+                    }, 1200);
+                }
+
+            } catch (err) {
+                showTyping(false);
+                appendMessage('bot', 'Sorry, I encountered a temporary network issue. You can click **Talk to Human / Attach Media** above to speak with our live team directly!');
+            }
+        }
+
+        function appendMessage(sender, text, showLiveAgentBtn = false) {
+            const row = document.createElement('div');
+            row.className = `message-row ${sender}`;
+
+            const avatar = document.createElement('div');
+            avatar.className = `msg-avatar ${sender === 'bot' ? 'bot-av' : 'user-av'}`;
+            avatar.textContent = sender === 'bot' ? '🤖' : '👤';
+
+            const bubble = document.createElement('div');
+            bubble.className = 'bubble';
+            
+            // Format markdown-like text
+            bubble.innerHTML = formatMarkdown(text);
+
+            if (sender === 'bot' && showLiveAgentBtn) {
+                const actions = document.createElement('div');
+                actions.className = 'bot-actions';
+                actions.innerHTML = `
+                    <span class="action-chip" style="background:#fee2e2; color:#b91c1c; border-color:#fca5a5;" onclick="triggerTawkLiveSupport('Escalated from chatbot')">
+                        💬 Open Live Chat (Upload Image / Voice)
+                    </span>
+                `;
+                bubble.appendChild(actions);
+            }
+
+            row.appendChild(avatar);
+            row.appendChild(bubble);
+
+            // Insert before typing indicator
+            chatMessages.insertBefore(row, typingIndicator);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        function showTyping(show) {
+            if (show) {
+                typingIndicator.classList.add('active');
+                chatMessages.appendChild(typingIndicator);
+            } else {
+                typingIndicator.classList.remove('active');
+            }
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        // Trigger Tawk.to human live chat with session attributes
+        function triggerTawkLiveSupport(reason = '') {
+            appendMessage('bot', 'Connecting you directly to our human agent on **Tawk.to Live Chat**... You can now attach your receipt images or send voice messages in the live chat window!');
+
+            if (window.Tawk_API && typeof window.Tawk_API.maximize === 'function') {
+                try {
+                    window.Tawk_API.setAttributes({
+                        'referring_topic': reason,
+                        'last_bot_query': chatHistory.length ? chatHistory[chatHistory.length - 1].content : reason
+                    }, function(error){});
+                    window.Tawk_API.maximize();
+                } catch(e) {
+                    console.log('Tawk maximize error:', e);
+                }
+            } else {
+                alert('Tawk.to live chat is loading. Please look at the bottom-right green chat bubble or check if your popup blocker is active.');
+            }
+        }
+
+        function formatMarkdown(text) {
+            let escaped = text
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;");
+
+            // Bold **text**
+            escaped = escaped.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+            // Italic *text*
+            escaped = escaped.replace(/\*(.*?)\*/g, '<em>$1</em>');
+            // Inline code `code`
+            escaped = escaped.replace(/`([^`]+)`/g, '<code>$1</code>');
+            // Links [text](url)
+            escaped = escaped.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
+            // Line breaks
+            escaped = escaped.replace(/\n/g, '<br>');
+
+            return escaped;
+        }
+    </script>
+</body>
+</html>

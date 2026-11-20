@@ -9,8 +9,6 @@ from extraction.field_extractor import (
     validate_and_format_ifsc,
     clean_bank_account_number,
     clean_bank_name,
-    KNOWN_VENDORS,
-    KNOWN_BUYERS,
 )
 from schemas.receipt_schema import ReceiptData, ReceiptItem, BankDetails
 
@@ -457,56 +455,7 @@ def validate_and_reconcile_receipt(
                         receipt.seller_gstin = g
                         break
 
-    # 6. Known Vendor Reconciliation — fill missing fields from trusted static data
-    combined_text = " ".join(filter(None, [
-        ocr_text,
-        receipt.seller or "",
-        receipt.vendor_name or "",
-        receipt.seller_name or "",
-    ])).lower()
-
-    matched_vendor = None
-    for key in KNOWN_VENDORS:
-        if key in combined_text:
-            matched_vendor = KNOWN_VENDORS[key]
-            break
-
-    if matched_vendor:
-        if not receipt.seller_name:
-            receipt.seller_name = matched_vendor.get("seller_name")
-        if not receipt.seller and matched_vendor.get("seller_name"):
-            receipt.seller = matched_vendor["seller_name"]
-        if not receipt.vendor_name and matched_vendor.get("seller_name"):
-            receipt.vendor_name = matched_vendor["seller_name"]
-        if not receipt.seller_address:
-            receipt.seller_address = matched_vendor.get("seller_address")
-        if not receipt.seller_gstin:
-            receipt.seller_gstin = matched_vendor.get("seller_gstin")
-        if not receipt.seller_state:
-            receipt.seller_state = matched_vendor.get("seller_state")
-        if not receipt.seller_state_code:
-            receipt.seller_state_code = matched_vendor.get("seller_state_code")
-        if not receipt.seller_email:
-            receipt.seller_email = matched_vendor.get("seller_email")
-        if not receipt.seller_phone:
-            receipt.seller_phone = matched_vendor.get("seller_phone")
-
-        # Fill bank details from known vendor
-        if not receipt.bank_details:
-            receipt.bank_details = BankDetails()
-        bd = receipt.bank_details
-        if not bd.bank_name and matched_vendor.get("bank_name"):
-            bd.bank_name = matched_vendor["bank_name"]
-        if not bd.account_holder and matched_vendor.get("account_holder"):
-            bd.account_holder = matched_vendor["account_holder"]
-        if not bd.account_no and matched_vendor.get("account_no"):
-            bd.account_no = matched_vendor["account_no"]
-        if not bd.ifsc_code and matched_vendor.get("ifsc_code"):
-            bd.ifsc_code = matched_vendor["ifsc_code"]
-        if not bd.branch and matched_vendor.get("branch"):
-            bd.branch = matched_vendor["branch"]
-
-    # 6b. Known Buyer Reconciliation — fill missing/truncated buyer fields
+    # 6. Dynamic buyer reconciliation
     GENERIC_NON_BUYER_NAMES = {"CASH BILL", "CASH", "BILL", "TAX INVOICE", "INVOICE", "CASH MEMO", "ESTIMATE", "RETAIL INVOICE", "UNKNOWN"}
     b_curr = (receipt.buyer_name or receipt.buyer or receipt.customer_name or "").strip().upper()
     if b_curr in GENERIC_NON_BUYER_NAMES:
@@ -521,31 +470,6 @@ def validate_and_reconcile_receipt(
         receipt.buyer_address or "",
         ocr_text,
     ])).lower()
-
-    matched_buyer = None
-    for key in KNOWN_BUYERS:
-        if key in buyer_combined:
-            matched_buyer = KNOWN_BUYERS[key]
-            break
-
-    if matched_buyer:
-        if not receipt.buyer_name or receipt.buyer_name.strip().upper() in GENERIC_NON_BUYER_NAMES:
-            receipt.buyer_name = matched_buyer.get("buyer_name")
-            receipt.buyer = matched_buyer.get("buyer_name")
-            receipt.customer_name = matched_buyer.get("buyer_name")
-        # Always overwrite buyer_address with the full known address (OCR may truncate)
-        if matched_buyer.get("buyer_address"):
-            receipt.buyer_address = matched_buyer["buyer_address"]
-        if matched_buyer.get("buyer_address_line_1"):
-            receipt.buyer_address_line_1 = matched_buyer["buyer_address_line_1"]
-        if matched_buyer.get("buyer_address_line_2"):
-            receipt.buyer_address_line_2 = matched_buyer["buyer_address_line_2"]
-        if not receipt.buyer_gstin and matched_buyer.get("buyer_gstin"):
-            receipt.buyer_gstin = matched_buyer["buyer_gstin"]
-        if not receipt.buyer_state:
-            receipt.buyer_state = matched_buyer.get("buyer_state")
-        if not receipt.buyer_state_code:
-            receipt.buyer_state_code = matched_buyer.get("buyer_state_code")
 
     # If buyer_name is still not found, search directly under 'Buyer' in OCR text
     if not receipt.buyer_name and ocr_text:
@@ -604,21 +528,6 @@ def validate_and_reconcile_receipt(
                     receipt.buyer_address = ", ".join(addr_lines)
                     receipt.buyer_address_line_1 = addr_lines[0]
                     receipt.buyer_address_line_2 = ", ".join(addr_lines[1:]) if len(addr_lines) > 1 else None
-
-            # Issuing company on the left is the Seller
-            if "example, llc" in ocr_text.lower():
-                receipt.seller_name = "Example, LLC"
-                receipt.seller = "Example, LLC"
-                receipt.vendor_name = "Example, LLC"
-            if "support@example.com" in ocr_text:
-                receipt.seller_email = "support@example.com"
-            if re.search(r"\(555\)\s*867-5309", ocr_text):
-                receipt.seller_phone = "(555) 867-5309"
-            if "123 Fake Street" in ocr_text:
-                receipt.seller_address = "123 Fake Street, New York City, NY 10012"
-                receipt.seller_address_line_1 = "123 Fake Street"
-                receipt.seller_address_line_2 = "New York City, NY 10012"
-                receipt.seller_state = "NY"
 
     # 7. Dynamic State Name and State Code Normalization
     INVALID_STATE_WORDS = {
