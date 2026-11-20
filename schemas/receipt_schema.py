@@ -738,6 +738,7 @@ class ReceiptResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     success: bool = True
+    processing_time_seconds: Optional[float] = Field(default=None, description="Total time taken to process and return response (in seconds)")
     message: str = "Receipt extracted successfully"
     formatted_display: Optional[str] = None
     data: ReceiptData

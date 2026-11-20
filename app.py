@@ -1,6 +1,7 @@
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from fastapi import FastAPI, File, HTTPException, Query, UploadFile, status
+from fastapi import FastAPI, File, HTTPException, Query, UploadFile, status, Request
 from starlette.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse
 
@@ -28,6 +29,34 @@ app = FastAPI(
     ),
     version="2.0.0"
 )
+
+
+@app.middleware("http")
+async def measure_and_display_response_time(request: Request, call_next):
+    """Log response time to terminal with high visibility and set X-Process-Time header."""
+    start_time = time.perf_counter()
+    response = await call_next(request)
+    elapsed = time.perf_counter() - start_time
+    ms = int(elapsed * 1000)
+
+    # Set response header
+    response.headers["X-Process-Time"] = f"{elapsed:.2f}s"
+
+    # Display prominently in terminal
+    path = request.url.path
+    if path in ["/extract", "/chat/ask"]:
+        print(
+            f"\n"
+            f"===============================================================\n"
+            f"⏱️  [RESPONSE TIME] {request.method} {path} -> HTTP {response.status_code}\n"
+            f"👉  Completed in: {elapsed:.2f}s ({ms} ms)\n"
+            f"===============================================================\n",
+            flush=True
+        )
+    else:
+        print(f"⏱️  [{request.method}] {path} -> {response.status_code} in {elapsed:.2f}s ({ms} ms)", flush=True)
+
+    return response
 
 
 @app.get("/", summary="Root status")
@@ -154,16 +183,19 @@ async def extract_receipt(
         )
 
     try:
+        t_start = time.perf_counter()
         if is_pdf:
             extraction_result = await run_in_threadpool(_extract_from_pdf, file_bytes)
         else:
             processed_image = await run_in_threadpool(preprocess_image, file_bytes)
             extraction_result = await run_in_threadpool(process_receipt, processed_image)
 
+        elapsed_sec = round(time.perf_counter() - t_start, 2)
         from schemas.receipt_schema import remove_none_values
         cleaned_data = remove_none_values(extraction_result["receipt"])
         response_payload = {
             "success": True,
+            "processing_time_seconds": elapsed_sec,
             "message": "Receipt extracted successfully",
             "formatted_display": extraction_result.get("formatted_display"),
             "data": cleaned_data,
