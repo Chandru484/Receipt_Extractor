@@ -22,15 +22,15 @@ def test_alias_mapper_totals():
 
 
 def test_normalize_date_string():
-    # ISO format
-    assert normalize_date_string("2026-10-18") == "2026-10-18"
+    # ISO format to DD-MM-YYYY
+    assert normalize_date_string("2026-10-18") == "18-10-2026"
     # DD/MM/YYYY with time
-    assert normalize_date_string("26/09/2026 10:47") == "2026-09-26"
+    assert normalize_date_string("26/09/2026 10:47") == "26-09-2026"
     # DD-MMM-YY
-    assert normalize_date_string("6-Oct-26") == "2026-10-06"
-    assert normalize_date_string("10-Oct-26") == "2026-10-10"
+    assert normalize_date_string("6-Oct-26") == "06-10-2026"
+    assert normalize_date_string("10-Oct-26") == "10-10-2026"
     # DD/MM/YYYY
-    assert normalize_date_string("17/10/2026") == "2026-10-17"
+    assert normalize_date_string("17/10/2026") == "17-10-2026"
     # Invalid
     assert normalize_date_string("invalid_date") is None
     assert normalize_date_string("") is None

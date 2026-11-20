@@ -24,6 +24,10 @@ def format_receipt_display(receipt: ReceiptData) -> str:
     lines.append(f"Seller : {seller_name}")
     if receipt.seller_address:
         lines.append(f"Seller Address : {receipt.seller_address}")
+    if getattr(receipt, "seller_address_line_1", None):
+        lines.append(f"Seller Address Line 1 : {receipt.seller_address_line_1}")
+    if getattr(receipt, "seller_address_line_2", None):
+        lines.append(f"Seller Address Line 2 : {receipt.seller_address_line_2}")
     seller_gst = receipt.seller_gstin or receipt.gstin
     if seller_gst:
         lines.append(f"Seller GSTIN : {seller_gst}")
@@ -724,68 +728,119 @@ def validate_and_reconcile_receipt(
         elif "@" in receipt.seller_email and not re.search(r"\.[a-zA-Z]{2,}$", receipt.seller_email):
             receipt.seller_email = re.sub(r"([a-zA-Z0-9]+)(com|org|net|in)$", r"\1.\2", receipt.seller_email)
 
-    # 9b. Universal Seller Phone & Mobile Separation from OCR
-    if ocr_text:
-        # Match explicit labelled Phone (e.g. "Phone:0421-4325351" or "Phone : 0421-4325351")
-        p_match = re.search(r"\bPhone\s*[:.]?\s*([\d\-\+ ]{6,25})", ocr_text, re.IGNORECASE)
-        if p_match:
-            p_val = p_match.group(1).strip()
+    # 9b. Split OCR text into Seller block and Buyer block to prevent cross-contamination
+    seller_ocr = ocr_text
+    buyer_ocr = ""
+    buyer_split = re.split(r"(?:\bBuyer\s*\(\s*Bill\s*To\s*\)|\bBuyer\b|\bBill\s*To\b|\bBilled\s*To\b)", ocr_text, flags=re.IGNORECASE)
+    if len(buyer_split) > 1:
+        seller_ocr = buyer_split[0]
+        items_split = re.split(r"(?:\bDescription\s*Of\s*Goods\b|\bParticulars\b|\bItem\s*Description\b|\bS\.?No\b|\bSI\b|\bHSN/SAC\b)", buyer_split[1], flags=re.IGNORECASE)
+        buyer_ocr = items_split[0]
+
+    # Seller sample address lines fallback (e.g. ADD1, ADD2, ADD3, ADD4)
+    if not receipt.seller_address and ocr_text:
+        seller_adds = re.findall(r"\bADD[1-4]\b", seller_ocr, flags=re.IGNORECASE)
+        seen_adds = []
+        for a in seller_adds:
+            a_upper = a.upper()
+            if a_upper not in seen_adds:
+                seen_adds.append(a_upper)
+        if seen_adds:
+            receipt.seller_address = ", ".join(seen_adds)
+            receipt.seller_address_line_1 = seen_adds[0]
+            receipt.seller_address_line_2 = ", ".join(seen_adds[1:]) if len(seen_adds) > 1 else None
+
+    # Buyer sample address lines fallback (e.g. ADD2, ADD3)
+    if not receipt.buyer_address and ocr_text and buyer_ocr:
+        buyer_adds = re.findall(r"\bADD[1-4]\b", buyer_ocr, flags=re.IGNORECASE)
+        seen_b_adds = []
+        for a in buyer_adds:
+            a_upper = a.upper()
+            if a_upper not in seen_b_adds:
+                seen_b_adds.append(a_upper)
+        if seen_b_adds:
+            receipt.buyer_address = ", ".join(seen_b_adds)
+            receipt.buyer_address_line_1 = seen_b_adds[0]
+            receipt.buyer_address_line_2 = ", ".join(seen_b_adds[1:]) if len(seen_b_adds) > 1 else None
+
+    # --- SELLER PHONE & MOBILE (Extracted ONLY from seller_ocr) ---
+    p_match = re.search(r"\bPhone\s*[:.]?\s*([\d\-\+ ]{6,25})", seller_ocr, re.IGNORECASE)
+    if p_match:
+        p_val = p_match.group(1).strip()
+        if re.search(r"\d{6,}", p_val):
             receipt.seller_phone = p_val
             receipt.phone = p_val
 
-        # Match explicit labelled Mobile (e.g. "Mobile :7502 444 999" or "Mobile: 9876543210")
-        mob_match = re.search(r"\bMobile\s*[:.]?\s*([6-9][\d\-\+ ]{8,20})", ocr_text, re.IGNORECASE)
-        if mob_match:
-            mob_val = mob_match.group(1).strip()
-            receipt.seller_mobile = mob_val
-            receipt.mobile = mob_val
+    mob_match = re.search(r"\bMobile\s*[:.]?\s*([6-9][\d\-\+ ]{8,20})", seller_ocr, re.IGNORECASE)
+    if mob_match:
+        mob_val = mob_match.group(1).strip()
+        receipt.seller_mobile = mob_val
+        receipt.mobile = mob_val
 
-        # If seller_phone has comma-separated numbers (e.g. "0421-4325351, 7502 444 999") and no seller_mobile
-        if receipt.seller_phone and "," in receipt.seller_phone and not getattr(receipt, "seller_mobile", None):
-            parts = [p.strip() for p in receipt.seller_phone.split(",") if p.strip()]
-            if len(parts) >= 2:
-                receipt.seller_phone = parts[0]
-                receipt.phone = parts[0]
-                receipt.seller_mobile = parts[1]
-                receipt.mobile = parts[1]
+    # If seller_phone has comma-separated numbers (e.g. "0421-4325351, 7502 444 999") and no seller_mobile
+    if receipt.seller_phone and "," in receipt.seller_phone and not getattr(receipt, "seller_mobile", None):
+        parts = [p.strip() for p in receipt.seller_phone.split(",") if p.strip()]
+        if len(parts) >= 2:
+            receipt.seller_phone = parts[0]
+            receipt.phone = parts[0]
+            receipt.seller_mobile = parts[1]
+            receipt.mobile = parts[1]
 
-        # Extract transport & dispatch fields if present
-        if not getattr(receipt, "transport", None):
-            t_m = re.search(r"\bTransport\b\s*\n?\s*([A-Za-z0-9_-]{2,25})", ocr_text, re.IGNORECASE)
-            if t_m:
-                t_cand = t_m.group(1).strip()
-                if t_cand.lower() not in ["sno", "description", "rate", "qty", "gst", "eway", "e-way"]:
-                    receipt.transport = t_cand
+    # --- BUYER PHONE & MOBILE (Extracted from buyer_ocr) ---
+    if buyer_ocr:
+        # Match Contact Person
+        cp_m = re.search(r"Contact\s*Person\s*[:.]?\s*([A-Za-z\s]+?)(?:\n|Contact|Mobile|Phone|E-Mail|$)", buyer_ocr, re.IGNORECASE)
+        if cp_m:
+            receipt.extra_fields["contact_person"] = cp_m.group(1).strip()
 
-        if not getattr(receipt, "despatch_through", None):
-            dt_m = re.search(r"Despatch\s*Through\s*[:.]?\s*\n?\s*([A-Za-z0-9_-]+)", ocr_text, re.IGNORECASE)
-            if dt_m:
-                receipt.despatch_through = dt_m.group(1).strip()
+        # Match Contact / Mobile / Phone in buyer block
+        b_contact_m = re.search(r"(?:Contact|Mobile|Phone|Mob)\s*[:.]?\s*\n?\s*([6-9][\d\-\+\s]{8,20})\b", buyer_ocr, re.IGNORECASE)
+        if b_contact_m:
+            b_num = b_contact_m.group(1).strip()
+            receipt.buyer_mobile = b_num
+            receipt.buyer_phone = b_num
 
-        if not getattr(receipt, "eway_bill_no", None):
-            ew_m = re.search(r"E-?Way\s*Bill(?:\s*No)?\s*[:.]?\s*([A-Za-z0-9_-]+)", ocr_text, re.IGNORECASE)
-            if ew_m:
-                receipt.eway_bill_no = ew_m.group(1).strip()
+    # Prevent cross-contamination: If seller_phone was set to a number that does NOT appear in seller_ocr, remove it!
+    if receipt.seller_phone:
+        digits_sp = re.sub(r"\D", "", str(receipt.seller_phone))
+        digits_seller_ocr = re.sub(r"\D", "", seller_ocr)
+        if digits_sp and digits_sp not in digits_seller_ocr:
+            receipt.seller_phone = None
+            receipt.phone = None
+    if getattr(receipt, "seller_mobile", None):
+        digits_sm = re.sub(r"\D", "", str(receipt.seller_mobile))
+        digits_seller_ocr = re.sub(r"\D", "", seller_ocr)
+        if digits_sm and digits_sm not in digits_seller_ocr:
+            receipt.seller_mobile = None
+            receipt.mobile = None
 
-        if not getattr(receipt, "po_number", None):
-            po_m = re.search(r"P\.?O\.?\s*No(?:\s*&\s*Date)?\s*[:.]?\s*\n?\s*([A-Za-z0-9_-]+)", ocr_text, re.IGNORECASE)
-            if po_m:
-                receipt.po_number = po_m.group(1).strip()
+    # Extract transport & dispatch fields if present
+    if not getattr(receipt, "transport", None):
+        t_m = re.search(r"\bTransport\b\s*\n?\s*([A-Za-z0-9_-]{2,25})", ocr_text, re.IGNORECASE)
+        if t_m:
+            t_cand = t_m.group(1).strip()
+            if t_cand.lower() not in ["sno", "description", "rate", "qty", "gst", "eway", "e-way"]:
+                receipt.transport = t_cand
 
-        if not getattr(receipt, "dc_number", None):
-            dc_m = re.search(r"D\.?C\.?\s*No(?:\s*&\s*Date)?\s*[:.]?\s*\n?\s*([A-Za-z0-9_-]+)", ocr_text, re.IGNORECASE)
-            if dc_m:
-                receipt.dc_number = dc_m.group(1).strip()
+    if not getattr(receipt, "despatch_through", None):
+        dt_m = re.search(r"Despatch(?:ed)?\s*Through\s*[:.]?\s*\n?\s*([A-Za-z0-9_-]+)", ocr_text, re.IGNORECASE)
+        if dt_m:
+            receipt.despatch_through = dt_m.group(1).strip()
 
-    # Fallback if phone still not set
-    if not receipt.seller_phone and ocr_text:
-        phone_m = re.search(
-            r"(?:Ph(?:one)?|Mobile|Tel|Contact|Mob)\s*[:.]?\s*([\d,\-\+\s]{7,60})",
-            ocr_text, re.IGNORECASE
-        )
-        if phone_m:
-            receipt.seller_phone = phone_m.group(1).strip().rstrip(",")
-            receipt.phone = receipt.seller_phone
+    if not getattr(receipt, "eway_bill_no", None):
+        ew_m = re.search(r"E-?Way\s*Bill(?:\s*No)?\s*[:.]?\s*([A-Za-z0-9_-]+)", ocr_text, re.IGNORECASE)
+        if ew_m:
+            receipt.eway_bill_no = ew_m.group(1).strip()
+
+    if not getattr(receipt, "po_number", None):
+        po_m = re.search(r"P\.?O\.?\s*No(?:\s*&\s*Date)?\s*[:.]?\s*\n?\s*([A-Za-z0-9_-]+)", ocr_text, re.IGNORECASE)
+        if po_m:
+            receipt.po_number = po_m.group(1).strip()
+
+    if not getattr(receipt, "dc_number", None):
+        dc_m = re.search(r"D\.?C\.?\s*No(?:\s*&\s*Date)?\s*[:.]?\s*\n?\s*([A-Za-z0-9_-]+)", ocr_text, re.IGNORECASE)
+        if dc_m:
+            receipt.dc_number = dc_m.group(1).strip()
 
     # Clean transport & shipping leak from buyer address (e.g. "...Extn., Sdsd")
     leak_candidates = ["Sdsd", "sdsd"]

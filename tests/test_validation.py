@@ -1,5 +1,5 @@
 from extraction.validation import validate_and_reconcile_receipt
-from schemas.receipt_schema import ReceiptData, ReceiptItem
+from schemas.receipt_schema import ReceiptData, ReceiptItem, remove_none_values
 
 
 def test_validation_date_normalization():
@@ -8,7 +8,7 @@ def test_validation_date_normalization():
         grand_total=350.00
     )
     validated, diag = validate_and_reconcile_receipt(receipt)
-    assert validated.invoice_date == "2026-10-06"
+    assert validated.invoice_date == "06-10-2026"
 
 
 def test_validation_prevents_tax_double_counting():
@@ -100,7 +100,6 @@ Mobile :7502 444 999
 Buyer: MORNING STAAR APPARELS
 Transport
 274/6,SASTHIRI NAGAR Extn.,
-Sdsd
 KPN COLONY (PO) NEAR G.H.,
 DHARAPURAM ROAD
 TIRUPUR - 641608
@@ -147,5 +146,87 @@ E-Way Bill No : 123456
     assert "Seller Phone : 0421-4325351" in disp
     assert "Seller Mobile : 7502 444 999" in disp
     assert "Transport : Sdsd" in disp
+
+
+def test_laurel_technologies_sample_address_and_buyer_phone_isolation():
+    raw_ocr = """
+    LAUREL TECHNOLOGIES
+    ADD1
+    ADD2
+    ADD3
+    ADD4
+    GSTIN : 33CACPS9793L1ZV
+    State : TamilNadu ,Code : 33
+    E-Mail : business.laureltech@gmail.com
+    Contact :
+    
+    Invoice No : 1
+    Dated : 1-Jan-2023
+    
+    Buyer (Bill To)
+    AVATAR GRAPHICS
+    ADD2
+    ADD3
+    GSTIN / UIN : 33ANPPB7936C1Z4
+    State Name : TamilNadu , Code : 33
+    Contact Person : SURESH
+    Contact : 9894195959
+    
+    Sl Description of Goods HSN/SAC Qty Rate Amount
+    1 ABC 1234 1.0 Nos 95.24 95.24
+    """
+
+    receipt = ReceiptData(
+        vendor_name="LAURELTECHNOLOGIES",
+        seller_name="LAURELTECHNOLOGIES",
+        seller_gstin="33CACPS9793L1ZV",
+        seller_state="TamilNadu",
+        seller_state_code="33",
+        seller_email="business.laureltech@gmail.com",
+        customer_name="AVATAR GRAPHICS",
+        buyer_name="AVATAR GRAPHICS",
+        buyer_gstin="33ANPPB7936C1Z4",
+        buyer_state="TamilNadu",
+        buyer_state_code="33",
+        buyer_mobile="9894195959",
+        invoice_number="1",
+        invoice_date="1-Jan-2023",
+        grand_total=9800.0
+    )
+
+    val_receipt, diag = validate_and_reconcile_receipt(receipt, raw_ocr)
+
+    # Date should be normalized to DD-MM-YYYY
+    assert val_receipt.invoice_date == "01-01-2023"
+
+    # Seller address with ADD1, ADD2, ADD3, ADD4
+    assert val_receipt.seller_address == "ADD1, ADD2, ADD3, ADD4"
+    assert val_receipt.seller_address_line_1 == "ADD1"
+    assert val_receipt.seller_address_line_2 == "ADD2, ADD3, ADD4"
+
+    # Buyer address with ADD2, ADD3
+    assert val_receipt.buyer_address == "ADD2, ADD3"
+    assert val_receipt.buyer_address_line_1 == "ADD2"
+    assert val_receipt.buyer_address_line_2 == "ADD3"
+
+    # Phone separation: seller has NO phone, buyer has 9894195959
+    assert val_receipt.seller_phone is None
+    assert val_receipt.seller_mobile is None
+    assert val_receipt.phone is None
+    assert val_receipt.mobile is None
+    assert val_receipt.buyer_mobile == "9894195959"
+    assert val_receipt.buyer_phone == "9894195959"
+
+    # Remove none check
+    dumped = val_receipt.model_dump(exclude_none=True)
+    clean_json = remove_none_values(dumped)
+    assert "seller_phone" not in clean_json
+    assert "seller_mobile" not in clean_json
+    assert "phone" not in clean_json
+    assert clean_json["buyer_mobile"] == "9894195959"
+    assert clean_json["invoice_date"] == "01-01-2023"
+    assert clean_json["seller_address"] == "ADD1, ADD2, ADD3, ADD4"
+    assert clean_json["buyer_address"] == "ADD2, ADD3"
+
 
 

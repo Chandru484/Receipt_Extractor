@@ -280,6 +280,8 @@ class ReceiptData(BaseModel):
     seller: Optional[str] = None
     seller_name: Optional[str] = None
     seller_address: Optional[str] = None
+    seller_address_line_1: Optional[str] = None
+    seller_address_line_2: Optional[str] = None
     seller_gstin: Optional[str] = None
     seller_state: Optional[str] = None
     seller_state_code: Optional[str] = None
@@ -453,6 +455,27 @@ class ReceiptData(BaseModel):
                     if not self.buyer_address_line_2:
                         self.buyer_address_line_2 = ", ".join(parts[1:3]) if len(parts) >= 3 else parts[1]
 
+        # Synchronize seller address lines universally
+        if self.seller_address:
+            if "\n" in self.seller_address:
+                s_lines = [l.strip() for l in self.seller_address.split("\n") if l.strip()]
+                if len(s_lines) >= 2:
+                    if not self.seller_address_line_1:
+                        self.seller_address_line_1 = s_lines[0]
+                    if not self.seller_address_line_2:
+                        self.seller_address_line_2 = ", ".join(s_lines[1:])
+                elif len(s_lines) == 1 and not self.seller_address_line_1:
+                    self.seller_address_line_1 = s_lines[0]
+            elif not self.seller_address_line_1 or not self.seller_address_line_2:
+                s_parts = [p.strip() for p in self.seller_address.split(",") if p.strip()]
+                if len(s_parts) >= 2:
+                    if not self.seller_address_line_1:
+                        self.seller_address_line_1 = s_parts[0]
+                    if not self.seller_address_line_2:
+                        self.seller_address_line_2 = ", ".join(s_parts[1:])
+                elif len(s_parts) == 1 and not self.seller_address_line_1:
+                    self.seller_address_line_1 = s_parts[0]
+
         # Format tax rates with % symbol if numeric string
         if self.cgst_rate:
             s_cgst = str(self.cgst_rate).strip()
@@ -500,11 +523,20 @@ class ReceiptData(BaseModel):
             self.invoice_number = doc_num
             self.receipt_number = doc_num
 
-        # Synchronize invoice_date and date_paid
+        # Synchronize invoice_date and date_paid in DD-MM-YYYY format
         doc_date = self.invoice_date or self.date_paid
         if doc_date:
-            self.invoice_date = doc_date
-            self.date_paid = doc_date
+            from extraction.field_extractor import normalize_date_string
+            norm = normalize_date_string(doc_date)
+            final_d = norm or doc_date
+            self.invoice_date = final_d
+            self.date_paid = final_d
+
+        if self.refunded_on:
+            from extraction.field_extractor import normalize_date_string
+            norm_ref = normalize_date_string(self.refunded_on)
+            if norm_ref:
+                self.refunded_on = norm_ref
 
         # Clean invalid placeholder words from state fields
         INVALID_STATE_WORDS = {
@@ -630,8 +662,11 @@ class ReceiptData(BaseModel):
 
         doc_date = self.invoice_date or self.date_paid
         if doc_date:
-            self.invoice_date = doc_date
-            self.date_paid = doc_date
+            from extraction.field_extractor import normalize_date_string
+            norm = normalize_date_string(doc_date)
+            final_d = norm or doc_date
+            self.invoice_date = final_d
+            self.date_paid = final_d
 
         return self
 

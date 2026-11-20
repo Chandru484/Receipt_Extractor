@@ -12,7 +12,7 @@ MONTH_MAP = {
 
 
 def normalize_date_string(date_str: str) -> Optional[str]:
-    """Normalize various date formats (DD/MM/YYYY, DD-MMM-YY, YYYY-MM-DD) into ISO YYYY-MM-DD."""
+    """Normalize various date formats (DD/MM/YYYY, DD-MMM-YY, YYYY-MM-DD) into DD-MM-YYYY."""
     if not date_str:
         return None
 
@@ -26,7 +26,8 @@ def normalize_date_string(date_str: str) -> Optional[str]:
     if m_iso:
         y, m, d = int(m_iso.group(1)), int(m_iso.group(2)), int(m_iso.group(3))
         try:
-            return f"{y:04d}-{m:02d}-{d:02d}"
+            dt = datetime(y, m, d)
+            return dt.strftime("%d-%m-%Y")
         except Exception:
             return None
 
@@ -42,7 +43,7 @@ def normalize_date_string(date_str: str) -> Optional[str]:
             m = MONTH_MAP[month_str]
             try:
                 dt = datetime(y, m, d)
-                return dt.strftime("%Y-%m-%d")
+                return dt.strftime("%d-%m-%Y")
             except ValueError:
                 return None
 
@@ -66,7 +67,7 @@ def normalize_date_string(date_str: str) -> Optional[str]:
 
         try:
             dt = datetime(y, m, d)
-            return dt.strftime("%Y-%m-%d")
+            return dt.strftime("%d-%m-%Y")
         except ValueError:
             return None
 

@@ -101,7 +101,7 @@ def test_synthetic_supermarket_mapping():
     )
 
     validated, diag = validate_and_reconcile_receipt(receipt, SYNTHETIC_SUPERMARKET_OCR["full_text"])
-    assert validated.invoice_date == "2026-08-15"
+    assert validated.invoice_date == "15-08-2026"
     assert validated.grand_total == 288.76
     assert validated.subtotal == 275.00
     assert validated.tax == 13.76
@@ -129,7 +129,7 @@ def test_synthetic_restaurant_mapping():
     )
 
     validated, diag = validate_and_reconcile_receipt(receipt, SYNTHETIC_RESTAURANT_OCR["full_text"])
-    assert validated.invoice_date == "2026-11-10"
+    assert validated.invoice_date == "10-11-2026"
     assert validated.grand_total == 546.0
     assert validated.tax == 26.0
     assert diag["calculated_items_sum"] == 520.0
