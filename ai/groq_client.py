@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import re
 from typing import Any, Dict, List, Optional, Union
 
@@ -17,6 +18,53 @@ class GroqExtractionError(Exception):
     pass
 
 
+def get_all_groq_api_keys() -> List[str]:
+    """
+    Retrieve all configured Groq API keys in priority order with deduplication.
+    Supports:
+      - GROQ_API_KEY
+      - GROQ_API_KEYS (comma-separated list)
+      - GROQ_FALLBACK_API_KEY
+      - GROQ_FALLBACK_API_KEYS (comma-separated list)
+      - Numbered env vars: GROQ_API_KEY_1..20, GROQ_FALLBACK_API_KEY_1..20
+    """
+    keys: List[str] = []
+    seen = set()
+
+    def _add(k: Optional[str]):
+        if not k:
+            return
+        cleaned = str(k).strip()
+        if cleaned and cleaned not in seen:
+            seen.add(cleaned)
+            keys.append(cleaned)
+
+    # 1. Primary key
+    _add(getattr(settings, "GROQ_API_KEY", ""))
+
+    # 2. Comma-separated primary keys
+    raw_keys = getattr(settings, "GROQ_API_KEYS", "") or ""
+    for part in raw_keys.split(","):
+        _add(part)
+
+    # 3. Dedicated fallback key
+    _add(getattr(settings, "GROQ_FALLBACK_API_KEY", ""))
+
+    # 4. Comma-separated fallback keys
+    raw_fb = getattr(settings, "GROQ_FALLBACK_API_KEYS", "") or ""
+    for part in raw_fb.split(","):
+        _add(part)
+
+    # 5. Numbered environment variables (e.g. GROQ_API_KEY_1..20, GROQ_FALLBACK_API_KEY_1..20)
+    for prefix in ("GROQ_API_KEY_", "GROQ_FALLBACK_API_KEY_"):
+        for i in range(1, 21):
+            env_val = os.environ.get(f"{prefix}{i}", "")
+            if env_val:
+                _add(env_val)
+
+    return keys
+
+
 def get_groq_client(api_key: Optional[str] = None) -> Groq:
     """Instantiate and return the Groq SDK client for a specific or default API key."""
     target_key = (api_key or settings.GROQ_API_KEY).strip()
@@ -31,11 +79,20 @@ def get_groq_client(api_key: Optional[str] = None) -> Groq:
 
 
 def _sanitize_error(error_msg: str) -> str:
-    """Sanitize error messages to ensure neither primary nor fallback API keys are ever leaked."""
+    """Sanitize error messages to ensure no configured API keys are ever leaked."""
     msg = str(error_msg)
-    for key in [settings.GROQ_API_KEY, settings.GROQ_FALLBACK_API_KEY]:
-        if key and key.strip() and key.strip() in msg:
-            msg = msg.replace(key.strip(), "[REDACTED_API_KEY]")
+    candidate_keys = set(get_all_groq_api_keys())
+    for attr in ["GROQ_API_KEY", "GROQ_FALLBACK_API_KEY", "GROQ_API_KEYS", "GROQ_FALLBACK_API_KEYS"]:
+        val = getattr(settings, attr, "")
+        if val:
+            for item in str(val).split(","):
+                item_s = item.strip()
+                if item_s:
+                    candidate_keys.add(item_s)
+
+    for key in candidate_keys:
+        if key and len(key) >= 5 and key in msg:
+            msg = msg.replace(key, "[REDACTED_API_KEY]")
     return msg
 
 
@@ -256,26 +313,24 @@ def extract_receipt_with_groq(ocr_result: Union[Dict[str, Any], str]) -> Receipt
 
     messages = build_extraction_messages(ocr_result)
 
-    # Build ordered list of Groq providers (primary first, then fallback)
+    # Build ordered list of Groq providers from all configured keys
+    all_keys = get_all_groq_api_keys()
     providers: List[Dict[str, str]] = []
-    primary_key = settings.GROQ_API_KEY.strip()
-    if primary_key:
+    for idx, key in enumerate(all_keys):
+        if idx == 0:
+            name = "primary"
+            model = settings.GROQ_MODEL
+        else:
+            name = f"fallback_{idx}" if len(all_keys) > 2 else "fallback"
+            model = settings.GROQ_FALLBACK_MODEL or settings.GROQ_MODEL
         providers.append({
-            "name": "primary",
-            "api_key": primary_key,
-            "model": settings.GROQ_MODEL
-        })
-
-    fallback_key = settings.GROQ_FALLBACK_API_KEY.strip()
-    if fallback_key and fallback_key != primary_key:
-        providers.append({
-            "name": "fallback",
-            "api_key": fallback_key,
-            "model": settings.GROQ_FALLBACK_MODEL or settings.GROQ_MODEL
+            "name": name,
+            "api_key": key,
+            "model": model
         })
 
     if not providers:
-        raise GroqExtractionError("GROQ_API_KEY is not configured in .env file.")
+        raise GroqExtractionError("No Groq API keys configured in .env file.")
 
     last_error: Optional[Exception] = None
 
@@ -292,7 +347,7 @@ def extract_receipt_with_groq(ocr_result: Union[Dict[str, Any], str]) -> Receipt
             else:
                 result = _extract_with_single_client(client, model=model, messages=messages)
             if idx > 0:
-                logger.info(f"Successfully extracted receipt using fallback Groq API ({model}).")
+                logger.info(f"Successfully extracted receipt using fallback Groq API key #{idx + 1} ({model}).")
             return result
 
         except Exception as exc:

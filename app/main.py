@@ -6,7 +6,7 @@ from starlette.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse
 
 from ai.chatbot import ask_chatbot
-from ai.groq_client import GroqExtractionError
+from ai.groq_client import GroqExtractionError, get_all_groq_api_keys
 from core.config import settings
 from core.constants import ALLOWED_IMAGE_EXTENSIONS, ALLOWED_PDF_EXTENSIONS, ALLOWED_EXTENSIONS
 from core.receipt_extractor import process_receipt
@@ -68,12 +68,14 @@ async def root():
 
 @app.get("/health", summary="Health check")
 async def health():
+    keys = get_all_groq_api_keys()
     return {
         "status": "healthy",
         "ocr_engine": "PaddleOCR 3.x",
         "groq_model": settings.GROQ_MODEL,
-        "groq_fallback_configured": bool(settings.GROQ_FALLBACK_API_KEY.strip()),
-        "groq_fallback_model": settings.GROQ_FALLBACK_MODEL if settings.GROQ_FALLBACK_API_KEY.strip() else None,
+        "groq_keys_count": len(keys),
+        "groq_fallback_configured": len(keys) > 1,
+        "groq_fallback_model": settings.GROQ_FALLBACK_MODEL if len(keys) > 1 else None,
         "mongodb": check_mongo_connection()
     }
 

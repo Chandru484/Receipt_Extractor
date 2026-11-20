@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from ai.groq_client import (
     extract_receipt_with_groq,
+    get_all_groq_api_keys,
     GroqExtractionError,
     _clean_json_response,
     _sanitize_error,
@@ -174,3 +175,76 @@ def test_extract_receipt_with_groq_invalid_json(mock_get_client):
 
     with pytest.raises(GroqExtractionError, match="Failed to parse Groq response as JSON"):
         extract_receipt_with_groq(ocr_result)
+
+
+def test_get_all_groq_api_keys_deduplication(monkeypatch):
+    monkeypatch.setattr(settings, "GROQ_API_KEY", "key_alpha")
+    monkeypatch.setattr(settings, "GROQ_API_KEYS", "key_beta, key_gamma")
+    monkeypatch.setattr(settings, "GROQ_FALLBACK_API_KEY", "key_delta")
+    monkeypatch.setattr(settings, "GROQ_FALLBACK_API_KEYS", "key_gamma, key_epsilon")
+    monkeypatch.setenv("GROQ_FALLBACK_API_KEY_1", "key_zeta")
+
+    keys = get_all_groq_api_keys()
+    assert keys == ["key_alpha", "key_beta", "key_gamma", "key_delta", "key_epsilon", "key_zeta"]
+
+
+def test_sanitize_error_multiple_keys(monkeypatch):
+    monkeypatch.setattr(settings, "GROQ_API_KEY", "gsk_primary_key_abc")
+    monkeypatch.setattr(settings, "GROQ_FALLBACK_API_KEY", "gsk_fallback_key_def")
+    monkeypatch.setattr(settings, "GROQ_FALLBACK_API_KEYS", "gsk_third_key_ghi, gsk_fourth_key_jkl")
+
+    raw_err = "Auth failed: gsk_primary_key_abc and gsk_third_key_ghi are blocked"
+    sanitized = _sanitize_error(raw_err)
+    assert "gsk_primary_key_abc" not in sanitized
+    assert "gsk_third_key_ghi" not in sanitized
+    assert "[REDACTED_API_KEY]" in sanitized
+
+
+@patch("ai.groq_client.get_groq_client")
+def test_extract_receipt_with_multiple_fallback_keys(mock_get_client, monkeypatch):
+    """Test that when 1st and 2nd keys fail, 3rd key is invoked and succeeds."""
+    monkeypatch.setattr(settings, "GROQ_API_KEY", "key_1")
+    monkeypatch.setattr(settings, "GROQ_FALLBACK_API_KEY", "key_2")
+    monkeypatch.setattr(settings, "GROQ_FALLBACK_API_KEYS", "key_3")
+
+    mock_client_1 = MagicMock()
+    mock_client_1.chat.completions.create.side_effect = Exception("Rate limit reached on key 1")
+
+    mock_client_2 = MagicMock()
+    mock_client_2.chat.completions.create.side_effect = Exception("Rate limit reached on key 2")
+
+    mock_client_3 = MagicMock()
+    mock_choice = MagicMock()
+    mock_choice.message.content = json.dumps({
+        "document_type": "receipt",
+        "vendor_name": "Third Key Vendor",
+        "grand_total": 777.0
+    })
+    mock_comp = MagicMock()
+    mock_comp.choices = [mock_choice]
+    mock_client_3.chat.completions.create.return_value = mock_comp
+
+    def get_client_side_effect(api_key=None):
+        if api_key == "key_1":
+            return mock_client_1
+        elif api_key == "key_2":
+            return mock_client_2
+        elif api_key == "key_3":
+            return mock_client_3
+        raise ValueError(f"Unexpected key: {api_key}")
+
+    mock_get_client.side_effect = get_client_side_effect
+
+    ocr_result = {
+        "full_text": "Third Key Vendor Total: 777.00",
+        "lines": [{"text": "Third Key Vendor", "confidence": 0.99}]
+    }
+
+    result = extract_receipt_with_groq(ocr_result)
+    assert isinstance(result, ReceiptData)
+    assert result.vendor_name == "Third Key Vendor"
+    assert result.grand_total == 777.0
+    assert mock_client_1.chat.completions.create.called
+    assert mock_client_2.chat.completions.create.called
+    assert mock_client_3.chat.completions.create.called
+

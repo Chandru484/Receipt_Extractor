@@ -3,7 +3,7 @@ import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from ai.groq_client import get_groq_client, GroqExtractionError
+from ai.groq_client import get_groq_client, get_all_groq_api_keys, _sanitize_error, GroqExtractionError
 from core.config import settings
 from schemas.chat_schema import ChatMessage, ChatRequest, ChatResponse
 from storage.mongo_client import get_mongo_client
@@ -90,46 +90,39 @@ def ask_chatbot(request: ChatRequest) -> ChatResponse:
     messages.append({"role": "user", "content": user_msg})
 
     reply_text = ""
-    try:
-        client = get_groq_client()
-        # Use fast, highly intelligent model
-        model = settings.GROQ_MODEL or "openai/gpt-oss-120b"
-        response = client.chat.completions.create(
-            model=model,
-            messages=messages,
-            temperature=0.3,
-            max_tokens=600
-        )
-        reply_text = response.choices[0].message.content.strip()
-    except Exception as exc:
-        logger.warning(f"Primary Groq chatbot request failed: {exc}, attempting fallback if available.")
-        if settings.GROQ_FALLBACK_API_KEY.strip():
-            try:
-                fb_client = get_groq_client(api_key=settings.GROQ_FALLBACK_API_KEY)
-                fb_model = settings.GROQ_FALLBACK_MODEL or "openai/gpt-oss-20b"
-                fb_response = fb_client.chat.completions.create(
-                    model=fb_model,
-                    messages=messages,
-                    temperature=0.3,
-                    max_tokens=600
-                )
-                reply_text = fb_response.choices[0].message.content.strip()
-            except Exception as fb_exc:
-                logger.error(f"Fallback Groq chatbot request failed: {fb_exc}")
-                reply_text = (
-                    "I am temporarily unable to reach the AI engine. "
-                    "You can test the extraction API directly via [Swagger Docs](/docs) "
-                    "or click below to connect with our human team on live chat!"
-                )
-                is_escalation = True
-                escalation_reason = "service_unavailable"
-        else:
-            reply_text = (
-                "Our AI Assistant is currently experiencing high load. "
-                "Please check the [API Documentation](/docs) or click below to chat with a live human agent."
+    all_keys = get_all_groq_api_keys()
+    chatbot_success = False
+
+    for idx, key in enumerate(all_keys):
+        model = settings.GROQ_MODEL if idx == 0 else (settings.GROQ_FALLBACK_MODEL or settings.GROQ_MODEL or "openai/gpt-oss-20b")
+        try:
+            client = get_groq_client(api_key=key)
+            response = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                temperature=0.3,
+                max_tokens=600
             )
-            is_escalation = True
-            escalation_reason = "service_unavailable"
+            reply_text = response.choices[0].message.content.strip()
+            if idx > 0:
+                logger.info(f"Groq chatbot succeeded using fallback key #{idx + 1} ({model}).")
+            chatbot_success = True
+            break
+        except Exception as exc:
+            sanitized = _sanitize_error(str(exc))
+            if idx < len(all_keys) - 1:
+                logger.warning(f"Groq chatbot key #{idx + 1} failed ({sanitized}). Failing over to next key...")
+            else:
+                logger.error(f"All configured Groq keys failed for chatbot. Last error: {sanitized}")
+
+    if not chatbot_success or not reply_text:
+        reply_text = (
+            "I am temporarily unable to reach the AI engine. "
+            "You can test the extraction API directly via [Swagger Docs](/docs) "
+            "or click below to connect with our human team on live chat!"
+        )
+        is_escalation = True
+        escalation_reason = "service_unavailable"
 
     # If escalation detected, append a friendly guidance notice if not already mentioned
     if is_escalation and "tawk" not in reply_text.lower() and "live chat" not in reply_text.lower():

@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     GROQ_MODEL: str = "openai/gpt-oss-120b"
     GROQ_FALLBACK_API_KEY: str = ""
     GROQ_FALLBACK_MODEL: str = "openai/gpt-oss-20b"
+    GROQ_API_KEYS: str = ""  # Comma-separated list of Groq API keys
+    GROQ_FALLBACK_API_KEYS: str = ""  # Comma-separated list of fallback Groq API keys
     GROQ_TIMEOUT_SECONDS: float = 60.0
     GROQ_MAX_RETRIES: int = 2
     GROQ_MAX_COMPLETION_TOKENS: int = 2500
@@ -35,6 +37,11 @@ class Settings(BaseSettings):
                 for alt_key in ["GROQ_API_KEY_FALLBACK", "FALLBACK_GROQ_API_KEY", "GROQ_API_KEY_2", "GROQ_SECONDARY_API_KEY"]:
                     if data.get(alt_key):
                         data["GROQ_FALLBACK_API_KEY"] = data[alt_key]
+                        break
+            if not data.get("GROQ_FALLBACK_API_KEYS"):
+                for alt_keys in ["FALLBACK_GROQ_API_KEYS", "GROQ_SECONDARY_API_KEYS"]:
+                    if data.get(alt_keys):
+                        data["GROQ_FALLBACK_API_KEYS"] = data[alt_keys]
                         break
         return data
 

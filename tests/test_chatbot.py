@@ -1,5 +1,6 @@
 from unittest.mock import MagicMock, patch
 import pytest
+from core.config import settings
 from schemas.chat_schema import ChatRequest, ChatResponse, ChatMessage
 from ai.chatbot import ask_chatbot, ESCALATION_PATTERNS
 
@@ -63,4 +64,45 @@ def test_normal_project_question_no_forced_escalation():
 
         assert res.escalate_to_tawk is False
         assert "PDF" in res.reply
+
+
+def test_chatbot_with_multiple_fallback_keys(monkeypatch):
+    monkeypatch.setattr(settings, "GROQ_API_KEY", "chat_key_1")
+    monkeypatch.setattr(settings, "GROQ_FALLBACK_API_KEY", "chat_key_2")
+    monkeypatch.setattr(settings, "GROQ_FALLBACK_API_KEYS", "chat_key_3")
+
+    mock_c1 = MagicMock()
+    mock_c1.chat.completions.create.side_effect = Exception("Rate limit on key 1")
+
+    mock_c2 = MagicMock()
+    mock_c2.chat.completions.create.side_effect = Exception("Rate limit on key 2")
+
+    mock_c3 = MagicMock()
+    mock_choice = MagicMock()
+    mock_choice.message.content = "Chatbot reply from key 3"
+    mock_resp = MagicMock()
+    mock_resp.choices = [mock_choice]
+    mock_c3.chat.completions.create.return_value = mock_resp
+
+    with patch("ai.chatbot.get_groq_client") as mock_get_client:
+        def get_client_side_effect(api_key=None):
+            if api_key == "chat_key_1":
+                return mock_c1
+            elif api_key == "chat_key_2":
+                return mock_c2
+            elif api_key == "chat_key_3":
+                return mock_c3
+            raise ValueError(f"Unexpected key: {api_key}")
+
+        mock_get_client.side_effect = get_client_side_effect
+
+        req = ChatRequest(message="What is the extraction accuracy?")
+        res = ask_chatbot(req)
+
+        assert res.escalate_to_tawk is False
+        assert res.reply == "Chatbot reply from key 3"
+        assert mock_c1.chat.completions.create.called
+        assert mock_c2.chat.completions.create.called
+        assert mock_c3.chat.completions.create.called
+
 
