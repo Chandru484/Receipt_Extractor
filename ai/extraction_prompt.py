@@ -80,10 +80,11 @@ STANDARD FIELDS TO EXTRACT:
       "hsn_sac": "HSN/SAC code if present",
       "quantity": 1.0,
       "uom": "Unit of measure",
-      "unit_price": "$19.00",
-      "rate_incl_tax": "$20.12",
+      "unit_price": "₹19.00",
+      "rate_incl_tax": "₹20.12",
+      "discount_percent": "Discount percentage if present in table (e.g. '0.00%', '5%')",
       "gst_rate": null,
-      "total_price": "$19.00"
+      "total_price": "₹19.00"
     }
   ],
 
@@ -147,10 +148,15 @@ CRITICAL RULES:
    - You MUST extract EVERY SINGLE product / line item from ALL pages without omitting, grouping, or truncating any rows.
    - Tag each item with its 1-indexed integer 'page' number (e.g. 1, 2) indicating which page it appears on (based on the '--- Page N ---' section). If single page, set 'page': 1.
    - NEVER stop early (e.g. after 10 items). If an invoice has 20, 30, or more items across page 1 and page 2, extract ALL of them (e.g. items 1 to 20).
-13. MISSING FIELDS & NULLS:
+13. DISCOUNT PERCENTAGE (Dis%):
+   - If the items table contains a "Dis%" or "Dis %" or "Discount %" or "Disc %" column, extract the discount percentage into "discount_percent" for each line item (e.g. "0.00%", "5.00%", "10%").
+   - Do NOT omit the discount column if it is present in the table.
+14. UNIFIED CURRENCY ACROSS MULTI-PAGE DOCUMENTS:
+   - If the document is in Indian Rupees (INR / ₹ / Rs), ALL monetary amounts and rates across ALL pages (Page 1, Page 2, Page 3, etc.) must use the "₹" symbol (e.g. "₹145.00", NOT "$145.00")!
+15. MISSING FIELDS & NULLS:
    - If a field is not present in the document, set it to null. Do NOT invent or hallucinate values.
-14. SELLER UNDEFINED: If no seller/vendor name exists, set seller_name to "Unknown".
-15. Return valid JSON only. No markdown fences, no explanatory text."""
+16. SELLER UNDEFINED: If no seller/vendor name exists, set seller_name to "Unknown".
+17. Return valid JSON only. No markdown fences, no explanatory text."""
 
     user_prompt = f"""Extract all receipt and party details from this OCR text:
 

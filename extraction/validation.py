@@ -100,6 +100,8 @@ def format_receipt_display(receipt: ReceiptData) -> str:
                 parts.append(f"Rate: {it.unit_price}")
             if it.rate_incl_tax is not None:
                 parts.append(f"Rate(Incl.Tax): {it.rate_incl_tax}")
+            if getattr(it, "discount_percent", None) is not None:
+                parts.append(f"Dis%: {it.discount_percent}")
             if it.total_price is not None:
                 parts.append(f"Amount: {it.total_price}")
 
@@ -267,10 +269,12 @@ def validate_and_reconcile_receipt(
                     item.total_price = round(item.quantity * item.unit_price, 2)
                 elif item.total_price is not None and item.unit_price is not None:
                     # Sanity check: if unit_price > total_price when quantity > 1 (e.g. unit 220, total 33.90 for qty 2)
-                    if item.quantity > 1 and item.unit_price > item.total_price:
-                        item.unit_price = round(item.total_price / item.quantity, 2)
-                    elif abs(round(item.quantity * item.unit_price, 2) - item.total_price) > 0.05:
-                        item.unit_price = round(item.total_price / item.quantity, 2)
+                    has_discount = bool(getattr(item, "discount_percent", None) and item.discount_percent not in ["0%", "0.00%"])
+                    if not has_discount:
+                        if item.quantity > 1 and item.unit_price > item.total_price:
+                            item.unit_price = round(item.total_price / item.quantity, 2)
+                        elif abs(round(item.quantity * item.unit_price, 2) - item.total_price) > 0.05:
+                            item.unit_price = round(item.total_price / item.quantity, 2)
                 elif item.total_price is not None and item.unit_price is None:
                     item.unit_price = round(item.total_price / item.quantity, 2)
 
@@ -368,6 +372,47 @@ def validate_and_reconcile_receipt(
 
     if receipt.items is None:
         receipt.items = []
+
+    # 4a. Reconcile item discount percentages if table contains Dis%
+    if ocr_text and receipt.items:
+        has_dis_header = bool(re.search(r"(?:\bDis%|\bDis\s*%|\bDiscount(?:\s*%)?|\bDisc%|\bDisc\s*%)", ocr_text, re.IGNORECASE))
+        if has_dis_header:
+            ocr_lines = [l.strip() for l in ocr_text.splitlines() if l.strip()]
+            for it in receipt.items:
+                if not getattr(it, "discount_percent", None):
+                    if it.sl_no:
+                        # Check single-line OCR format where numbers are on same line
+                        for l in ocr_lines:
+                            if re.search(rf"\b{re.escape(str(it.sl_no))}\b", l):
+                                nums = re.findall(r"\d+(?:\.\d+)?%?", l)
+                                if len(nums) >= 4:
+                                    cand = nums[-2]
+                                    try:
+                                        c_num = float(cand.replace("%", ""))
+                                        it.discount_percent = f"{c_num:.2f}%" if "." in cand else f"{c_num:.0f}%"
+                                        break
+                                    except ValueError:
+                                        pass
+
+                        # Check multi-line vertical OCR token stream
+                        if not getattr(it, "discount_percent", None):
+                            for idx, l in enumerate(ocr_lines):
+                                if l == str(it.sl_no) and idx + 4 < len(ocr_lines):
+                                    for offset in [4, 5]:
+                                        if idx + offset < len(ocr_lines):
+                                            cand = ocr_lines[idx + offset]
+                                            if re.match(r"^\d+(?:\.\d+)?%?$", cand):
+                                                try:
+                                                    c_num = float(cand.replace("%", ""))
+                                                    it.discount_percent = f"{c_num:.2f}%" if "." in cand else f"{c_num:.0f}%"
+                                                    break
+                                                except ValueError:
+                                                    pass
+                                    if getattr(it, "discount_percent", None):
+                                        break
+
+                    if not getattr(it, "discount_percent", None):
+                        it.discount_percent = "0.00%"
 
     # 4b. Tax Rates Reconciliation (CGST %, SGST %, IGST %)
     if ocr_text:
@@ -861,6 +906,8 @@ def validate_and_reconcile_receipt(
             pan_m = re.search(r"(?:Company(?:'s)?\s*PAN|PAN\s*(?:No\.?)?)\s*[:=]?\s*([A-Z]{5}\d{4}[A-Z])\b", ocr_text, re.IGNORECASE)
             if pan_m:
                 receipt.extra_fields["company_pan"] = pan_m.group(1).upper()
+
+    receipt.synchronize_fields()
 
     diagnostics["calculated_items_sum"] = items_total_sum if valid_item_prices > 0 else None
     return receipt, diagnostics

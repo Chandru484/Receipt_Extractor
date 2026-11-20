@@ -6,10 +6,19 @@ from pydantic_core import core_schema
 
 CURRENCY_CODE_TO_SYMBOL = {
     "USD": "$",
+    "$": "$",
     "INR": "₹",
+    "₹": "₹",
+    "RS": "₹",
+    "RS.": "₹",
+    "RUPEE": "₹",
+    "RUPEES": "₹",
     "EUR": "€",
+    "€": "€",
     "GBP": "£",
+    "£": "£",
     "JPY": "¥",
+    "¥": "¥",
     "CAD": "C$",
     "AUD": "A$",
     "AED": "AED ",
@@ -115,14 +124,23 @@ def format_currency_value(value: Any, default_currency: str = "USD") -> Optional
     if not val_str:
         return None
 
-    # Detect currency symbol
+    # Target symbol from default_currency
+    target_sym = CURRENCY_CODE_TO_SYMBOL.get(str(default_currency).strip().upper(), None)
+    if not target_sym and str(default_currency).strip() in ["₹", "$", "€", "£", "¥"]:
+        target_sym = str(default_currency).strip()
+
+    # Detect currency symbol already present in value string
     symbol = None
-    for s in ["$", "₹", "€", "£", "¥", "C$", "A$", "AED", "S$"]:
+    for s in ["₹", "$", "€", "£", "¥", "C$", "A$", "AED", "S$"]:
         if s in val_str:
             symbol = s
             break
-    if not symbol:
-        symbol = CURRENCY_CODE_TO_SYMBOL.get(str(default_currency).upper(), "$")
+
+    # If document has an established currency symbol (e.g. "₹") and value has accidental "$", enforce document symbol
+    if target_sym and (symbol is None or (symbol == "$" and target_sym != "$")):
+        symbol = target_sym
+    elif not symbol:
+        symbol = target_sym or "$"
 
     cleaned = val_str.replace(",", "")
     cleaned = re.sub(r"(\d+)-(\d{2})\b", r"\1.\2", cleaned)
@@ -218,6 +236,7 @@ class ReceiptItem(BaseModel):
     uom: Optional[str] = None
     unit_price: Optional[CurrencyValue] = None
     rate_incl_tax: Optional[CurrencyValue] = None
+    discount_percent: Optional[str] = None
     gst_rate: Optional[str] = None
     total_price: Optional[CurrencyValue] = None
 
@@ -245,6 +264,26 @@ class ReceiptItem(BaseModel):
                     if data.get(alt_key) is not None:
                         data["quantity"] = data[alt_key]
                         break
+
+            # Discount percentage resolution (e.g. Dis%, Dis, Disc%, discount_percent)
+            if data.get("discount_percent") is None:
+                for alt_key in [
+                    "dis%", "dis_percent", "dis_pct", "discount%", "discount_percent",
+                    "discount_rate", "disc%", "disc_percent", "dis", "discount_pct",
+                    "discount", "Dis%", "Dis", "DIS%"
+                ]:
+                    if data.get(alt_key) is not None:
+                        data["discount_percent"] = data[alt_key]
+                        break
+
+            if data.get("discount_percent") is not None:
+                d_val = str(data["discount_percent"]).strip()
+                if d_val and not d_val.endswith("%"):
+                    try:
+                        d_num = float(d_val)
+                        data["discount_percent"] = f"{d_num:.2f}%" if "." in d_val else f"{d_num:.0f}%"
+                    except ValueError:
+                        data["discount_percent"] = f"{d_val}%"
 
             if "item_name" in data and isinstance(data["item_name"], str):
                 data["item_name"] = re.sub(r"\s+\d{1,2}/\d{1,2}/\d{2,4}$", "", data["item_name"]).strip()
@@ -491,7 +530,19 @@ class ReceiptData(BaseModel):
                 self.igst_rate = f"{s_igst}%"
 
         # Determine currency symbol from document currency
-        curr_sym = CURRENCY_CODE_TO_SYMBOL.get((self.currency or "").upper(), "$")
+        raw_curr = (self.currency or "").strip().upper()
+        curr_sym = CURRENCY_CODE_TO_SYMBOL.get(raw_curr, None)
+        if not curr_sym:
+            if self.currency in ["₹", "$", "€", "£", "¥"]:
+                curr_sym = self.currency
+            else:
+                has_rupee = any("₹" in str(getattr(self, f, "")) for f in ["grand_total", "subtotal", "tax"])
+                if not has_rupee and self.items:
+                    has_rupee = any("₹" in str(it.unit_price or "") or "₹" in str(it.total_price or "") for it in self.items)
+                curr_sym = "₹" if has_rupee else "$"
+
+        if curr_sym == "₹":
+            self.currency = "₹"
 
         # Calculate combined tax if individual components exist and tax is None
         tax_sum = 0.0
@@ -503,7 +554,7 @@ class ReceiptData(BaseModel):
         if self.tax is None and has_tax_component:
             self.tax = format_currency_value(tax_sum, curr_sym)
 
-        # Standardize all financial amounts to CurrencyValue with symbol and 2 decimals (e.g. '$93.50')
+        # Standardize all financial amounts to CurrencyValue with symbol and 2 decimals (e.g. '$93.50', '₹100.00')
         for f in ["subtotal", "tax", "grand_total", "cgst", "sgst", "igst", "rounding_off", "amount_paid", "refunded_amount"]:
             val = getattr(self, f, None)
             if val is not None:
@@ -528,9 +579,12 @@ class ReceiptData(BaseModel):
         if doc_date:
             from extraction.field_extractor import normalize_date_string
             norm = normalize_date_string(doc_date)
-            final_d = norm or doc_date
-            self.invoice_date = final_d
-            self.date_paid = final_d
+            if norm:
+                self.invoice_date = norm
+                self.date_paid = norm
+            elif any(w in str(doc_date).lower() for w in ["unreadable", "faded", "null", "none", "unknown", "n/a"]):
+                self.invoice_date = None
+                self.date_paid = None
 
         if self.refunded_on:
             from extraction.field_extractor import normalize_date_string
@@ -664,9 +718,12 @@ class ReceiptData(BaseModel):
         if doc_date:
             from extraction.field_extractor import normalize_date_string
             norm = normalize_date_string(doc_date)
-            final_d = norm or doc_date
-            self.invoice_date = final_d
-            self.date_paid = final_d
+            if norm:
+                self.invoice_date = norm
+                self.date_paid = norm
+            elif any(w in str(doc_date).lower() for w in ["unreadable", "faded", "null", "none", "unknown", "n/a"]):
+                self.invoice_date = None
+                self.date_paid = None
 
         return self
 

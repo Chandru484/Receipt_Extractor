@@ -1,4 +1,4 @@
-from extraction.validation import validate_and_reconcile_receipt
+from extraction.validation import validate_and_reconcile_receipt, format_receipt_display
 from schemas.receipt_schema import ReceiptData, ReceiptItem, remove_none_values
 
 
@@ -227,6 +227,52 @@ def test_laurel_technologies_sample_address_and_buyer_phone_isolation():
     assert clean_json["invoice_date"] == "01-01-2023"
     assert clean_json["seller_address"] == "ADD1, ADD2, ADD3, ADD4"
     assert clean_json["buyer_address"] == "ADD2, ADD3"
+
+
+def test_dis_percent_and_currency_unification():
+    raw_ocr = """
+    SSS STATIONERY
+    No 68104 Date :19-04-2025
+    Lucky Store
+    S.No Particulars Qty Rate Dis% Amount
+    1 Nova Grip Jar Rs 7/- 2.00 200.00 0.00 400.00
+    2 Reynold Brite 1.00 100.00 5.00 95.00
+    Gross 495.00
+    GRAND TOTAL 495.00
+    """
+
+    receipt = ReceiptData(
+        vendor_name="SSS STATIONERY",
+        currency="₹",
+        invoice_number="68104",
+        invoice_date="19-04-2025",
+        items=[
+            ReceiptItem(page=1, sl_no="1", item_name="Nova Grip Jar Rs 7/-", quantity=2.0, unit_price="200.00", total_price="400.00"),
+            ReceiptItem(page=2, sl_no="2", item_name="Reynold Brite", quantity=1.0, unit_price="$100.00", discount_percent="5", total_price="$95.00")
+        ],
+        subtotal="495.00",
+        tax="$0.01",
+        grand_total="₹495.00"
+    )
+
+    val_receipt, diag = validate_and_reconcile_receipt(receipt, raw_ocr)
+
+    # Dis% should be populated and formatted as percentage
+    assert val_receipt.items[0].discount_percent == "0.00%"
+    assert val_receipt.items[1].discount_percent == "5.00%" or val_receipt.items[1].discount_percent == "5%"
+
+    # Currency must be strictly unified in ₹ (no accidental $)
+    assert "₹" in val_receipt.items[0].unit_price
+    assert "₹" in val_receipt.items[1].unit_price
+    assert "$" not in val_receipt.items[1].unit_price
+    assert "$" not in val_receipt.tax
+
+    # Display formatting must show Dis%
+    disp = format_receipt_display(val_receipt)
+    assert "Dis%: 0.00%" in disp
+    assert "Dis%: 5" in disp or "Dis%: 5.00%" in disp
+    assert "$" not in disp
+
 
 
 
