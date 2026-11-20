@@ -755,7 +755,8 @@ class ReceiptData(BaseModel):
             "igst_rate", "rounding_off", "tax", "grand_total", "amount_paid",
             "refunded_amount", "refunded_on", "currency", "bank_details", "hsn_tax_summary",
             "gross_amount", "balance_amount", "bill_type", "total_items", "total_quantity",
-            "transport", "despatch_through", "eway_bill_no", "po_number", "dc_number", "extra_fields"
+            "transport", "despatch_through", "eway_bill_no", "po_number", "dc_number",
+            "rounding_off_label", "extra_fields"
         }
         if self.extra_fields is None:
             self.extra_fields = {}

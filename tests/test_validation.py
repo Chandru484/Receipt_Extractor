@@ -545,6 +545,36 @@ Ph : 8553747352,0431-4000020
     assert "Dis%: 0.00%" in disp
 
 
+def test_stationery_phone_and_no_date_header_reconciliation():
+    ocr_text = """
+Estimate / Quotation
+SSS STATIONERY
+No : 68104 Date : 19-04-2025
+Lucky Store Page No : 1
+S.No Particulars Qty Rate Dis% Amount
+1 Nova Grip Jar Rs 7/- 2.00 200.00 0.00 400.00
+Gross 17870.99
+Balance Amt : 17871.00
+Rounded Off 0.01
+GRAND TOTAL 17871.00
+Ph : 8553747352,0431-4000020
+"""
+    raw = ReceiptData()
+    val_receipt, _ = validate_and_reconcile_receipt(raw, ocr_text)
+    assert val_receipt.seller == "SSS STATIONERY"
+    assert val_receipt.buyer == "Lucky Store"
+    assert val_receipt.invoice_number == "68104"
+    assert val_receipt.invoice_date == "19-04-2025"
+    assert val_receipt.seller_phone == "0431-4000020"
+    assert val_receipt.seller_mobile == "8553747352"
+    assert val_receipt.gross_amount == 17870.99
+    assert val_receipt.balance_amount == 17871.00
+    assert val_receipt.rounding_off == 0.01
+    assert val_receipt.grand_total == 17871.00
+    assert val_receipt.tax is None
+
+
+
 
 
 
