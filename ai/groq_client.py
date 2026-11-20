@@ -85,11 +85,22 @@ def _extract_with_single_client(client: Groq, model: str, messages: list) -> Rec
     try:
         raw = _call_groq(client, model=model, messages=messages, max_tokens=tokens)
     except RateLimitError as rle:
-        # If rate limit exceeded because requested output tokens exceeded quota limit (e.g. OTPM)
-        if "reduce max_tokens" in str(rle).lower() or "tokens" in str(rle).lower():
-            reduced_tokens = max(1800, tokens // 2)
-            logger.warning(f"Rate limit hit requesting {tokens} tokens. Retrying with reduced tokens: {reduced_tokens}")
-            raw = _call_groq(client, model=model, messages=messages, max_tokens=reduced_tokens)
+        err_str = str(rle).lower()
+        # If rate limit exceeded because requested output tokens exceeded quota limit (e.g. OTPM 1000 on Qwen)
+        if "reduce max_tokens" in err_str or "tokens" in err_str or "otpm" in err_str:
+            if "qwen" in model.lower():
+                alt_model = "openai/gpt-oss-120b"
+                logger.warning(
+                    f"Model {model} hit OTPM rate limit. Auto-switching to higher quota model: {alt_model}..."
+                )
+                try:
+                    raw = _call_groq(client, model=alt_model, messages=messages, max_tokens=tokens)
+                except Exception:
+                    raw = _call_groq(client, model="openai/gpt-oss-20b", messages=messages, max_tokens=tokens)
+            else:
+                reduced_tokens = 950 if "limit 1000" in err_str else max(900, tokens // 2)
+                logger.warning(f"Rate limit hit requesting {tokens} tokens. Retrying with reduced tokens: {reduced_tokens}")
+                raw = _call_groq(client, model=model, messages=messages, max_tokens=reduced_tokens)
         else:
             raise
 
@@ -111,6 +122,101 @@ def _extract_with_single_client(client: Groq, model: str, messages: list) -> Rec
         raise GroqExtractionError("Groq response is not a valid JSON dictionary.")
 
     return ReceiptData.model_validate(parsed_json)
+
+
+def _split_multipage_ocr(ocr_result: Dict[str, Any]) -> List[tuple[int, Dict[str, Any]]]:
+    """Split combined OCR text into independent, 1-indexed page payloads."""
+    full_text = ocr_result.get("full_text", "")
+    pattern = re.compile(r"^---\s*Page\s+(\d+)\s*---\s*$", re.MULTILINE | re.IGNORECASE)
+    matches = list(pattern.finditer(full_text))
+    if not matches:
+        return [(1, ocr_result)]
+
+    total_pages = ocr_result.get("total_pages", len(matches))
+    pages: List[tuple[int, Dict[str, Any]]] = []
+    for index, match in enumerate(matches):
+        start = match.end()
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(full_text)
+        page_number = int(match.group(1))
+        page_text = full_text[start:end].strip()
+        if page_text:
+            pages.append((page_number, {
+                "full_text": page_text,
+                "lines": [],
+                "total_pages": total_pages,
+            }))
+    return pages
+
+
+def _merge_receipt_pages(page_results: List[tuple[int, ReceiptData]]) -> ReceiptData:
+    """Merge page extractions while retaining every item and its page number."""
+    if not page_results:
+        raise GroqExtractionError("OCR contained no extractable pages.")
+    if len(page_results) == 1:
+        page_number, receipt = page_results[0]
+        for item in receipt.items:
+            item.page = item.page or page_number
+        return receipt
+
+    merged = page_results[0][1].model_dump(exclude_none=True)
+    items: List[Dict[str, Any]] = []
+    extra_fields: Dict[str, Any] = {}
+
+    for page_number, receipt in page_results:
+        for item in receipt.items:
+            item.page = item.page or page_number
+            items.append(item.model_dump(exclude_none=True))
+        if receipt.extra_fields:
+            extra_fields.update(receipt.extra_fields)
+
+        page_data = receipt.model_dump(exclude_none=True)
+        for key, value in page_data.items():
+            if key in {"items", "extra_fields", "bank_details"}:
+                continue
+            if value not in (None, "", [], {}):
+                if key not in merged or merged[key] in (None, "", [], {}):
+                    merged[key] = value
+
+        if receipt.bank_details:
+            merged["bank_details"] = receipt.bank_details.model_dump(exclude_none=True)
+
+    merged["items"] = items
+    if extra_fields:
+        merged["extra_fields"] = extra_fields
+
+    return ReceiptData.model_validate(merged)
+
+
+def _extract_multipage_with_client(
+    client: Groq,
+    model: str,
+    ocr_result: Dict[str, Any],
+) -> ReceiptData:
+    """Extract pages independently so response size does not truncate the bill."""
+    page_payloads = _split_multipage_ocr(ocr_result)
+    if len(page_payloads) <= 1:
+        return _extract_with_single_client(
+            client,
+            model,
+            build_extraction_messages(ocr_result),
+        )
+
+    page_results: List[tuple[int, ReceiptData]] = []
+    all_lines = ocr_result.get("lines", [])
+    for page_number, page_payload in page_payloads:
+        if all_lines:
+            page_payload["lines"] = [
+                line for line in all_lines
+                if line.get("page") == page_number
+            ]
+        receipt = _extract_with_single_client(
+            client,
+            model,
+            build_extraction_messages(page_payload),
+        )
+        page_results.append((page_number, receipt))
+
+    return _merge_receipt_pages(page_results)
 
 
 def extract_receipt_with_groq(ocr_result: Union[Dict[str, Any], str]) -> ReceiptData:
@@ -161,7 +267,11 @@ def extract_receipt_with_groq(ocr_result: Union[Dict[str, Any], str]) -> Receipt
 
         try:
             client = get_groq_client(api_key=api_key)
-            result = _extract_with_single_client(client, model=model, messages=messages)
+            total_pages = ocr_result.get("total_pages", 1)
+            if int(total_pages or 1) > 1:
+                result = _extract_multipage_with_client(client, model, ocr_result)
+            else:
+                result = _extract_with_single_client(client, model=model, messages=messages)
             if idx > 0:
                 logger.info(f"Successfully extracted receipt using fallback Groq API ({model}).")
             return result

@@ -63,3 +63,4 @@ def test_normal_project_question_no_forced_escalation():
 
         assert res.escalate_to_tawk is False
         assert "PDF" in res.reply
+

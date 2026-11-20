@@ -57,7 +57,7 @@ RESPONSE GUIDELINES:
 ESCALATION_PATTERNS = [
     (re.compile(r"\b(?:voice\s*message|voice\s*note|audio|mic|microphone)\b", re.IGNORECASE), "voice_message"),
     (re.compile(r"\b(?:human|agent|support\s*person|talk\s*to\s*(?:someone|a\s*person|human|agent)|customer\s*care|live\s*(?:support|chat))\b", re.IGNORECASE), "human_request"),
-    (re.compile(r"\b(?:upload|attach|send)\s+(?:an?\s+)?(?:image|photo|picture|screenshot)\b", re.IGNORECASE), "image_upload"),
+    (re.compile(r"\b(?:upload|attach|send)\s+(?:an?\s+)?(?:image|photo|picture|screenshot|file)\b", re.IGNORECASE), "image_upload"),
     (re.compile(r"\b(?:look\s*at|check|review)\s+my\s+(?:receipt|bill|invoice|image)\b", re.IGNORECASE), "image_upload"),
 ]
 
@@ -93,7 +93,7 @@ def ask_chatbot(request: ChatRequest) -> ChatResponse:
     try:
         client = get_groq_client()
         # Use fast, highly intelligent model
-        model = settings.GROQ_MODEL or "llama-3.3-70b-versatile"
+        model = settings.GROQ_MODEL or "openai/gpt-oss-120b"
         response = client.chat.completions.create(
             model=model,
             messages=messages,
@@ -106,7 +106,7 @@ def ask_chatbot(request: ChatRequest) -> ChatResponse:
         if settings.GROQ_FALLBACK_API_KEY.strip():
             try:
                 fb_client = get_groq_client(api_key=settings.GROQ_FALLBACK_API_KEY)
-                fb_model = settings.GROQ_FALLBACK_MODEL or "llama-3.3-70b-versatile"
+                fb_model = settings.GROQ_FALLBACK_MODEL or "openai/gpt-oss-20b"
                 fb_response = fb_client.chat.completions.create(
                     model=fb_model,
                     messages=messages,
@@ -166,3 +166,4 @@ def _log_chat_interaction(user_msg: str, bot_reply: str, escalated: bool, sessio
         })
     except Exception as exc:
         logger.debug(f"Failed to log chat interaction to MongoDB: {exc}")
+

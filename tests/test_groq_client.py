@@ -6,6 +6,8 @@ from ai.groq_client import (
     GroqExtractionError,
     _clean_json_response,
     _sanitize_error,
+    _split_multipage_ocr,
+    _merge_receipt_pages,
 )
 from core.config import settings
 from schemas.receipt_schema import ReceiptData
@@ -128,6 +130,30 @@ def test_extract_receipt_both_groq_fail(mock_get_client):
         }
         with pytest.raises(GroqExtractionError, match="Extraction failed across all Groq API keys"):
             extract_receipt_with_groq(ocr_result)
+
+
+def test_multipage_ocr_split_and_merge():
+    ocr_result = {
+        "full_text": "--- Page 1 ---\nVendor One\nWidget",
+        "total_pages": 2,
+    }
+    pages = _split_multipage_ocr(ocr_result)
+    assert len(pages) == 1
+
+    ocr_result["full_text"] = "--- Page 1 ---\nVendor One\nWidget\n\n--- Page 2 ---\nGadget"
+    pages = _split_multipage_ocr(ocr_result)
+    assert [page_number for page_number, _ in pages] == [1, 2]
+
+    page_one = ReceiptData.model_validate({
+        "vendor_name": "Vendor One",
+        "items": [{"item_name": "Widget", "page": 1, "total_price": 10}],
+    })
+    page_two = ReceiptData.model_validate({
+        "items": [{"item_name": "Gadget", "page": 2, "total_price": 20}],
+    })
+    merged = _merge_receipt_pages([(1, page_one), (2, page_two)])
+    assert len(merged.items) == 2
+    assert [item.page for item in merged.items] == [1, 2]
 
 
 @patch("ai.groq_client.get_groq_client")
