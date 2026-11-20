@@ -183,24 +183,26 @@ def clean_bank_name(val: Optional[str], ocr_text: str = "") -> Optional[str]:
         s = str(val).strip()
         # Remove any leading numbers or currency symbols from OCR misgrouping
         s = re.sub(r"^[$₹€£0-9.,\s]+", "", s).strip()
-        if len(s) >= 3 and s.lower() not in ["the bank", "my bank", "food bank", "bank"]:
-            return s
+        if len(s) >= 3 and s.lower() not in ["the bank", "my bank", "food bank", "bank", "only\nbank", "only bank"]:
+            if "only" not in s.lower() and not s.lower().startswith("bank details"):
+                return s
 
     if ocr_text:
-        m1 = re.search(r"Bank\s*Name\s*[:=]?\s*([A-Za-z\s]+?)(?:\s*(?:A/c|Account|Branch|IFSC|CC|BSB|\n|$))", ocr_text, re.IGNORECASE)
+        # Priority 1: Label like "BANK : KARUR VYSYA BANK" or "Bank Name : ..."
+        m1 = re.search(r"\bBank(?:\s*Name)?\s*[:=]\s*([A-Za-z\s&]+?)(?:\s*(?:Branch|A/c|Acc|IFS|Account|IFSC|CC|BSB|\n|$))", ocr_text, re.IGNORECASE)
         if m1:
             cand = m1.group(1).strip()
-            if cand and cand.lower() not in ["the bank", "my bank"]:
+            if cand and cand.lower() not in ["the bank", "my bank", "details", "bank details"]:
                 return cand
 
-        # Match bank line on single line without absorbing preceding lines / numbers
-        m2 = re.search(r"^[^\S\r\n]*([A-Za-z0-9\t &]{2,30}\s*Bank)\b", ocr_text, re.MULTILINE | re.IGNORECASE)
+        # Priority 2: Standalone bank name line ending in Bank
+        m2 = re.search(r"^[^\S\r\n]*([A-Za-z0-9\t &]{2,30}\s+Bank)\b", ocr_text, re.MULTILINE | re.IGNORECASE)
         if m2:
             cand = m2.group(1).strip()
-            # Strip leading digits or noise
             cand = re.sub(r"^[$₹€£0-9.,\s]+", "", cand).strip()
-            if cand and cand.lower() not in ["the bank", "my bank", "food bank"]:
-                return cand
+            if cand and cand.lower() not in ["the bank", "my bank", "food bank", "only bank", "details bank"]:
+                if "only" not in cand.lower():
+                    return cand
 
     return None
 

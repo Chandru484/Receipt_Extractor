@@ -135,25 +135,30 @@ def save_extraction_to_mongodb(response_payload: Dict[str, Any]) -> Optional[str
             or response_payload.get("receipt_number")
         )
 
+        doc_to_save = copy.deepcopy(response_payload)
+        now_iso = datetime.now(timezone.utc).isoformat()
+
         # 2. Check if already present in MongoDB using the invoice number
         if invoice_num:
             clean_inv = str(invoice_num).strip()
             if clean_inv:
                 existing_doc = find_extraction_by_invoice_number(clean_inv)
                 if existing_doc:
-                    existing_id = str(existing_doc["_id"])
+                    existing_id = existing_doc["_id"]
+                    doc_to_save["_id"] = existing_id
+                    doc_to_save["stored_at"] = existing_doc.get("stored_at", now_iso)
+                    doc_to_save["updated_at"] = now_iso
+                    collection.replace_one({"_id": existing_id}, doc_to_save, upsert=True)
+                    str_id = str(existing_id)
                     logger.info(
-                        f"Invoice number '{clean_inv}' is already present in MongoDB with ID {existing_id}. "
-                        f"Skipping duplicate save."
+                        f"Invoice number '{clean_inv}' updated in MongoDB with ID {str_id}."
                     )
                     if isinstance(response_payload, dict):
                         response_payload["is_duplicate"] = True
-                    return existing_id
+                    return str_id
 
         # 3. Not found or no invoice number — store in database as normal
-        doc_to_save = copy.deepcopy(response_payload)
-        doc_to_save["stored_at"] = datetime.now(timezone.utc).isoformat()
-
+        doc_to_save["stored_at"] = now_iso
         insert_result = collection.insert_one(doc_to_save)
         doc_id = str(insert_result.inserted_id)
         logger.info(f"Receipt extraction stored in MongoDB with ID: {doc_id}")

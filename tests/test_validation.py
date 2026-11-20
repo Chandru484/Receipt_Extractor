@@ -435,6 +435,116 @@ Ph : 8553747352,0431-4000020
     assert data_dict["buyer_gstin"] is None
 
 
+def test_ganapathy_electricals_exact_fields_and_no_discount_hallucination():
+    sample_ocr = """
+GANAPATHY ELECTRICALS Bill No Bill Date
+97, KAMARAJ ROAD 12 01/04/2021
+NEAR OLD BUS STAND 
+TIRUPUR - 641604 Bill Type Despatch Through
+Phone :0421-4325351 Credit Bill 12345
+Mobile :7502 444 999 
+ganapathielectricals@gmail.com P.O No & Date D.C.No & Date
+GSTIN/UIN :33AACFG7274J1ZA 56789 546322
+Buyer : MORNING STAAR APPARELS Transport
+274/6,SASTHIRI NAGAR Extn., Sdsd
+KPN COLONY (PO) NEAR G.H., 
+DHARAPURAM ROAD
+TIRUPUR - 641608 Mobile: E-Way Bill No : 123456 GSTIN/UIN :33AAIFM9340B1ZK State : TamilNadu ,Code :33
+SNo Description Of Goods HSN/SAC GST% Qty Unit Rate Dis % Amount
+1 11/2" CPVC (11-5M) (ASH) 39172390 5 2.00 % LTH 1513.00 3026.00
+2 1" CPVC (11-5M) ASH 39172390 12 8.00 % LTH 623.66 4989.28
+Total Items : 20 79.00 Total 19963.26
+HSN/SAC Taxable SGST Tax CGST Tax Sub Total 19963.26
+39172390 3026.00 2.50 75.65 2.50 75.65
+Round Off -0.20
+Amount Chargeable (in Words) NET TOTAL 22917.00
+"""
+    raw = ReceiptData(
+        seller_name="GANAPATHY ELECTRICALS",
+        seller_address="97, KAMARAJ ROAD, NEAR OLD BUS STAND, TIRUPUR - 641604",
+        invoice_number="97",  # mistakenly set to door number
+        transport="Transport",  # mistakenly set to header label
+        items=[
+            ReceiptItem(sl_no="1", item_name="11/2\" CPVC (11-5M) (ASH)", discount_percent="1513.00%", quantity=18.0, unit_price="168.11", total_price="3026.00"),
+            ReceiptItem(sl_no="2", item_name="1\" CPVC (11-5M) ASH", discount_percent="623.66%", quantity=12.0, unit_price="415.77", total_price="4989.28")
+        ]
+    )
+
+    val_receipt, _ = validate_and_reconcile_receipt(raw, sample_ocr)
+
+    # 1. Invoice Number reconciled from '97' (door no) to '12' (bill no)
+    assert val_receipt.invoice_number == "12"
+
+    # 2. Transport extracted as 'Sdsd' (not 'Transport')
+    assert val_receipt.transport == "Sdsd"
+
+    # 3. Bill Type, Despatch Through, PO, DC, E-Way Bill extracted
+    assert val_receipt.bill_type == "Credit Bill"
+    assert val_receipt.despatch_through == "12345"
+    assert val_receipt.po_number == "56789"
+    assert val_receipt.dc_number == "546322"
+    assert val_receipt.eway_bill_no == "123456"
+
+    # 4. Total Items and Total Quantity
+    assert val_receipt.total_items == 20
+    assert val_receipt.total_quantity == 79.0
+
+    # 5. Items have NO discount hallucination (1513.00% purged, actual rate and qty restored)
+    assert val_receipt.items[0].discount_percent is None
+    assert val_receipt.items[0].quantity == 2.0
+    assert val_receipt.items[0].unit_price == 1513.00
+    assert val_receipt.items[0].total_price == 3026.00
+
+    assert val_receipt.items[1].discount_percent is None
+    assert val_receipt.items[1].quantity == 8.0
+    assert val_receipt.items[1].unit_price == 623.66
+    assert val_receipt.items[1].total_price == 4989.28
+
+    # 6. Formatted display checks
+    disp = format_receipt_display(val_receipt)
+    assert "Bill Type : Credit Bill" in disp
+    assert "Invoice / Bill No : 12" in disp
+    assert "Transport : Sdsd" in disp
+    assert "Despatch Through : 12345" in disp
+    assert "P.O No & Date : 56789" in disp
+    assert "D.C.No & Date : 546322" in disp
+    assert "E-Way Bill No : 123456" in disp
+    assert "Total Items : 20" in disp
+    assert "Total Qty : 79.0" in disp
+    assert "Dis%:" not in disp  # Must NOT display Dis%: when discount is not present!
+
+
+def test_stationery_gross_balance_amount_and_valid_discount():
+    ocr_text = """
+Gross 17870.99
+Balance Amt : 17871.00
+Rounded Off 0.01
+GRAND TOTAL 17871.00
+Ph : 8553747352,0431-4000020
+"""
+    raw = ReceiptData(
+        currency="INR",
+        seller_name="SSS STATIONERY",
+        items=[
+            ReceiptItem(sl_no="1", item_name="Stylish X3 Rs 7/-", quantity=2.0, unit_price="22.00", discount_percent="0.00%", total_price="44.01")
+        ]
+    )
+
+    val_receipt, _ = validate_and_reconcile_receipt(raw, ocr_text)
+
+    assert val_receipt.gross_amount == 17870.99
+    assert val_receipt.balance_amount == 17871.00
+    assert val_receipt.rounding_off == 0.01
+    assert val_receipt.grand_total == 17871.00
+
+    disp = format_receipt_display(val_receipt)
+    assert "Gross : ₹17870.99" in disp
+    assert "Balance Amt : ₹17871.00" in disp
+    assert "Rounding Off : ₹0.01" in disp
+    assert "Grand Total : ₹17871.00" in disp
+    assert "Dis%: 0.00%" in disp
+
+
 
 
 

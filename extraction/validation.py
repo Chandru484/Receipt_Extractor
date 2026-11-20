@@ -65,6 +65,8 @@ def format_receipt_display(receipt: ReceiptData) -> str:
         lines.append(f"Buyer Email : {receipt.buyer_email}")
 
     # === INVOICE DETAILS ===
+    if getattr(receipt, "bill_type", None):
+        lines.append(f"Bill Type : {receipt.bill_type}")
     if receipt.invoice_number:
         lines.append(f"Invoice / Bill No : {receipt.invoice_number}")
     if receipt.invoice_date:
@@ -77,6 +79,10 @@ def format_receipt_display(receipt: ReceiptData) -> str:
         lines.append(f"Despatch Through : {receipt.despatch_through}")
     if getattr(receipt, "eway_bill_no", None):
         lines.append(f"E-Way Bill No : {receipt.eway_bill_no}")
+    if getattr(receipt, "po_number", None):
+        lines.append(f"P.O No & Date : {receipt.po_number}")
+    if getattr(receipt, "dc_number", None):
+        lines.append(f"D.C.No & Date : {receipt.dc_number}")
 
     # === PARTICULARS / LINE ITEMS ===
     if receipt.items:
@@ -100,7 +106,7 @@ def format_receipt_display(receipt: ReceiptData) -> str:
                 parts.append(f"Rate: {it.unit_price}")
             if it.rate_incl_tax is not None:
                 parts.append(f"Rate(Incl.Tax): {it.rate_incl_tax}")
-            if getattr(it, "discount_percent", None) is not None:
+            if getattr(it, "discount_percent", None) is not None and it.discount_percent not in ["", "None"]:
                 parts.append(f"Dis%: {it.discount_percent}")
             if it.total_price is not None:
                 parts.append(f"Amount: {it.total_price}")
@@ -110,6 +116,12 @@ def format_receipt_display(receipt: ReceiptData) -> str:
         lines.append("")
 
     # === FINANCIAL BREAKDOWN ===
+    if getattr(receipt, "total_items", None) is not None:
+        lines.append(f"Total Items : {receipt.total_items}")
+    if getattr(receipt, "total_quantity", None) is not None:
+        lines.append(f"Total Qty : {receipt.total_quantity}")
+    if getattr(receipt, "gross_amount", None) is not None:
+        lines.append(f"Gross : {receipt.gross_amount}")
     if receipt.subtotal is not None:
         lines.append(f"Subtotal : {receipt.subtotal}")
 
@@ -133,6 +145,9 @@ def format_receipt_display(receipt: ReceiptData) -> str:
 
     if receipt.grand_total is not None:
         lines.append(f"Grand Total : {receipt.grand_total}")
+
+    if getattr(receipt, "balance_amount", None) is not None:
+        lines.append(f"Balance Amt : {receipt.balance_amount}")
 
     if receipt.amount_paid is not None:
         lines.append(f"Amount Paid : {receipt.amount_paid}")
@@ -320,7 +335,7 @@ def extract_hsn_tax_summary(ocr_text: str) -> Tuple[List[Dict[str, Any]], Dict[s
     if net_m:
         totals["grand_total"] = float(net_m.group(1).replace(",", ""))
 
-    ro_m = re.search(r"Round\s*Off\s*[:=]?\s*([-+]?[0-9,]+\.\d{2})", ocr_text, re.IGNORECASE)
+    ro_m = re.search(r"(?:Rounded\s*Off|Round\s*Off)\s*[:=]?\s*([-+]?[0-9,]+\.\d{2})", ocr_text, re.IGNORECASE)
     if ro_m:
         totals["rounding_off"] = float(ro_m.group(1).replace(",", ""))
 
@@ -368,57 +383,76 @@ def reconcile_missing_ocr_items(receipt: ReceiptData, ocr_text: str) -> None:
             m = re.match(r"^(\d{1,3})\s+(.+?)\s+(\d{4,8})\s+(\d+)\s+([0-9,]+(?:\.\d+)?)\s*(?:%\s*)?([A-Za-z]+)\s+([0-9,]+\.\d{2})\s+([0-9,]+\.\d{2})$", l_str)
             if m:
                 sl = m.group(1)
+                u_p = float(m.group(7).replace(",", ""))
+                t_p = float(m.group(8).replace(",", ""))
+                q = float(m.group(5).replace(",", ""))
+                hsn = m.group(3)
+                gst = f"{m.group(4)}%"
+                uom = m.group(6)
+                iname = m.group(2).strip()
+
                 if sl not in existing_sl_nos:
-                    u_p = float(m.group(7).replace(",", ""))
-                    t_p = float(m.group(8).replace(",", ""))
                     new_item = ReceiptItem(
                         page=p_num,
                         sl_no=sl,
-                        item_name=m.group(2).strip(),
-                        hsn_sac=m.group(3),
-                        gst_rate=f"{m.group(4)}%",
-                        quantity=float(m.group(5).replace(",", "")),
-                        uom=m.group(6),
+                        item_name=iname,
+                        hsn_sac=hsn,
+                        gst_rate=gst,
+                        quantity=q,
+                        uom=uom,
                         unit_price=u_p,
                         total_price=t_p,
-                        discount_percent="0.00%"
+                        discount_percent=None
                     )
                     receipt.items.append(new_item)
                     existing_sl_nos.add(sl)
                     new_items_added = True
+                else:
+                    for it in receipt.items:
+                        if it.sl_no and re.sub(r"[^\d]", "", str(it.sl_no)) == sl:
+                            it.hsn_sac = hsn
+                            it.gst_rate = gst
+                            it.quantity = q
+                            it.uom = uom
+                            it.unit_price = u_p
+                            it.total_price = t_p
+                            it.discount_percent = None
+                            break
 
             # Stationery / Retail table format: S.No Particulars Qty Rate Dis% Amount
-            m2 = re.match(r"^(\d{1,3})\s+(.+?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+([0-9,]+\.\d{2})$", l_str)
-            if m2:
-                sl2 = m2.group(1)
-                q2 = float(m2.group(3))
-                r2 = float(m2.group(4))
-                dis2 = f"{float(m2.group(5)):.2f}%"
-                amt2 = float(m2.group(6).replace(",", ""))
-                if sl2 not in existing_sl_nos:
-                    new_item = ReceiptItem(
-                        page=p_num,
-                        sl_no=sl2,
-                        item_name=m2.group(2).strip(),
-                        quantity=q2,
-                        unit_price=r2,
-                        discount_percent=dis2,
-                        total_price=amt2
-                    )
-                    receipt.items.append(new_item)
-                    existing_sl_nos.add(sl2)
-                    new_items_added = True
-                else:
-                    # Reconcile existing item against OCR truth to resolve packaging label confusion (e.g. 'Rs 20/-' in item name)
-                    for it in receipt.items:
-                        if it.sl_no and re.sub(r"[^\d]", "", str(it.sl_no)) == sl2:
-                            if it.quantity != q2 or it.unit_price != r2:
-                                it.quantity = q2
-                                it.unit_price = r2
-                                it.total_price = amt2
-                            if not getattr(it, "discount_percent", None):
-                                it.discount_percent = dis2
-                            break
+            if not re.search(r"\b\d{6,8}\b", l_str):
+                m2 = re.match(r"^(\d{1,3})\s+(.+?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+([0-9,]+\.\d{2})$", l_str)
+                if m2:
+                    sl2 = m2.group(1)
+                    q2 = float(m2.group(3))
+                    r2 = float(m2.group(4))
+                    dis_val = float(m2.group(5))
+                    dis2 = f"{dis_val:.2f}%" if dis_val <= 100.0 else None
+                    amt2 = float(m2.group(6).replace(",", ""))
+                    if sl2 not in existing_sl_nos:
+                        new_item = ReceiptItem(
+                            page=p_num,
+                            sl_no=sl2,
+                            item_name=m2.group(2).strip(),
+                            quantity=q2,
+                            unit_price=r2,
+                            discount_percent=dis2,
+                            total_price=amt2
+                        )
+                        receipt.items.append(new_item)
+                        existing_sl_nos.add(sl2)
+                        new_items_added = True
+                    else:
+                        # Reconcile existing item against OCR truth to resolve packaging label confusion (e.g. 'Rs 20/-' in item name)
+                        for it in receipt.items:
+                            if it.sl_no and re.sub(r"[^\d]", "", str(it.sl_no)) == sl2:
+                                if it.quantity != q2 or it.unit_price != r2:
+                                    it.quantity = q2
+                                    it.unit_price = r2
+                                    it.total_price = amt2
+                                if dis2 is not None:
+                                    it.discount_percent = dis2
+                                break
 
     if new_items_added:
         def sort_key(it):
@@ -592,46 +626,15 @@ def validate_and_reconcile_receipt(
     if receipt.items is None:
         receipt.items = []
 
-    # 4a. Reconcile item discount percentages if table contains Dis%
-    if ocr_text and receipt.items:
-        has_dis_header = bool(re.search(r"(?:\bDis%|\bDis\s*%|\bDiscount(?:\s*%)?|\bDisc%|\bDisc\s*%)", ocr_text, re.IGNORECASE))
-        if has_dis_header:
-            ocr_lines = [l.strip() for l in ocr_text.splitlines() if l.strip()]
-            for it in receipt.items:
-                if not getattr(it, "discount_percent", None):
-                    if it.sl_no:
-                        # Check single-line OCR format where numbers are on same line
-                        for l in ocr_lines:
-                            if re.search(rf"\b{re.escape(str(it.sl_no))}\b", l):
-                                nums = re.findall(r"\d+(?:\.\d+)?%?", l)
-                                if len(nums) >= 4:
-                                    cand = nums[-2]
-                                    try:
-                                        c_num = float(cand.replace("%", ""))
-                                        it.discount_percent = f"{c_num:.2f}%" if "." in cand else f"{c_num:.0f}%"
-                                        break
-                                    except ValueError:
-                                        pass
-
-                        # Check multi-line vertical OCR token stream
-                        if not getattr(it, "discount_percent", None):
-                            for idx, l in enumerate(ocr_lines):
-                                if l == str(it.sl_no) and idx + 4 < len(ocr_lines):
-                                    for offset in [4, 5]:
-                                        if idx + offset < len(ocr_lines):
-                                            cand = ocr_lines[idx + offset]
-                                            if re.match(r"^\d+(?:\.\d+)?%?$", cand):
-                                                try:
-                                                    c_num = float(cand.replace("%", ""))
-                                                    it.discount_percent = f"{c_num:.2f}%" if "." in cand else f"{c_num:.0f}%"
-                                                    break
-                                                except ValueError:
-                                                    pass
-                                    if getattr(it, "discount_percent", None):
-                                        break
-
-                    if not getattr(it, "discount_percent", None):
-                        it.discount_percent = "0.00%"
+    if receipt.items:
+        for it in receipt.items:
+            if getattr(it, "discount_percent", None):
+                try:
+                    c_d = re.sub(r"[^\d.]", "", str(it.discount_percent))
+                    if c_d and (float(c_d) > 100.0 or float(c_d) < 0.0):
+                        it.discount_percent = None
+                except Exception:
+                    it.discount_percent = None
 
     # 4b. Tax Rates Reconciliation (CGST %, SGST %, IGST %)
     if ocr_text:
@@ -1047,33 +1050,107 @@ def validate_and_reconcile_receipt(
             receipt.seller_mobile = None
             receipt.mobile = None
 
-    # Extract transport & dispatch fields if present
-    if not getattr(receipt, "transport", None):
-        t_m = re.search(r"\bTransport\b\s*\n?\s*([A-Za-z0-9_-]{2,25})", ocr_text, re.IGNORECASE)
-        if t_m:
-            t_cand = t_m.group(1).strip()
-            if t_cand.lower() not in ["sno", "description", "rate", "qty", "gst", "eway", "e-way"]:
-                receipt.transport = t_cand
+    # Clean invoice_number and invoice_date leak from seller address (e.g. "97, KAMARAJ ROAD 12 01/04/2021...")
+    if receipt.seller_address and ocr_text:
+        bill_leak_m = re.search(r"Bill\s*No\s+Bill\s*Date\s*\n\s*.*?\b(\d+)\s+(\d{1,2}/\d{1,2}/\d{2,4})", ocr_text, re.IGNORECASE)
+        if bill_leak_m:
+            leak_pat = rf"\b{re.escape(bill_leak_m.group(1))}\s+{re.escape(bill_leak_m.group(2))}\b"
+            receipt.seller_address = re.sub(leak_pat, "", receipt.seller_address).strip()
+            receipt.seller_address = re.sub(r"\s{2,}", " ", receipt.seller_address)
+            if receipt.seller_address_line_1:
+                receipt.seller_address_line_1 = re.sub(leak_pat, "", receipt.seller_address_line_1).strip()
+                receipt.seller_address_line_1 = re.sub(r"\s{2,}", " ", receipt.seller_address_line_1)
 
-    if not getattr(receipt, "despatch_through", None):
-        dt_m = re.search(r"Despatch(?:ed)?\s*Through\s*[:.]?\s*\n?\s*([A-Za-z0-9_-]+)", ocr_text, re.IGNORECASE)
-        if dt_m:
-            receipt.despatch_through = dt_m.group(1).strip()
+    # Extract transport & dispatch fields if present
+    if getattr(receipt, "transport", None) in ["Transport", "transport", "None", "Unknown", ""]:
+        receipt.transport = None
+
+    if not getattr(receipt, "transport", None):
+        t_m1 = re.search(r"Transport\s*\n[^\n]*?,\s*([A-Za-z0-9_-]{2,25})\s*$", ocr_text, re.MULTILINE | re.IGNORECASE)
+        if t_m1:
+            receipt.transport = t_m1.group(1).strip()
+        else:
+            t_m2 = re.search(r"\bTransport\b\s*[:.]?\s*\n?\s*([A-Za-z0-9_-]{2,25})", ocr_text, re.IGNORECASE)
+            if t_m2:
+                t_cand = t_m2.group(1).strip()
+                if t_cand.lower() not in ["sno", "description", "rate", "qty", "gst", "eway", "e-way", "transport", "none", "unknown"]:
+                    receipt.transport = t_cand
+
+    # Bill Type & Despatch Through
+    bt_m = re.search(r"Bill\s*Type\s+Despatch\s*Through\s*\n\s*(?:.*?\b)?(Credit\s*Bill|Cash\s*Bill|Credit|Cash)\s+([A-Za-z0-9_-]+)", ocr_text, re.IGNORECASE)
+    if bt_m:
+        if not getattr(receipt, "bill_type", None):
+            receipt.bill_type = bt_m.group(1).strip()
+        if not getattr(receipt, "despatch_through", None):
+            receipt.despatch_through = bt_m.group(2).strip()
+    else:
+        if not getattr(receipt, "bill_type", None):
+            bt_gen = re.search(r"Bill\s*Type\s*[:.]?\s*\n?\s*(Credit\s*Bill|Cash\s*Bill|Credit|Cash)\b", ocr_text, re.IGNORECASE)
+            if bt_gen:
+                receipt.bill_type = bt_gen.group(1).strip()
+        if not getattr(receipt, "despatch_through", None):
+            dt_m = re.search(r"Despatch(?:ed)?\s*Through\s*[:.]?\s*\n?\s*([A-Za-z0-9_-]+)", ocr_text, re.IGNORECASE)
+            if dt_m:
+                receipt.despatch_through = dt_m.group(1).strip()
 
     if not getattr(receipt, "eway_bill_no", None):
         ew_m = re.search(r"E-?Way\s*Bill(?:\s*No)?\s*[:.]?\s*([A-Za-z0-9_-]+)", ocr_text, re.IGNORECASE)
         if ew_m:
             receipt.eway_bill_no = ew_m.group(1).strip()
 
-    if not getattr(receipt, "po_number", None):
-        po_m = re.search(r"P\.?O\.?\s*No(?:\s*&\s*Date)?\s*[:.]?\s*\n?\s*([A-Za-z0-9_-]+)", ocr_text, re.IGNORECASE)
-        if po_m:
-            receipt.po_number = po_m.group(1).strip()
+    podc_m = re.search(r"P\.?O\.?\s*No\s*&\s*Date\s+D\.?C\.?\s*No\s*&\s*Date\s*\n.*?\b(\d{3,10})\s+(\d{3,10})\b", ocr_text, re.IGNORECASE)
+    if podc_m:
+        if not getattr(receipt, "po_number", None) or receipt.po_number in ["None", "33AACFG7274J1ZA"] or not str(receipt.po_number).isdigit():
+            receipt.po_number = podc_m.group(1).strip()
+        if not getattr(receipt, "dc_number", None) or receipt.dc_number == "None" or not str(receipt.dc_number).isdigit():
+            receipt.dc_number = podc_m.group(2).strip()
+    else:
+        if not getattr(receipt, "po_number", None):
+            po_m = re.search(r"P\.?O\.?\s*No(?:\s*&\s*Date)?\s*[:.]?\s*\n?\s*([A-Za-z0-9_-]+)", ocr_text, re.IGNORECASE)
+            if po_m:
+                receipt.po_number = po_m.group(1).strip()
+        if not getattr(receipt, "dc_number", None):
+            dc_m = re.search(r"D\.?C\.?\s*No(?:\s*&\s*Date)?\s*[:.]?\s*\n?\s*([A-Za-z0-9_-]+)", ocr_text, re.IGNORECASE)
+            if dc_m:
+                receipt.dc_number = dc_m.group(1).strip()
 
-    if not getattr(receipt, "dc_number", None):
-        dc_m = re.search(r"D\.?C\.?\s*No(?:\s*&\s*Date)?\s*[:.]?\s*\n?\s*([A-Za-z0-9_-]+)", ocr_text, re.IGNORECASE)
-        if dc_m:
-            receipt.dc_number = dc_m.group(1).strip()
+    # Total Items & Total Quantity
+    tot_m = re.search(r"Total\s*Items\s*[:.]?\s*(\d+)\s+([0-9,]+(?:\.\d+)?)", ocr_text, re.IGNORECASE)
+    if tot_m:
+        receipt.total_items = int(tot_m.group(1))
+        receipt.total_quantity = float(tot_m.group(2).replace(",", ""))
+
+    # Gross Amount
+    if getattr(receipt, "gross_amount", None) is None:
+        gross_m = re.search(r"\bGross(?:\s*Amt|\s*Amount)?\b\s*[:.]?\s*([0-9,]+\.\d{2})", ocr_text, re.IGNORECASE)
+        if gross_m:
+            from schemas.receipt_schema import format_currency_value
+            receipt.gross_amount = format_currency_value(gross_m.group(1), receipt.currency or "₹")
+
+    # Balance Amount
+    if getattr(receipt, "balance_amount", None) is None:
+        bal_m = re.search(r"\bBalance\s*(?:Amt|Amount)\b\s*[:.]?\s*([0-9,]+\.\d{2})", ocr_text, re.IGNORECASE)
+        if bal_m:
+            from schemas.receipt_schema import format_currency_value
+            receipt.balance_amount = format_currency_value(bal_m.group(1), receipt.currency or "₹")
+
+    # Rounding Off fallback
+    if getattr(receipt, "rounding_off", None) is None:
+        ro_m = re.search(r"\b(?:Rounded\s*Off|Round\s*Off)\b\s*[:.]?\s*([-+]?[0-9,]+\.\d{2})", ocr_text, re.IGNORECASE)
+        if ro_m:
+            from schemas.receipt_schema import format_currency_value
+            receipt.rounding_off = format_currency_value(ro_m.group(1), receipt.currency or "₹")
+
+    # Invoice / Bill Number check: Ensure seller address door number (e.g. 97) is not used as invoice number
+    bill_m = re.search(r"Bill\s*No\s+Bill\s*Date\s*\n\s*(?:.*?\b)?(\d+)\s+(\d{1,2}/\d{1,2}/\d{2,4})", ocr_text, re.IGNORECASE)
+    if bill_m:
+        cand_bno = bill_m.group(1).strip()
+        cand_bdate = bill_m.group(2).strip()
+        if not receipt.invoice_number or receipt.invoice_number in ["97", "None", "Unknown"] or (receipt.seller_address and receipt.invoice_number in receipt.seller_address):
+            receipt.invoice_number = cand_bno
+            receipt.receipt_number = cand_bno
+        if not receipt.invoice_date or receipt.invoice_date in ["None", "Unknown"]:
+            receipt.invoice_date = normalize_date_string(cand_bdate) or cand_bdate
 
     # Clean transport & shipping leak from buyer address (e.g. "...Extn., Sdsd")
     leak_candidates = ["Sdsd", "sdsd"]

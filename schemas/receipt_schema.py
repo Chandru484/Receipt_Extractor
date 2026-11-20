@@ -278,12 +278,18 @@ class ReceiptItem(BaseModel):
 
             if data.get("discount_percent") is not None:
                 d_val = str(data["discount_percent"]).strip()
-                if d_val and not d_val.endswith("%"):
-                    try:
-                        d_num = float(d_val)
-                        data["discount_percent"] = f"{d_num:.2f}%" if "." in d_val else f"{d_num:.0f}%"
-                    except ValueError:
-                        data["discount_percent"] = f"{d_val}%"
+                try:
+                    clean_d = re.sub(r"[^\d.]", "", d_val)
+                    if clean_d:
+                        val_d = float(clean_d)
+                        if val_d > 100.0 or val_d < 0.0:
+                            data["discount_percent"] = None
+                        else:
+                            data["discount_percent"] = f"{val_d:.2f}%" if "." in clean_d else f"{val_d:.0f}%"
+                    else:
+                        data["discount_percent"] = None
+                except Exception:
+                    data["discount_percent"] = None
 
             if "item_name" in data and isinstance(data["item_name"], str):
                 data["item_name"] = re.sub(r"\s+\d{1,2}/\d{1,2}/\d{2,4}$", "", data["item_name"]).strip()
@@ -294,6 +300,25 @@ class ReceiptItem(BaseModel):
     @classmethod
     def validate_numeric(cls, v: Any) -> Optional[float]:
         return clean_numeric_value(v)
+
+    @field_validator("discount_percent", mode="before")
+    @classmethod
+    def validate_discount_percent(cls, v: Any) -> Optional[str]:
+        if v is None:
+            return None
+        s = str(v).strip()
+        if not s or s.lower() in ["none", "null", "n/a", "unknown"]:
+            return None
+        try:
+            clean_d = re.sub(r"[^\d.]", "", s)
+            if clean_d:
+                val_d = float(clean_d)
+                if val_d > 100.0 or val_d < 0.0:
+                    return None
+                return f"{val_d:.2f}%" if "." in clean_d else f"{val_d:.0f}%"
+        except Exception:
+            return None
+        return None
 
     @field_validator("unit_price", "rate_incl_tax", "total_price", mode="before")
     @classmethod
@@ -396,6 +421,7 @@ class ReceiptData(BaseModel):
     gstin: Optional[str] = None
 
     # Document details
+    bill_type: Optional[str] = None
     invoice_number: Optional[str] = None
     receipt_number: Optional[str] = None
     invoice_date: Optional[str] = None
@@ -404,10 +430,13 @@ class ReceiptData(BaseModel):
     salesman: Optional[str] = None
     amount_in_words: Optional[str] = None
 
-    # Line items
+    # Line items & item totals
+    total_items: Optional[int] = None
+    total_quantity: Optional[float] = None
     items: List[ReceiptItem] = Field(default_factory=list)
 
     # Financial totals & tax breakdown (with currency symbol and 2 decimal places e.g. '$93.50')
+    gross_amount: Optional[CurrencyValue] = None
     subtotal: Optional[CurrencyValue] = None
     cgst: Optional[CurrencyValue] = None
     cgst_rate: Optional[str] = None
@@ -418,6 +447,7 @@ class ReceiptData(BaseModel):
     rounding_off: Optional[CurrencyValue] = None
     tax: Optional[CurrencyValue] = None
     grand_total: Optional[CurrencyValue] = None
+    balance_amount: Optional[CurrencyValue] = None
     amount_paid: Optional[CurrencyValue] = None
     refunded_amount: Optional[CurrencyValue] = None
     refunded_on: Optional[str] = None
@@ -432,7 +462,7 @@ class ReceiptData(BaseModel):
     # Additional captured fields from receipt
     extra_fields: Dict[str, Any] = Field(default_factory=dict)
 
-    @field_validator("subtotal", "tax", "grand_total", "cgst", "sgst", "igst", "rounding_off", "amount_paid", "refunded_amount", mode="before")
+    @field_validator("subtotal", "tax", "grand_total", "cgst", "sgst", "igst", "rounding_off", "amount_paid", "refunded_amount", "gross_amount", "balance_amount", mode="before")
     @classmethod
     def validate_totals(cls, v: Any) -> Optional[CurrencyValue]:
         return format_currency_value(v)
@@ -580,7 +610,7 @@ class ReceiptData(BaseModel):
             if self.currency in ["₹", "$", "€", "£", "¥"]:
                 curr_sym = self.currency
             else:
-                has_rupee = any("₹" in str(getattr(self, f, "")) for f in ["grand_total", "subtotal", "tax"])
+                has_rupee = any("₹" in str(getattr(self, f, "")) for f in ["grand_total", "subtotal", "tax", "gross_amount", "balance_amount"])
                 if not has_rupee and self.items:
                     has_rupee = any("₹" in str(it.unit_price or "") or "₹" in str(it.total_price or "") for it in self.items)
                 curr_sym = "₹" if has_rupee else "$"
@@ -599,7 +629,7 @@ class ReceiptData(BaseModel):
             self.tax = format_currency_value(tax_sum, curr_sym)
 
         # Standardize all financial amounts to CurrencyValue with symbol and 2 decimals (e.g. '$93.50', '₹100.00')
-        for f in ["subtotal", "tax", "grand_total", "cgst", "sgst", "igst", "rounding_off", "amount_paid", "refunded_amount"]:
+        for f in ["subtotal", "tax", "grand_total", "cgst", "sgst", "igst", "rounding_off", "amount_paid", "refunded_amount", "gross_amount", "balance_amount"]:
             val = getattr(self, f, None)
             if val is not None:
                 setattr(self, f, format_currency_value(val, curr_sym))
@@ -698,6 +728,18 @@ class ReceiptData(BaseModel):
             "currency": "currency",
             "payment_mode": "payment_mode",
             "payment_method": "payment_mode",
+            "gross": "gross_amount",
+            "gross_amount": "gross_amount",
+            "gross_total": "gross_amount",
+            "balance": "balance_amount",
+            "balance_amount": "balance_amount",
+            "balance_amt": "balance_amount",
+            "round_off": "rounding_off",
+            "rounded_off": "rounding_off",
+            "bill_type": "bill_type",
+            "total_items": "total_items",
+            "total_quantity": "total_quantity",
+            "total_qty": "total_quantity",
         }
 
         # Absorb any Pydantic extra fields (from ConfigDict extra="allow") into our extra_fields dict
@@ -711,7 +753,9 @@ class ReceiptData(BaseModel):
             "invoice_date", "date_paid", "payment_mode", "salesman", "amount_in_words",
             "items", "subtotal", "cgst", "cgst_rate", "sgst", "sgst_rate", "igst",
             "igst_rate", "rounding_off", "tax", "grand_total", "amount_paid",
-            "refunded_amount", "refunded_on", "currency", "bank_details", "hsn_tax_summary", "extra_fields"
+            "refunded_amount", "refunded_on", "currency", "bank_details", "hsn_tax_summary",
+            "gross_amount", "balance_amount", "bill_type", "total_items", "total_quantity",
+            "transport", "despatch_through", "eway_bill_no", "po_number", "dc_number", "extra_fields"
         }
         if self.extra_fields is None:
             self.extra_fields = {}
@@ -750,8 +794,18 @@ class ReceiptData(BaseModel):
                 target_field = KNOWN_STANDARD_ALIASES[k_lower]
                 if getattr(self, target_field, None) is None:
                     # Parse numeric or string properly
-                    if target_field in ["amount_paid", "refunded_amount", "subtotal", "tax", "grand_total", "cgst", "sgst", "igst", "rounding_off"]:
+                    if target_field in ["amount_paid", "refunded_amount", "subtotal", "tax", "grand_total", "cgst", "sgst", "igst", "rounding_off", "gross_amount", "balance_amount"]:
                         setattr(self, target_field, format_currency_value(v, curr_sym))
+                    elif target_field == "total_items":
+                        try:
+                            setattr(self, target_field, int(v))
+                        except Exception:
+                            pass
+                    elif target_field == "total_quantity":
+                        try:
+                            setattr(self, target_field, float(str(v).replace(",", "")))
+                        except Exception:
+                            pass
                     else:
                         setattr(self, target_field, str(v).strip())
                 keys_to_remove.append(k)
@@ -760,7 +814,7 @@ class ReceiptData(BaseModel):
             self.extra_fields.pop(k, None)
 
         # Ensure all financial amounts are CurrencyValue with symbol and 2 decimals (e.g. '$93.50')
-        for f in ["subtotal", "tax", "grand_total", "cgst", "sgst", "igst", "rounding_off", "amount_paid", "refunded_amount"]:
+        for f in ["subtotal", "tax", "grand_total", "cgst", "sgst", "igst", "rounding_off", "amount_paid", "refunded_amount", "gross_amount", "balance_amount"]:
             val = getattr(self, f, None)
             if val is not None:
                 setattr(self, f, format_currency_value(val, curr_sym))

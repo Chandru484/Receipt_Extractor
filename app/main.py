@@ -207,7 +207,7 @@ async def extract_receipt(
         if doc_id:
             response_payload["document_id"] = doc_id
             if response_payload.get("is_duplicate"):
-                response_payload["message"] = "Receipt extracted successfully (existing record found in database, duplicate save skipped)"
+                response_payload["message"] = "Receipt extracted successfully (existing record updated in database)"
 
         return response_payload
 

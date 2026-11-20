@@ -109,18 +109,43 @@ def _clean_json_response(raw_text: str) -> str:
 def _repair_truncated_json(raw: str) -> str:
     """Attempt to close an incomplete JSON object caused by token truncation."""
     text = raw.strip()
-    # Count unclosed braces / brackets
-    depth_brace = text.count("{") - text.count("}")
-    depth_bracket = text.count("[") - text.count("]")
-    # Strip trailing comma before closing
-    text = re.sub(r",\s*$", "", text)
-    # Close any open string (truncated value)
+    # Strip opening/closing code fences if present
+    text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\s*```$", "", text).strip()
+
+    # Balance unclosed quotes or drop dangling unclosed key
     if text.count('"') % 2 == 1:
-        text += '"'
-    # Close open arrays then objects
-    text += "]" * max(0, depth_bracket)
-    text += "}" * max(0, depth_brace)
-    return text
+        last_colon = text.rfind(':')
+        last_quote = text.rfind('"')
+        if last_colon != -1 and last_colon < last_quote:
+            text += '"'
+        else:
+            text = text[:last_quote].rstrip()
+
+    for _ in range(6):
+        text = re.sub(r',\s*"[^"]*"\s*:\s*$', "", text)
+        text = re.sub(r'{\s*"[^"]*"\s*:\s*$', "{", text)
+        text = re.sub(r',\s*"[^"]*"\s*$', "", text)
+        text = re.sub(r",\s*$", "", text).strip()
+
+    stack = []
+    in_str = False
+    escape = False
+    for ch in text:
+        if ch == '"' and not escape:
+            in_str = not in_str
+        elif not in_str:
+            if ch in '{[':
+                stack.append(ch)
+            elif ch == '}' and stack and stack[-1] == '{':
+                stack.pop()
+            elif ch == ']' and stack and stack[-1] == '[':
+                stack.pop()
+        escape = (ch == '\\' and not escape)
+
+    closing_map = {'{': '}', '[': ']'}
+    closing = ''.join(closing_map[c] for c in reversed(stack))
+    return text + closing
 
 
 def _call_groq(client: Groq, model: str, messages: list, max_tokens: int, json_mode: bool = True) -> str:
@@ -145,7 +170,7 @@ def _call_groq(client: Groq, model: str, messages: list, max_tokens: int, json_m
 
 def _extract_with_single_client(client: Groq, model: str, messages: list) -> ReceiptData:
     """Send extraction request to a specific Groq client instance and validate response."""
-    tokens = min(settings.GROQ_MAX_COMPLETION_TOKENS, 2500)
+    tokens = min(settings.GROQ_MAX_COMPLETION_TOKENS, 2048)
     raw = None
 
     try:
@@ -163,14 +188,16 @@ def _extract_with_single_client(client: Groq, model: str, messages: list) -> Rec
 
         # 2. Handle TPM / OTPM / Rate limit / Request too large
         if raw is None and any(w in err_str for w in ["limit 8000", "reduce max_tokens", "tokens", "otpm", "tpm", "413", "rate_limit_exceeded"]):
-            reduced_tokens = 1500 if tokens > 1500 else 1000
+            reduced_tokens = 1800 if tokens > 1800 else 1200
             logger.warning(f"Token limit exceeded requesting {tokens} tokens on {model}. Retrying with {reduced_tokens} tokens...")
             try:
-                raw = _call_groq(client, model=model, messages=messages, max_tokens=reduced_tokens, json_mode=False)
+                raw = _call_groq(client, model=model, messages=messages, max_tokens=reduced_tokens, json_mode=True)
             except Exception:
-                # Try fallback model if on primary
-                alt_model = "openai/gpt-oss-20b" if "120b" in model else "openai/gpt-oss-120b"
-                raw = _call_groq(client, model=alt_model, messages=messages, max_tokens=1500, json_mode=False)
+                try:
+                    alt_model = "openai/gpt-oss-20b" if "120b" in model else "openai/gpt-oss-120b"
+                    raw = _call_groq(client, model=alt_model, messages=messages, max_tokens=reduced_tokens, json_mode=True)
+                except Exception as e3:
+                    exc = e3
 
         if raw is None:
             raise exc

@@ -41,6 +41,7 @@ STANDARD FIELDS TO EXTRACT:
   "po_number": "PO number if present (e.g. '56789')",
   "dc_number": "DC / Delivery Challan number if present (e.g. '546322')",
 
+  "bill_type": "Bill Type if present (e.g. 'Credit Bill', 'Cash Bill')",
   "invoice_number": "Invoice No / Bill No / ST.No / Cash Memo No",
   "receipt_number": "Receipt Number (e.g. '123')",
   "invoice_date": "Date in DD-MM-YYYY format (e.g. '01-01-2023')",
@@ -48,6 +49,9 @@ STANDARD FIELDS TO EXTRACT:
   "payment_mode": "Payment mode / method (e.g. 'Cash', 'ACH', 'UPI', 'Credit Card')",
   "salesman": "Salesman / executive name if listed",
 
+  "total_items": 20,
+  "total_quantity": 79.0,
+  "gross_amount": "₹17870.99",
   "subtotal": "$19.00",
   "cgst": null,
   "cgst_rate": null,
@@ -58,6 +62,7 @@ STANDARD FIELDS TO EXTRACT:
   "rounding_off": "$0.00",
   "tax": "$1.12",
   "grand_total": "$20.12",
+  "balance_amount": "₹17871.00",
   "amount_paid": "$20.12",
   "refunded_amount": "$5.00",
   "refunded_on": "2026-09-21",
@@ -143,13 +148,26 @@ CRITICAL RULES:
    - In stationery/retail tables with product package labels like "Rs 20/-", "80/-", "120/-" in product names, extract the actual table columns: Qty is the quantity column, Rate is the rate column.
    - Tag each item with its 1-indexed integer 'page' number (e.g. 1, 2).
 13. DISCOUNT PERCENTAGE (Dis%):
-   - If present in the table, extract into "discount_percent" for each line item (e.g. "0.00%", "5%").
-14. HSN/SAC TAX SUMMARY TABLE & COMBINED TOTALS:
+   - ONLY extract "discount_percent" if a discount value is explicitly present for that item (e.g. "0.00%", "5%").
+   - If there is NO discount column or NO discount value for an item, set "discount_percent" to null!
+   - NEVER put the Unit Rate or price into "discount_percent" (e.g. NEVER emit "1513.00%", "838.98%").
+   - Do NOT calculate or hallucinate discounts if not explicitly present in the document.
+14. TOTALS, GROSS, BALANCE, ROUND OFF, AND AUTHORITATIVE FIELDS:
+   - "gross_amount": If the document lists a 'Gross' amount (e.g. 'Gross 17870.99'), extract it here with currency symbol.
+   - "balance_amount": If the document lists a 'Balance Amt' (e.g. 'Balance Amt : 17871.00'), extract it here.
+   - "rounding_off": If the document has 'Round Off' or 'Rounded Off' (e.g. '0.01', '-0.20'), extract it here.
+   - "total_items": Number of items (e.g. 20 from 'Total Items : 20').
+   - "total_quantity": Total quantity (e.g. 79.00).
+   - "bill_type": Bill type (e.g. 'Credit Bill', 'Cash Bill').
+   - "transport": Transport / Carrier name (e.g. 'Sdsd'). NEVER put 'Transport' or leave it in buyer address.
+   - "despatch_through": Despatch through (e.g. '12345').
+   - "po_number": PO number & date (e.g. '56789').
+   - "dc_number": DC number & date (e.g. '546322').
+   - "eway_bill_no": E-Way bill number (e.g. '123456').
    - When an HSN/SAC tax breakdown table is present at the end, extract each combination row into "hsn_tax_summary".
    - Top-level "cgst" and "sgst" must be the TOTAL CGST and TOTAL SGST amounts (from the Total row of the tax table or sum of all rates), NOT an individual rate row!
    - "tax" must be the total tax (Total CGST + Total SGST + Total IGST).
    - "subtotal" is the total taxable amount (e.g. '₹19963.26').
-   - "rounding_off" is the round off amount (e.g. '₹-0.20').
    - "grand_total" is the net final payable amount (e.g. '₹22917.00').
 15. MISSING FIELDS AS NULL:
    - If a field is not present in the document (such as buyer_address, seller_address, gstin, etc.), specify it as null in the JSON. Do NOT omit missing fields.
