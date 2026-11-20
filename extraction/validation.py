@@ -364,6 +364,7 @@ def reconcile_missing_ocr_items(receipt: ReceiptData, ocr_text: str) -> None:
     for p_num, p_txt in pages_to_check:
         for line in p_txt.splitlines():
             l_str = line.strip()
+            # Standard GST table format: S.No Particulars HSN/SAC GST% Qty UOM Rate Amount
             m = re.match(r"^(\d{1,3})\s+(.+?)\s+(\d{4,8})\s+(\d+)\s+([0-9,]+(?:\.\d+)?)\s*(?:%\s*)?([A-Za-z]+)\s+([0-9,]+\.\d{2})\s+([0-9,]+\.\d{2})$", l_str)
             if m:
                 sl = m.group(1)
@@ -385,6 +386,39 @@ def reconcile_missing_ocr_items(receipt: ReceiptData, ocr_text: str) -> None:
                     receipt.items.append(new_item)
                     existing_sl_nos.add(sl)
                     new_items_added = True
+
+            # Stationery / Retail table format: S.No Particulars Qty Rate Dis% Amount
+            m2 = re.match(r"^(\d{1,3})\s+(.+?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+([0-9,]+\.\d{2})$", l_str)
+            if m2:
+                sl2 = m2.group(1)
+                q2 = float(m2.group(3))
+                r2 = float(m2.group(4))
+                dis2 = f"{float(m2.group(5)):.2f}%"
+                amt2 = float(m2.group(6).replace(",", ""))
+                if sl2 not in existing_sl_nos:
+                    new_item = ReceiptItem(
+                        page=p_num,
+                        sl_no=sl2,
+                        item_name=m2.group(2).strip(),
+                        quantity=q2,
+                        unit_price=r2,
+                        discount_percent=dis2,
+                        total_price=amt2
+                    )
+                    receipt.items.append(new_item)
+                    existing_sl_nos.add(sl2)
+                    new_items_added = True
+                else:
+                    # Reconcile existing item against OCR truth to resolve packaging label confusion (e.g. 'Rs 20/-' in item name)
+                    for it in receipt.items:
+                        if it.sl_no and re.sub(r"[^\d]", "", str(it.sl_no)) == sl2:
+                            if it.quantity != q2 or it.unit_price != r2:
+                                it.quantity = q2
+                                it.unit_price = r2
+                                it.total_price = amt2
+                            if not getattr(it, "discount_percent", None):
+                                it.discount_percent = dis2
+                            break
 
     if new_items_added:
         def sort_key(it):
@@ -539,19 +573,20 @@ def validate_and_reconcile_receipt(
             receipt.tax = comp_tax_sum
 
     if subtotal is not None and grand_total is not None:
-        expected_diff = round(grand_total - subtotal, 2)
+        ro_val = float(receipt.rounding_off or 0.0)
+        expected_diff = round(grand_total - subtotal - ro_val, 2)
         if receipt.tax is not None:
             if expected_diff > 0 and abs(receipt.tax - (2 * expected_diff)) < 0.5:
                 flags.append(
                     f"Tax appeared double-counted ({receipt.tax} vs expected diff {expected_diff}). Reconciled tax to {expected_diff}."
                 )
                 receipt.tax = expected_diff
-            elif abs((subtotal + receipt.tax) - grand_total) > 1.5:
+            elif abs((subtotal + receipt.tax + ro_val) - grand_total) > 1.5:
                 flags.append(
                     f"Mathematical mismatch: subtotal ({subtotal}) + tax ({receipt.tax}) != grand_total ({grand_total})."
                 )
-        elif expected_diff > 0:
-            flags.append(f"Inferred tax amount {expected_diff} from grand_total - subtotal.")
+        elif expected_diff > 0.05:
+            flags.append(f"Inferred tax amount {expected_diff} from grand_total - subtotal - rounding_off.")
             receipt.tax = expected_diff
 
     if receipt.items is None:
@@ -688,31 +723,87 @@ def validate_and_reconcile_receipt(
                         receipt.seller_gstin = g
                         break
 
-    # 6. Dynamic buyer reconciliation
-    GENERIC_NON_BUYER_NAMES = {"CASH BILL", "CASH", "BILL", "TAX INVOICE", "INVOICE", "CASH MEMO", "ESTIMATE", "RETAIL INVOICE", "UNKNOWN"}
+    # 6. Dynamic Seller & Buyer Reconciliation
+    GENERIC_NON_NAMES = {
+        "CASH BILL", "CASH", "BILL", "TAX INVOICE", "INVOICE", "CASH MEMO",
+        "ESTIMATE", "RETAIL INVOICE", "ESTIMATE / QUOTATION", "QUOTATION",
+        "DELIVERY CHALLAN", "ORIGINAL FOR RECIPIENT", "DUPLICATE FOR SUPPLIER",
+        "UNKNOWN", "NONE", "NULL"
+    }
+
+    s_curr = (receipt.vendor_name or receipt.seller or receipt.seller_name or "").strip().upper()
+    if s_curr in GENERIC_NON_NAMES or not s_curr:
+        receipt.vendor_name = None
+        receipt.seller = None
+        receipt.seller_name = None
+
     b_curr = (receipt.buyer_name or receipt.buyer or receipt.customer_name or "").strip().upper()
-    if b_curr in GENERIC_NON_BUYER_NAMES:
+    if b_curr in GENERIC_NON_NAMES or not b_curr:
         receipt.buyer_name = None
         receipt.buyer = None
         receipt.customer_name = None
 
-    buyer_combined = " ".join(filter(None, [
-        receipt.buyer or "",
-        receipt.customer_name or "",
-        receipt.buyer_name or "",
-        receipt.buyer_address or "",
-        ocr_text,
-    ])).lower()
+    if ocr_text:
+        ocr_lines = [l.strip() for l in ocr_text.splitlines() if l.strip()]
 
-    # If buyer_name is still not found, search directly under 'Buyer' in OCR text
-    if not receipt.buyer_name and ocr_text:
-        b_ocr_m = re.search(r"\bBuyer\b[^\n]*\n(?:\s*CASH\s*BILL[^\n]*\n)?\s*([A-Za-z0-9&.\s]{2,30}?)(?:\n|Mobile|Ph|Bill|Date|$)", ocr_text, re.IGNORECASE)
-        if b_ocr_m:
-            cand = b_ocr_m.group(1).strip()
-            if cand.upper() not in GENERIC_NON_BUYER_NAMES and len(cand) >= 2:
-                receipt.buyer_name = cand
-                receipt.buyer = cand
-                receipt.customer_name = cand
+        # 6a. Fallback Seller Name from top header
+        if not receipt.vendor_name:
+            for l in ocr_lines:
+                if l.startswith("---") or "page" in l.lower():
+                    continue
+                if l.upper() in GENERIC_NON_NAMES:
+                    continue
+                if re.search(r"\b(?:No|Date|Bill|Invoice|ST\.No|Particulars|S\.?No|Item)\b\s*[:.]?", l, re.IGNORECASE):
+                    break
+                if len(l) >= 3 and not re.match(r"^[\d\s.,/:-]+$", l):
+                    receipt.vendor_name = l
+                    receipt.seller = l
+                    receipt.seller_name = l
+                    break
+
+        # 6b. Fallback Buyer Name
+        if not receipt.buyer_name:
+            # Check pattern: <Buyer Name> Page No : \d+
+            for l in ocr_lines:
+                if l.startswith("---"):
+                    continue
+                page_m = re.search(r"^([A-Za-z0-9&.,\s'-]+?)\s+Page\s*(?:No)?\.?\s*[:=]?\s*\d+$", l, re.IGNORECASE)
+                if page_m:
+                    cand = page_m.group(1).strip()
+                    if cand and cand.upper() not in GENERIC_NON_NAMES and len(cand) >= 2:
+                        receipt.buyer_name = cand
+                        receipt.buyer = cand
+                        receipt.customer_name = cand
+                        break
+
+            # If still not found, check line below Invoice No / Date before table
+            if not receipt.buyer_name:
+                found_meta = False
+                for l in ocr_lines:
+                    if l.startswith("---"):
+                        continue
+                    if re.search(r"\b(?:No\s*:|Date\s*:|Invoice\s*No|Bill\s*No)\b", l, re.IGNORECASE):
+                        found_meta = True
+                        continue
+                    if found_meta:
+                        if re.search(r"\b(?:S\.?No|Particulars|Description|Item|Qty|Rate|Amount)\b", l, re.IGNORECASE):
+                            break
+                        cand = re.sub(r"\s*Page\s*(?:No)?\.?\s*[:=]?\s*\d+.*$", "", l, flags=re.IGNORECASE).strip()
+                        if cand and cand.upper() not in GENERIC_NON_NAMES and len(cand) >= 2:
+                            receipt.buyer_name = cand
+                            receipt.buyer = cand
+                            receipt.customer_name = cand
+                            break
+
+            # Search directly under 'Buyer' in OCR text
+            if not receipt.buyer_name:
+                b_ocr_m = re.search(r"\bBuyer\b[^\n]*\n(?:\s*CASH\s*BILL[^\n]*\n)?\s*([A-Za-z0-9&.\s]{2,30}?)(?:\n|Mobile|Ph|Bill|Date|$)", ocr_text, re.IGNORECASE)
+                if b_ocr_m:
+                    cand = b_ocr_m.group(1).strip()
+                    if cand.upper() not in GENERIC_NON_NAMES and len(cand) >= 2:
+                        receipt.buyer_name = cand
+                        receipt.buyer = cand
+                        receipt.customer_name = cand
 
     # Clean leaked buyer name from seller_address (e.g. "...C.D BUILDING, TEKIS, ERODE...")
     if receipt.seller_address:

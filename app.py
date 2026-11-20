@@ -142,7 +142,6 @@ async def chat_with_bot(request: ChatRequest):
 @app.post(
     "/extract",
     response_model=ReceiptResponse,
-    response_model_exclude_none=True,
     status_code=status.HTTP_200_OK,
     summary="Extract structured receipt data",
     description=(
@@ -193,14 +192,11 @@ async def extract_receipt(
             extraction_result = await run_in_threadpool(process_receipt, processed_image)
 
         elapsed_sec = round(time.perf_counter() - t_start, 2)
-        from schemas.receipt_schema import remove_none_values
-        cleaned_data = remove_none_values(extraction_result["receipt"])
         response_payload = {
             "success": True,
-            "processing_time_seconds": elapsed_sec,
             "message": "Receipt extracted successfully",
             "formatted_display": extraction_result.get("formatted_display"),
-            "data": cleaned_data,
+            "data": extraction_result["receipt"],
             "ocr": extraction_result["ocr"],
             "document_id": None
         }
@@ -213,7 +209,7 @@ async def extract_receipt(
             if response_payload.get("is_duplicate"):
                 response_payload["message"] = "Receipt extracted successfully (existing record found in database, duplicate save skipped)"
 
-        return remove_none_values(response_payload)
+        return response_payload
 
     except ValueError as exc:
         raise HTTPException(

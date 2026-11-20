@@ -339,7 +339,21 @@ class HSNTaxSummaryItem(BaseModel):
 class ReceiptData(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    document_type: Literal["receipt", "invoice", "unknown"] = "receipt"
+    document_type: Literal["receipt", "invoice", "estimate", "quotation", "unknown"] = "receipt"
+
+    @field_validator("document_type", mode="before")
+    @classmethod
+    def validate_document_type(cls, v: Any) -> str:
+        if not v:
+            return "receipt"
+        cleaned = str(v).strip().lower()
+        if cleaned in ["receipt", "invoice", "estimate", "quotation", "unknown"]:
+            return cleaned
+        if "inv" in cleaned or "bill" in cleaned:
+            return "invoice"
+        if "rec" in cleaned:
+            return "receipt"
+        return "unknown"
 
     # Core Vendor / Seller Details
     vendor_name: Optional[str] = None
@@ -781,7 +795,6 @@ class ReceiptResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     success: bool = True
-    processing_time_seconds: Optional[float] = Field(default=None, description="Total time taken to process and return response (in seconds)")
     message: str = "Receipt extracted successfully"
     formatted_display: Optional[str] = None
     data: ReceiptData

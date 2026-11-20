@@ -368,6 +368,73 @@ Rupees Twenty Two Thousand Nine Hundred And Seventeen Only
     assert "Grand Total : ₹22917.00" in disp
 
 
+def test_sss_stationery_lucky_store_reconciliation_and_null_preservation():
+    raw_ocr = """
+--- Page 1 ---
+Estimate / Quotation
+SSS STATIONERY
+No : 68104 Date : 19-04-2025
+Lucky Store Page No : 1
+S.No Particulars Qty Rate Dis% Amount
+1 Nova Grip Jar Rs 7/- 2.00 200.00 0.00 400.00
+7 Barfi Topper Jar 2.00 180.00 0.00 360.00
+27 C3 Colour Pencil 20/- 1.00 145.00 0.00 145.00
+Gross 17870.99
+Balance Amt : 17871.00
+Rounded Off 0.01
+GRAND TOTAL 17871.00
+Ph : 8553747352,0431-4000020
+"""
+
+    receipt = ReceiptData(
+        vendor_name="Unknown",
+        customer_name="Unknown",
+        invoice_number="68104",
+        invoice_date="19-04-2025",
+        subtotal="17870.99",
+        rounding_off="0.01",
+        grand_total="17871.00",
+        items=[
+            ReceiptItem(page=1, sl_no="1", item_name="Nova Grip Jar", quantity=2.0, unit_price="200.00", total_price="400.00"),
+            ReceiptItem(page=1, sl_no="7", item_name="Barfi Topper Jar", quantity=None, unit_price="2.00", total_price="360.00"),
+            ReceiptItem(page=1, sl_no="27", item_name="C3 Colour Pencil", quantity=20.0, unit_price="7.25", total_price="145.00")
+        ]
+    )
+
+    val_receipt, diag = validate_and_reconcile_receipt(receipt, raw_ocr)
+
+    # 1. Seller & Buyer reconciled from OCR
+    assert val_receipt.seller_name == "SSS STATIONERY"
+    assert val_receipt.buyer_name == "Lucky Store"
+    assert val_receipt.vendor_name == "SSS STATIONERY"
+    assert val_receipt.customer_name == "Lucky Store"
+
+    # 2. Item 7 quantity and rate fixed
+    assert val_receipt.items[1].quantity == 2.0
+    assert val_receipt.items[1].unit_price == 180.0
+    assert val_receipt.items[1].total_price == 360.0
+
+    # 3. Item 27 quantity and rate fixed
+    assert val_receipt.items[2].quantity == 1.0
+    assert val_receipt.items[2].unit_price == 145.0
+    assert val_receipt.items[2].total_price == 145.0
+
+    # 4. Formatted display has Seller and Buyer
+    disp = format_receipt_display(val_receipt)
+    assert "Seller : SSS STATIONERY" in disp
+    assert "Buyer : Lucky Store" in disp
+    assert "Seller : Unknown" not in disp
+    assert "Buyer : Unknown" not in disp
+
+    # 5. Null values preserved in JSON model dump (not removed)
+    data_dict = val_receipt.model_dump()
+    assert data_dict["buyer_name"] == "Lucky Store"
+    assert data_dict["seller_name"] == "SSS STATIONERY"
+    assert data_dict["buyer_address"] is None
+    assert data_dict["seller_address"] is None
+    assert data_dict["buyer_gstin"] is None
+
+
 
 
 

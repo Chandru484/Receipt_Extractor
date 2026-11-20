@@ -4,7 +4,7 @@ import numpy as np
 from ai.groq_client import extract_receipt_with_groq
 from extraction.validation import validate_and_reconcile_receipt, format_receipt_display
 from processing.ocr_engine import extract_ocr_text
-from schemas.receipt_schema import ReceiptData, remove_none_values
+from schemas.receipt_schema import ReceiptData
 
 
 def process_receipt(image: np.ndarray) -> Dict[str, Any]:
@@ -34,7 +34,7 @@ def process_receipt(image: np.ndarray) -> Dict[str, Any]:
     ]
 
     return {
-        "receipt": remove_none_values(validated_receipt.model_dump(exclude_none=True)),
+        "receipt": validated_receipt.model_dump(),
         "formatted_display": formatted_display,
         "ocr": {
             "full_text": ocr_result["full_text"],
@@ -73,7 +73,7 @@ def process_receipt_from_text(full_text: str, combined_ocr: Dict[str, Any]) -> D
     ]
 
     return {
-        "receipt": remove_none_values(validated_receipt.model_dump(exclude_none=True)),
+        "receipt": validated_receipt.model_dump(),
         "formatted_display": formatted_display,
         "ocr": {
             "full_text": full_text,

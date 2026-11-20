@@ -108,14 +108,17 @@ STANDARD FIELDS TO EXTRACT:
 }
 
 CRITICAL RULES:
-1. BILL TITLES: "CASH BILL", "CASH", "BILL", "TAX INVOICE", "CASH MEMO", "ESTIMATE" are DOCUMENT TITLES, NOT buyer/seller names.
-2. "BILL TO" SECTION IS ALWAYS THE BUYER:
-   - "Bill To" or "Billed To" or "Customer" or "Sold To" ALWAYS designates the BUYER / CUSTOMER.
-   - Any name, address, and email under "Bill To" belong to the BUYER.
-   - The merchant issuing the bill is the SELLER / VENDOR. NEVER invert Seller and Buyer!
+1. SELLER / VENDOR IDENTIFICATION:
+   - The prominent business, store, or company name in the top header (e.g. "SSS STATIONERY") is the SELLER / VENDOR ("seller_name" / "vendor_name").
+   - Document titles like "Estimate / Quotation", "Tax Invoice", "Cash Bill", "Cash Memo", "Estimate", "Quotation" are document types, NOT the seller name.
+   - NEVER set seller_name to "Unknown" if a store or business name is present in the top header!
+2. BUYER / CUSTOMER IDENTIFICATION:
+   - "Bill To" or "Billed To" or "Customer" or "Sold To" or "Buyer" ALWAYS designates the BUYER / CUSTOMER.
+   - In invoices without an explicit "Bill To" label, any secondary customer/party name listed before "Page No" or under the invoice number / date (e.g. "Lucky Store" from "Lucky Store Page No : 1") is the BUYER / CUSTOMER ("buyer_name" / "customer_name"). Strip "Page No : X" from the name.
+   - NEVER invert Seller and Buyer!
 3. PHONE AND MOBILE SEPARATION (SELLER vs BUYER):
    - Contact numbers listed under "Buyer" or "Bill To" belong EXCLUSIVELY to the Buyer ("buyer_phone" or "buyer_mobile")!
-   - NEVER copy or assign the Buyer's contact / mobile number to the Seller!
+   - Contact numbers listed on seller header or invoice footer (e.g. "Ph : 8553747352,0431-4000020") belong to the issuing SELLER (landline "0431-4000020" to "seller_phone"/"phone", mobile "8553747352" to "seller_mobile"/"mobile").
    - If the Seller section has no phone number, leave "seller_phone", "seller_mobile", and "phone" as null.
    - If a party lists both "Phone" (landline) and "Mobile", extract them into separate fields ("phone"/"seller_phone" and "mobile"/"seller_mobile").
 4. ADDRESS LINES (INCLUDING SAMPLE / PLACEHOLDER LABELS LIKE ADD1, ADD2, ADD3, ADD4):
@@ -137,6 +140,7 @@ CRITICAL RULES:
 12. MULTI-PAGE & COMPLETE ITEM EXTRACTION:
    - Extract EVERY SINGLE product / line item from ALL pages without omitting or truncating any rows.
    - Items immediately preceding "Continue..." or page boundaries (e.g. items 16, 17) MUST NOT be skipped.
+   - In stationery/retail tables with product package labels like "Rs 20/-", "80/-", "120/-" in product names, extract the actual table columns: Qty is the quantity column, Rate is the rate column.
    - Tag each item with its 1-indexed integer 'page' number (e.g. 1, 2).
 13. DISCOUNT PERCENTAGE (Dis%):
    - If present in the table, extract into "discount_percent" for each line item (e.g. "0.00%", "5%").
@@ -147,10 +151,9 @@ CRITICAL RULES:
    - "subtotal" is the total taxable amount (e.g. '₹19963.26').
    - "rounding_off" is the round off amount (e.g. '₹-0.20').
    - "grand_total" is the net final payable amount (e.g. '₹22917.00').
-15. MISSING FIELDS & NULLS:
-   - If a field is not present in the document, set it to null. Do NOT invent or hallucinate values.
-16. SELLER UNDEFINED: If no seller/vendor name exists, set seller_name to "Unknown".
-17. Return valid JSON only. No markdown fences, no explanatory text."""
+15. MISSING FIELDS AS NULL:
+   - If a field is not present in the document (such as buyer_address, seller_address, gstin, etc.), specify it as null in the JSON. Do NOT omit missing fields.
+16. Return valid JSON only. No markdown fences, no explanatory text."""
 
     user_prompt = f"""Extract all receipt and party details from this OCR text:
 
