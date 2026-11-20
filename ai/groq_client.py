@@ -81,7 +81,17 @@ def _call_groq(client: Groq, model: str, messages: list, max_tokens: int) -> str
 
 def _extract_with_single_client(client: Groq, model: str, messages: list) -> ReceiptData:
     """Send extraction request to a specific Groq client instance and validate response."""
-    raw = _call_groq(client, model=model, messages=messages, max_tokens=settings.GROQ_MAX_COMPLETION_TOKENS)
+    tokens = settings.GROQ_MAX_COMPLETION_TOKENS
+    try:
+        raw = _call_groq(client, model=model, messages=messages, max_tokens=tokens)
+    except RateLimitError as rle:
+        # If rate limit exceeded because requested output tokens exceeded quota limit (e.g. OTPM)
+        if "reduce max_tokens" in str(rle).lower() or "tokens" in str(rle).lower():
+            reduced_tokens = max(1800, tokens // 2)
+            logger.warning(f"Rate limit hit requesting {tokens} tokens. Retrying with reduced tokens: {reduced_tokens}")
+            raw = _call_groq(client, model=model, messages=messages, max_tokens=reduced_tokens)
+        else:
+            raise
 
     if not raw:
         raise GroqExtractionError("Groq returned an empty response.")

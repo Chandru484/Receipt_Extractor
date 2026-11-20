@@ -88,6 +88,7 @@ async def get_stored_receipt(receipt_id: str):
 @app.post(
     "/extract",
     response_model=ReceiptResponse,
+    response_model_exclude_none=True,
     status_code=status.HTTP_200_OK,
     summary="Extract structured receipt data",
     description=(
@@ -136,11 +137,13 @@ async def extract_receipt(
             processed_image = await run_in_threadpool(preprocess_image, file_bytes)
             extraction_result = await run_in_threadpool(process_receipt, processed_image)
 
+        from schemas.receipt_schema import remove_none_values
+        cleaned_data = remove_none_values(extraction_result["receipt"])
         response_payload = {
             "success": True,
             "message": "Receipt extracted successfully",
             "formatted_display": extraction_result.get("formatted_display"),
-            "data": extraction_result["receipt"],
+            "data": cleaned_data,
             "ocr": extraction_result["ocr"],
             "document_id": None
         }
@@ -153,7 +156,7 @@ async def extract_receipt(
             if response_payload.get("is_duplicate"):
                 response_payload["message"] = "Receipt extracted successfully (existing record found in database, duplicate save skipped)"
 
-        return response_payload
+        return remove_none_values(response_payload)
 
     except ValueError as exc:
         raise HTTPException(

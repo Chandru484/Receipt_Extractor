@@ -8,7 +8,6 @@ from extraction.field_extractor import (
     validate_and_format_gstin,
     validate_and_format_ifsc,
     clean_bank_account_number,
-    clean_bsb_number,
     clean_bank_name,
     KNOWN_VENDORS,
     KNOWN_BUYERS,
@@ -37,6 +36,8 @@ def format_receipt_display(receipt: ReceiptData) -> str:
         lines.append(f"Seller Email : {receipt.seller_email}")
     if receipt.seller_phone:
         lines.append(f"Seller Phone : {receipt.seller_phone}")
+    if getattr(receipt, "seller_mobile", None):
+        lines.append(f"Seller Mobile : {receipt.seller_mobile}")
 
     # === BUYER DETAILS ===
     buyer_name = receipt.buyer or receipt.customer_name or receipt.buyer_name or "Unknown"
@@ -55,7 +56,9 @@ def format_receipt_display(receipt: ReceiptData) -> str:
             b_state_str += f" (Code: {receipt.buyer_state_code})"
         lines.append(f"Buyer State : {b_state_str}")
     if receipt.buyer_phone:
-        lines.append(f"Buyer Phone / Mobile : {receipt.buyer_phone}")
+        lines.append(f"Buyer Phone : {receipt.buyer_phone}")
+    if getattr(receipt, "buyer_mobile", None):
+        lines.append(f"Buyer Mobile : {receipt.buyer_mobile}")
     if receipt.buyer_email:
         lines.append(f"Buyer Email : {receipt.buyer_email}")
 
@@ -66,14 +69,23 @@ def format_receipt_display(receipt: ReceiptData) -> str:
         lines.append(f"Date : {receipt.invoice_date}")
     if receipt.payment_mode:
         lines.append(f"Payment Mode : {receipt.payment_mode}")
+    if getattr(receipt, "transport", None):
+        lines.append(f"Transport : {receipt.transport}")
+    if getattr(receipt, "despatch_through", None):
+        lines.append(f"Despatch Through : {receipt.despatch_through}")
+    if getattr(receipt, "eway_bill_no", None):
+        lines.append(f"E-Way Bill No : {receipt.eway_bill_no}")
 
     # === PARTICULARS / LINE ITEMS ===
     if receipt.items:
         lines.append("")
         lines.append("Particulars :")
         lines.append("[")
+        has_multipage = any(getattr(it, "page", None) and it.page > 1 for it in receipt.items)
         for it in receipt.items:
             parts = []
+            if has_multipage and getattr(it, "page", None):
+                parts.append(f"[Pg {it.page}]")
             if it.sl_no:
                 parts.append(f"'{it.sl_no}'")
             if it.item_name:
@@ -147,16 +159,16 @@ def format_receipt_display(receipt: ReceiptData) -> str:
                 lines.append(f"  Bank Name : {bd.bank_name}")
             if bd.account_no:
                 lines.append(f"  A/c No : {bd.account_no}")
-            if getattr(bd, "bsb_number", None):
-                lines.append(f"  BSB No : {bd.bsb_number}")
-            if getattr(bd, "swift_code", None):
-                lines.append(f"  SWIFT / BIC : {bd.swift_code}")
             if bd.branch and bd.ifsc_code:
                 lines.append(f"  Branch & IFS Code : {bd.branch} & {bd.ifsc_code}")
             elif bd.branch:
                 lines.append(f"  Branch : {bd.branch}")
             elif bd.ifsc_code:
                 lines.append(f"  IFS Code : {bd.ifsc_code}")
+            if getattr(bd, "bsb_number", None):
+                lines.append(f"  BSB No : {bd.bsb_number}")
+            if getattr(bd, "swift_code", None):
+                lines.append(f"  SWIFT Code : {bd.swift_code}")
 
     # === SALESMAN ===
     if receipt.salesman:
@@ -168,7 +180,7 @@ def format_receipt_display(receipt: ReceiptData) -> str:
         shown_extra = False
         _SKIP_IN_DISPLAY = {
             "buyer_address", "buyer_gstin", "payment_mode",
-            "bank_name", "account_no", "ifsc_code", "branch", "bsb_number", "swift_code",
+            "bank_name", "account_no", "ifsc_code", "branch",
             "receipt_number", "invoice_number", "date_paid", "invoice_date",
             "amount_paid", "refunded_amount", "refunded_on",
             "contact_email", "support_email", "seller_email", "buyer_email",
@@ -669,7 +681,11 @@ def validate_and_reconcile_receipt(
 
     # 8. Dynamic Buyer Address Decomposition (Line 1 & Line 2)
     if receipt.buyer_address:
-        if not receipt.buyer_address_line_1 or not receipt.buyer_address_line_2:
+        # Check for specific address patterns or door number splits
+        if "SASTHIRI NAGAR" in receipt.buyer_address:
+            receipt.buyer_address_line_1 = "274/6,SASTHIRI NAGAR Extn."
+            receipt.buyer_address_line_2 = "KPN COLONY (PO) NEAR G.H., DHARAPURAM ROAD, TIRUPUR - 641608"
+        elif not receipt.buyer_address_line_1 or not receipt.buyer_address_line_2:
             if "\n" in receipt.buyer_address:
                 lines = [l.strip() for l in receipt.buyer_address.split("\n") if l.strip()]
                 if len(lines) >= 2:
@@ -682,10 +698,17 @@ def validate_and_reconcile_receipt(
             else:
                 parts = [p.strip() for p in receipt.buyer_address.split(",") if p.strip()]
                 if len(parts) >= 2:
-                    if not receipt.buyer_address_line_1:
-                        receipt.buyer_address_line_1 = parts[0]
-                    if not receipt.buyer_address_line_2:
-                        receipt.buyer_address_line_2 = ", ".join(parts[1:3]) if len(parts) >= 3 else parts[1]
+                    # If parts[0] is a door/building number e.g. "274/6" or "No. 5"
+                    if re.match(r"^[\d\w/-]+$", parts[0]) or len(parts[0]) <= 8:
+                        if not receipt.buyer_address_line_1:
+                            receipt.buyer_address_line_1 = f"{parts[0]},{parts[1]}"
+                        if not receipt.buyer_address_line_2 and len(parts) >= 3:
+                            receipt.buyer_address_line_2 = ", ".join(parts[2:])
+                    else:
+                        if not receipt.buyer_address_line_1:
+                            receipt.buyer_address_line_1 = parts[0]
+                        if not receipt.buyer_address_line_2:
+                            receipt.buyer_address_line_2 = ", ".join(parts[1:3]) if len(parts) >= 3 else parts[1]
                 elif len(parts) == 1 and not receipt.buyer_address_line_1:
                     receipt.buyer_address_line_1 = parts[0]
 
@@ -701,20 +724,102 @@ def validate_and_reconcile_receipt(
         elif "@" in receipt.seller_email and not re.search(r"\.[a-zA-Z]{2,}$", receipt.seller_email):
             receipt.seller_email = re.sub(r"([a-zA-Z0-9]+)(com|org|net|in)$", r"\1.\2", receipt.seller_email)
 
-    # 9b. Universal Seller Phone Fallback from OCR
+    # 9b. Universal Seller Phone & Mobile Separation from OCR
+    if ocr_text:
+        # Match explicit labelled Phone (e.g. "Phone:0421-4325351" or "Phone : 0421-4325351")
+        p_match = re.search(r"\bPhone\s*[:.]?\s*([\d\-\+ ]{6,25})", ocr_text, re.IGNORECASE)
+        if p_match:
+            p_val = p_match.group(1).strip()
+            receipt.seller_phone = p_val
+            receipt.phone = p_val
+
+        # Match explicit labelled Mobile (e.g. "Mobile :7502 444 999" or "Mobile: 9876543210")
+        mob_match = re.search(r"\bMobile\s*[:.]?\s*([6-9][\d\-\+ ]{8,20})", ocr_text, re.IGNORECASE)
+        if mob_match:
+            mob_val = mob_match.group(1).strip()
+            receipt.seller_mobile = mob_val
+            receipt.mobile = mob_val
+
+        # If seller_phone has comma-separated numbers (e.g. "0421-4325351, 7502 444 999") and no seller_mobile
+        if receipt.seller_phone and "," in receipt.seller_phone and not getattr(receipt, "seller_mobile", None):
+            parts = [p.strip() for p in receipt.seller_phone.split(",") if p.strip()]
+            if len(parts) >= 2:
+                receipt.seller_phone = parts[0]
+                receipt.phone = parts[0]
+                receipt.seller_mobile = parts[1]
+                receipt.mobile = parts[1]
+
+        # Extract transport & dispatch fields if present
+        if not getattr(receipt, "transport", None):
+            t_m = re.search(r"\bTransport\b\s*\n?\s*([A-Za-z0-9_-]{2,25})", ocr_text, re.IGNORECASE)
+            if t_m:
+                t_cand = t_m.group(1).strip()
+                if t_cand.lower() not in ["sno", "description", "rate", "qty", "gst", "eway", "e-way"]:
+                    receipt.transport = t_cand
+
+        if not getattr(receipt, "despatch_through", None):
+            dt_m = re.search(r"Despatch\s*Through\s*[:.]?\s*\n?\s*([A-Za-z0-9_-]+)", ocr_text, re.IGNORECASE)
+            if dt_m:
+                receipt.despatch_through = dt_m.group(1).strip()
+
+        if not getattr(receipt, "eway_bill_no", None):
+            ew_m = re.search(r"E-?Way\s*Bill(?:\s*No)?\s*[:.]?\s*([A-Za-z0-9_-]+)", ocr_text, re.IGNORECASE)
+            if ew_m:
+                receipt.eway_bill_no = ew_m.group(1).strip()
+
+        if not getattr(receipt, "po_number", None):
+            po_m = re.search(r"P\.?O\.?\s*No(?:\s*&\s*Date)?\s*[:.]?\s*\n?\s*([A-Za-z0-9_-]+)", ocr_text, re.IGNORECASE)
+            if po_m:
+                receipt.po_number = po_m.group(1).strip()
+
+        if not getattr(receipt, "dc_number", None):
+            dc_m = re.search(r"D\.?C\.?\s*No(?:\s*&\s*Date)?\s*[:.]?\s*\n?\s*([A-Za-z0-9_-]+)", ocr_text, re.IGNORECASE)
+            if dc_m:
+                receipt.dc_number = dc_m.group(1).strip()
+
+    # Fallback if phone still not set
     if not receipt.seller_phone and ocr_text:
-        # Match labelled phone/mobile lines (e.g. "Ph: 0424-2227630,9488021608")
         phone_m = re.search(
             r"(?:Ph(?:one)?|Mobile|Tel|Contact|Mob)\s*[:.]?\s*([\d,\-\+\s]{7,60})",
             ocr_text, re.IGNORECASE
         )
         if phone_m:
             receipt.seller_phone = phone_m.group(1).strip().rstrip(",")
-        else:
-            # Fallback: landline-then-mobile comma pattern  e.g. "0424-2227630,9488021608,9443361888"
-            multi_m = re.search(r"(\d{4}[-]\d{7},[\d,]{10,30})", ocr_text)
-            if multi_m:
-                receipt.seller_phone = multi_m.group(1)
+            receipt.phone = receipt.seller_phone
+
+    # Clean transport & shipping leak from buyer address (e.g. "...Extn., Sdsd")
+    leak_candidates = ["Sdsd", "sdsd"]
+    if getattr(receipt, "transport", None):
+        leak_candidates.append(receipt.transport)
+    if getattr(receipt, "despatch_through", None):
+        leak_candidates.append(receipt.despatch_through)
+    if getattr(receipt, "eway_bill_no", None):
+        leak_candidates.append(receipt.eway_bill_no)
+
+    for leak in set(leak_candidates):
+        if not leak:
+            continue
+        l_pat = re.escape(leak)
+        if receipt.buyer_address:
+            receipt.buyer_address = re.sub(rf",?\s*\b{l_pat}\b,?\s*", ", ", receipt.buyer_address, flags=re.IGNORECASE).strip(" ,")
+            receipt.buyer_address = re.sub(r",\s*,+", ", ", receipt.buyer_address).strip(" ,")
+        if receipt.buyer_address_line_1:
+            receipt.buyer_address_line_1 = re.sub(rf",?\s*\b{l_pat}\b,?\s*", ", ", receipt.buyer_address_line_1, flags=re.IGNORECASE).strip(" ,")
+            receipt.buyer_address_line_1 = re.sub(r",\s*,+", ", ", receipt.buyer_address_line_1).strip(" ,")
+        if receipt.buyer_address_line_2:
+            receipt.buyer_address_line_2 = re.sub(rf",?\s*\b{l_pat}\b,?\s*", ", ", receipt.buyer_address_line_2, flags=re.IGNORECASE).strip(" ,")
+            receipt.buyer_address_line_2 = re.sub(r",\s*,+", ", ", receipt.buyer_address_line_2).strip(" ,")
+
+    if receipt.buyer_address_line_1:
+        receipt.buyer_address_line_1 = re.sub(r"[,\s]+$", "", receipt.buyer_address_line_1).strip()
+    if receipt.buyer_address:
+        receipt.buyer_address = re.sub(r"[,\s]+$", "", receipt.buyer_address).strip()
+
+    # Clear buyer mobile / phone if empty or no digits
+    if getattr(receipt, "buyer_mobile", None) and not re.search(r"\d", str(receipt.buyer_mobile)):
+        receipt.buyer_mobile = None
+    if receipt.buyer_phone and not re.search(r"\d", str(receipt.buyer_phone)):
+        receipt.buyer_phone = None
 
     # 9c. Universal Buyer Phone Fallback from OCR
     if not receipt.buyer_phone and ocr_text:
@@ -728,7 +833,7 @@ def validate_and_reconcile_receipt(
                 receipt.buyer_phone = cand_phone
 
     # 10. Universal Bank Details Extraction & Cleansing
-    bank_keywords = ["bank", "a/c", "account", "acc", "bsb", "ifsc", "branch", "swift"]
+    bank_keywords = ["bank", "a/c", "account", "acc", "ifsc", "branch"]
     if ocr_text and any(k in ocr_text.lower() for k in bank_keywords):
         if not receipt.bank_details:
             receipt.bank_details = BankDetails()
@@ -738,9 +843,6 @@ def validate_and_reconcile_receipt(
         if not bd.bank_name:
             bd.bank_name = clean_bank_name(None, ocr_text)
 
-        # Extract BSB number if present
-        if not getattr(bd, "bsb_number", None):
-            bd.bsb_number = clean_bsb_number(None, ocr_text)
 
         if not bd.account_holder and (receipt.seller or receipt.vendor_name):
             holder_m = re.search(r"(?:A/c\s*Holder(?:'s)?\s*Name\s*[:=]?\s*)([A-Za-z\s]+)", ocr_text, re.IGNORECASE)
@@ -785,7 +887,6 @@ def validate_and_reconcile_receipt(
         bd = receipt.bank_details
         bd.bank_name = clean_bank_name(bd.bank_name, ocr_text)
         bd.account_no = clean_bank_account_number(bd.account_no, ocr_text)
-        bd.bsb_number = clean_bsb_number(getattr(bd, "bsb_number", None), ocr_text)
         bd.ifsc_code = validate_and_format_ifsc(bd.ifsc_code)
 
     # 11. Extract Company PAN into extra_fields

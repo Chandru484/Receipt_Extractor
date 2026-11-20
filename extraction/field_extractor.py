@@ -176,32 +176,6 @@ def clean_bank_account_number(val: Optional[str], ocr_text: str = "") -> Optiona
     return None
 
 
-def clean_bsb_number(val: Optional[str], ocr_text: str = "") -> Optional[str]:
-    """Clean and validate Australian / New Zealand BSB (Bank-State-Branch) number (e.g. '4321 432', '432-143')."""
-    if val:
-        s = str(val).strip()
-        s_clean = re.sub(r"^(?:BSB(?:\s*#|\s*No\.?|\s*Code)?)\s*[:=#]?\s*", "", s, flags=re.IGNORECASE).strip()
-        digits = re.sub(r"\D", "", s_clean)
-        if 5 <= len(digits) <= 8:
-            if re.match(r"^[0-9\s-]+$", s_clean):
-                return s_clean
-            return digits
-
-    if ocr_text:
-        bsb_match = re.search(
-            r"\bBSB(?:\s*#|\s*No\.?|\s*Code)?\s*[:=#]?\s*([0-9\s-]{5,10})\b",
-            ocr_text,
-            re.IGNORECASE
-        )
-        if bsb_match:
-            cand = bsb_match.group(1).strip()
-            digits = re.sub(r"\D", "", cand)
-            if 5 <= len(digits) <= 8:
-                return cand
-
-    return None
-
-
 def clean_bank_name(val: Optional[str], ocr_text: str = "") -> Optional[str]:
     """Clean and validate bank name (e.g. 'ANZ Bank', 'Axis Bank'), falling back to OCR pattern matching."""
     if val:

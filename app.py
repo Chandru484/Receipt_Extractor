@@ -90,11 +90,13 @@ def gradio_extract(file):
             processed = preprocess_image(file_bytes)
             result = process_receipt(processed)
 
+        from schemas.receipt_schema import remove_none_values
+        cleaned_data = remove_none_values(result["receipt"])
         response_payload = {
             "success": True,
             "message": "Receipt extracted successfully",
             "formatted_display": result.get("formatted_display"),
-            "data": result["receipt"],
+            "data": cleaned_data,
             "ocr": result["ocr"],
             "document_id": None
         }
@@ -110,7 +112,8 @@ def gradio_extract(file):
             else:
                 summary += f"\n\n[Saved in MongoDB Atlas with ID: {doc_id}]"
 
-        return summary, json.dumps(response_payload, indent=2)
+        clean_final = remove_none_values(response_payload)
+        return summary, json.dumps(clean_final, indent=2)
 
     except Exception as e:
         return f"Extraction failed: {e}", "{}"

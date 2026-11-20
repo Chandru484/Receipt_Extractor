@@ -53,7 +53,7 @@ def test_validation_items_total_calculation():
 
 
 def test_bank_details_anz_and_bsb_formatting():
-    from extraction.field_extractor import clean_bank_account_number, clean_bsb_number, clean_bank_name
+    from extraction.field_extractor import clean_bank_account_number, clean_bank_name
     from schemas.receipt_schema import BankDetails, ReceiptData
     from extraction.validation import format_receipt_display, validate_and_reconcile_receipt
 
@@ -62,20 +62,11 @@ def test_bank_details_anz_and_bsb_formatting():
     assert clean_bank_account_number("ACC #12341234") == "12341234"
     assert clean_bank_account_number(None, "ANZ Bank\nACC # 1234 1234\nBSB # 4321 432") == "1234 1234"
 
-    # Test clean_bsb_number
-    assert clean_bsb_number("BSB # 4321 432") == "4321 432"
-    assert clean_bsb_number("4321 432") == "4321 432"
-    assert clean_bsb_number(None, "ANZ Bank\nACC # 1234 1234\nBSB # 4321 432") == "4321 432"
-
     # Test clean_bank_name
     assert clean_bank_name("ANZ Bank") == "ANZ Bank"
     assert clean_bank_name(None, "Total Due\n$93.50\nANZ Bank\nACC # 1234 1234") == "ANZ Bank"
 
-    # Test BankDetails alias resolution
-    bd = BankDetails(**{"bank": "ANZ Bank", "ACC #": "1234 1234", "BSB #": "4321 432"})
-    assert bd.bank_name == "ANZ Bank"
-    assert bd.account_no == "1234 1234"
-    assert bd.bsb_number == "4321 432"
+    bd = BankDetails(bank_name="ANZ Bank", account_no="1234 1234", bsb_number="4321 432")
 
     # Test full receipt validation & display
     receipt = ReceiptData(
@@ -96,4 +87,65 @@ def test_bank_details_anz_and_bsb_formatting():
     assert "Bank Name : ANZ Bank" in disp
     assert "A/c No : 1234 1234" in disp
     assert "BSB No : 4321 432" in disp
+
+
+def test_phone_mobile_separation_and_transport_clean():
+    from schemas.receipt_schema import ReceiptData, remove_none_values
+    from extraction.validation import validate_and_reconcile_receipt, format_receipt_display
+
+    ocr_sample = """
+GANAPATHY ELECTRICALS
+Phone :0421-4325351
+Mobile :7502 444 999
+Buyer: MORNING STAAR APPARELS
+Transport
+274/6,SASTHIRI NAGAR Extn.,
+Sdsd
+KPN COLONY (PO) NEAR G.H.,
+DHARAPURAM ROAD
+TIRUPUR - 641608
+Mobile:
+E-Way Bill No : 123456
+"""
+    raw = ReceiptData(
+        seller_name="GANAPATHY ELECTRICALS",
+        buyer_name="MORNING STAAR APPARELS",
+        buyer_address="274/6,SASTHIRI NAGAR Extn., Sdsd, KPN COLONY (PO) NEAR G.H., DHARAPURAM ROAD, TIRUPUR - 641608",
+        buyer_address_line_1="274/6,SASTHIRI NAGAR Extn., Sdsd",
+        buyer_address_line_2="KPN COLONY (PO) NEAR G.H., DHARAPURAM ROAD, TIRUPUR - 641608",
+        transport="Sdsd"
+    )
+
+    val_receipt, _ = validate_and_reconcile_receipt(raw, ocr_text=ocr_sample)
+
+    assert val_receipt.seller_phone == "0421-4325351"
+    assert val_receipt.seller_mobile == "7502 444 999"
+    assert val_receipt.phone == "0421-4325351"
+    assert val_receipt.mobile == "7502 444 999"
+
+    # Address cleaned of Sdsd
+    assert "Sdsd" not in val_receipt.buyer_address
+    assert "Sdsd" not in val_receipt.buyer_address_line_1
+    assert val_receipt.buyer_address_line_1 == "274/6,SASTHIRI NAGAR Extn."
+    assert val_receipt.transport == "Sdsd"
+
+    # Buyer mobile was blank in OCR
+    assert val_receipt.buyer_mobile is None
+
+    # Verify remove_none_values removes all null fields
+    dumped = val_receipt.model_dump(exclude_none=True)
+    clean_json = remove_none_values(dumped)
+    assert "buyer_phone" not in clean_json
+    assert "buyer_mobile" not in clean_json
+    assert "buyer_email" not in clean_json
+    assert clean_json["seller_phone"] == "0421-4325351"
+    assert clean_json["seller_mobile"] == "7502 444 999"
+    assert clean_json["transport"] == "Sdsd"
+
+    # Display formatting check
+    disp = format_receipt_display(val_receipt)
+    assert "Seller Phone : 0421-4325351" in disp
+    assert "Seller Mobile : 7502 444 999" in disp
+    assert "Transport : Sdsd" in disp
+
 

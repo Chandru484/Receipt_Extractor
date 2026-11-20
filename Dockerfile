@@ -12,11 +12,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Install system libraries required by OpenCV and PaddleOCR
+# Install system libraries required by OpenCV, PaddleOCR, and PDF conversion
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
     libglib2.0-0 \
     libgomp1 \
+    poppler-utils \
     curl \
     && rm -rf /var/lib/apt/lists/*
 

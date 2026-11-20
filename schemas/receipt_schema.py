@@ -173,9 +173,7 @@ class BankDetails(BaseModel):
     bank_name: Optional[str] = None
     account_holder: Optional[str] = None
     account_no: Optional[str] = None
-    bsb_number: Optional[str] = None
     ifsc_code: Optional[str] = None
-    swift_code: Optional[str] = None
     branch: Optional[str] = None
 
     @model_validator(mode="before")
@@ -200,18 +198,6 @@ class BankDetails(BaseModel):
                     if data.get(k):
                         data["account_no"] = str(data[k]).strip()
                         break
-            # bsb number alias
-            if not data.get("bsb_number"):
-                for k in ["bsb", "bsb_no", "bsb_number", "BSB #", "BSB No", "bsb_code", "BSB", "bsb_num"]:
-                    if data.get(k):
-                        data["bsb_number"] = str(data[k]).strip()
-                        break
-            # swift code alias
-            if not data.get("swift_code"):
-                for k in ["swift", "swift_code", "bic", "bic_code", "SWIFT", "SWIFT / BIC", "swift_bic"]:
-                    if data.get(k):
-                        data["swift_code"] = str(data[k]).strip()
-                        break
             # ifsc code alias
             if not data.get("ifsc_code"):
                 for k in ["ifsc", "ifs_code", "IFS Code", "IFSC Code"]:
@@ -224,6 +210,7 @@ class BankDetails(BaseModel):
 class ReceiptItem(BaseModel):
     model_config = ConfigDict(extra="allow")
 
+    page: Optional[int] = Field(default=1, description="Page number where item appears (1-indexed)")
     sl_no: Optional[str] = None
     item_name: Optional[str] = None
     hsn_sac: Optional[str] = None
@@ -238,6 +225,21 @@ class ReceiptItem(BaseModel):
     @classmethod
     def resolve_item_fields(cls, data: Any) -> Any:
         if isinstance(data, dict):
+            # Page number resolution
+            if data.get("page") is None:
+                for alt_key in ["page_no", "page_num", "page_number", "pg", "Page", "Page_No", "Page_Number"]:
+                    if data.get(alt_key) is not None:
+                        data["page"] = data[alt_key]
+                        break
+            if data.get("page") is not None:
+                try:
+                    match = re.search(r"\d+", str(data["page"]))
+                    data["page"] = int(match.group(0)) if match else 1
+                except Exception:
+                    data["page"] = 1
+            else:
+                data["page"] = 1
+
             if data.get("quantity") is None:
                 for alt_key in ["qty", "Qty", "quantity", "Quantity"]:
                     if data.get(alt_key) is not None:
@@ -283,6 +285,9 @@ class ReceiptData(BaseModel):
     seller_state_code: Optional[str] = None
     seller_email: Optional[str] = None
     seller_phone: Optional[str] = None
+    seller_mobile: Optional[str] = None
+    phone: Optional[str] = None
+    mobile: Optional[str] = None
 
     # Core Buyer / Customer Details
     customer_name: Optional[str] = None
@@ -295,7 +300,15 @@ class ReceiptData(BaseModel):
     buyer_state: Optional[str] = None
     buyer_state_code: Optional[str] = None
     buyer_phone: Optional[str] = None
+    buyer_mobile: Optional[str] = None
     buyer_email: Optional[str] = None
+
+    # Dispatch / Transport / Order details
+    transport: Optional[str] = None
+    despatch_through: Optional[str] = None
+    eway_bill_no: Optional[str] = None
+    po_number: Optional[str] = None
+    dc_number: Optional[str] = None
 
     # Backward compatibility alias
     gstin: Optional[str] = None
@@ -363,6 +376,17 @@ class ReceiptData(BaseModel):
                 data["seller_gstin"] = s_gst
                 data["gstin"] = s_gst
 
+            # Phone and mobile aliases
+            s_ph = data.get("seller_phone") or data.get("phone")
+            if s_ph:
+                data["seller_phone"] = str(s_ph).strip()
+                data["phone"] = str(s_ph).strip()
+
+            s_mob = data.get("seller_mobile") or data.get("mobile")
+            if s_mob:
+                data["seller_mobile"] = str(s_mob).strip()
+                data["mobile"] = str(s_mob).strip()
+
         return data
 
     @model_validator(mode="after")
@@ -385,6 +409,30 @@ class ReceiptData(BaseModel):
             self.customer_name = b_name
             self.buyer = b_name
             self.buyer_name = b_name
+
+        # Synchronize phone and mobile
+        s_ph = self.seller_phone or self.phone
+        if s_ph:
+            self.seller_phone = s_ph
+            self.phone = s_ph
+
+        s_mob = self.seller_mobile or self.mobile
+        if s_mob:
+            self.seller_mobile = s_mob
+            self.mobile = s_mob
+
+        # Clean transport leak from buyer address if present
+        if self.transport:
+            t_pat = re.escape(self.transport.strip())
+            if self.buyer_address:
+                self.buyer_address = re.sub(rf",?\s*\b{t_pat}\b,?\s*", ", ", self.buyer_address, flags=re.IGNORECASE).strip(" ,")
+                self.buyer_address = re.sub(r",\s*,+", ", ", self.buyer_address).strip(" ,")
+            if self.buyer_address_line_1:
+                self.buyer_address_line_1 = re.sub(rf",?\s*\b{t_pat}\b,?\s*", ", ", self.buyer_address_line_1, flags=re.IGNORECASE).strip(" ,")
+                self.buyer_address_line_1 = re.sub(r",\s*,+", ", ", self.buyer_address_line_1).strip(" ,")
+            if self.buyer_address_line_2:
+                self.buyer_address_line_2 = re.sub(rf",?\s*\b{t_pat}\b,?\s*", ", ", self.buyer_address_line_2, flags=re.IGNORECASE).strip(" ,")
+                self.buyer_address_line_2 = re.sub(r",\s*,+", ", ", self.buyer_address_line_2).strip(" ,")
 
         # Synchronize buyer address lines universally
         if self.buyer_address:
@@ -538,14 +586,8 @@ class ReceiptData(BaseModel):
                 "acc": "account_no",
                 "acc_no": "account_no",
                 "acc_#": "account_no",
-                "bsb": "bsb_number",
-                "bsb_no": "bsb_number",
-                "bsb_number": "bsb_number",
-                "bsb_#": "bsb_number",
                 "ifsc": "ifsc_code",
                 "ifsc_code": "ifsc_code",
-                "swift": "swift_code",
-                "swift_code": "swift_code",
             }
             for k in list(self.extra_fields.keys()):
                 k_clean = k.lower().replace(" ", "_")
@@ -610,3 +652,20 @@ class ReceiptResponse(BaseModel):
     ocr: OCRDiagnostics
     document_id: Optional[str] = Field(default=None, description="MongoDB document ID if persisted")
     is_duplicate: Optional[bool] = Field(default=None, description="True if record already existed in MongoDB")
+
+
+def remove_none_values(obj: Any) -> Any:
+    """Recursively remove keys with None (null) values and empty dicts from dicts and lists."""
+    if isinstance(obj, dict):
+        cleaned = {}
+        for k, v in obj.items():
+            if v is not None:
+                cleaned_v = remove_none_values(v)
+                if cleaned_v is not None:
+                    if isinstance(cleaned_v, dict) and not cleaned_v:
+                        continue
+                    cleaned[k] = cleaned_v
+        return cleaned
+    elif isinstance(obj, list):
+        return [remove_none_values(v) for v in obj]
+    return obj
