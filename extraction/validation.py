@@ -171,6 +171,9 @@ def format_receipt_display(receipt: ReceiptData) -> str:
             parts = []
             if h.hsn_sac:
                 parts.append(f"HSN/SAC : {h.hsn_sac}")
+            elif h.cgst_rate or h.sgst_rate:
+                r = h.cgst_rate or h.sgst_rate
+                parts.append(f"Rate : {r}")
             if h.taxable_value is not None:
                 parts.append(f"Taxable : {h.taxable_value}")
             if h.sgst_amount is not None:
@@ -281,58 +284,98 @@ def extract_hsn_tax_summary(ocr_text: str) -> Tuple[List[Dict[str, Any]], Dict[s
     if not ocr_text:
         return [], {}
 
-    # Check for HSN / Tax table header
-    has_hsn_table = bool(re.search(r"HSN/SAC\s+(?:Taxable|Amount|GST%|SGST|CGST|Rate)", ocr_text, re.IGNORECASE))
-    if not has_hsn_table:
-        return [], {}
-
-    m = re.search(r"HSN/SAC\s+Taxable.*?(?=Amount Chargeable|Bank Details|Rupees|\bTerms\b|$)", ocr_text, re.DOTALL | re.IGNORECASE)
-    if not m:
-        return [], {}
-
-    block = m.group(0)
-    lines = [l.strip() for l in block.splitlines() if l.strip()]
     rows: List[Dict[str, Any]] = []
     totals: Dict[str, float] = {}
 
-    for line in lines:
-        tot_m = re.match(r"^Total\s+([0-9,]+\.\d{2})\s+([0-9,]+\.\d{2})\s+([0-9,]+\.\d{2})", line, re.IGNORECASE)
-        if tot_m:
-            totals["subtotal"] = float(tot_m.group(1).replace(",", ""))
-            totals["sgst"] = float(tot_m.group(2).replace(",", ""))
-            totals["cgst"] = float(tot_m.group(3).replace(",", ""))
-            totals["tax"] = round(totals["sgst"] + totals["cgst"], 2)
-            continue
+    # 1. Check for HSN / Tax table header
+    has_hsn_table = bool(re.search(r"HSN/SAC\s+(?:Taxable|Amount|GST%|SGST|CGST|Rate)", ocr_text, re.IGNORECASE))
+    if has_hsn_table:
+        m = re.search(r"HSN/SAC\s+Taxable.*?(?=Amount Chargeable|Bank Details|Rupees|\bTerms\b|$)", ocr_text, re.DOTALL | re.IGNORECASE)
+        if m:
+            block = m.group(0)
+            lines = [l.strip() for l in block.splitlines() if l.strip()]
 
-        row_m = re.search(r"([\d,\s]+?)\s+([0-9,]+\.\d{2})\s+(\d+(?:\.\d+)?)\s+([0-9,]+\.\d{2})\s+(\d+(?:\.\d+)?)\s+([0-9,]+\.\d{2})", line)
-        if row_m:
-            hsn = re.sub(r"\s+", "", row_m.group(1)).strip(",")
-            taxable = float(row_m.group(2).replace(",", ""))
-            sgst_r = f"{float(row_m.group(3)):g}%"
-            sgst_a = float(row_m.group(4).replace(",", ""))
-            cgst_r = f"{float(row_m.group(5)):g}%"
-            cgst_a = float(row_m.group(6).replace(",", ""))
+            for line in lines:
+                tot_m = re.match(r"^Total\s+([0-9,]+\.\d{2})\s+([0-9,]+\.\d{2})\s+([0-9,]+\.\d{2})", line, re.IGNORECASE)
+                if tot_m:
+                    totals["subtotal"] = float(tot_m.group(1).replace(",", ""))
+                    totals["sgst"] = float(tot_m.group(2).replace(",", ""))
+                    totals["cgst"] = float(tot_m.group(3).replace(",", ""))
+                    totals["tax"] = round(totals["sgst"] + totals["cgst"], 2)
+                    continue
+
+                row_m = re.search(r"([\d,\s]+?)\s+([0-9,]+\.\d{2})\s+(\d+(?:\.\d+)?)\s+([0-9,]+\.\d{2})\s+(\d+(?:\.\d+)?)\s+([0-9,]+\.\d{2})", line)
+                if row_m:
+                    hsn = re.sub(r"\s+", "", row_m.group(1)).strip(",")
+                    taxable = float(row_m.group(2).replace(",", ""))
+                    sgst_r = f"{float(row_m.group(3)):g}%"
+                    sgst_a = float(row_m.group(4).replace(",", ""))
+                    cgst_r = f"{float(row_m.group(5)):g}%"
+                    cgst_a = float(row_m.group(6).replace(",", ""))
+                    rows.append({
+                        "hsn_sac": hsn,
+                        "taxable_value": taxable,
+                        "sgst_rate": sgst_r,
+                        "sgst_amount": sgst_a,
+                        "cgst_rate": cgst_r,
+                        "cgst_amount": cgst_a,
+                        "total_tax_amount": round(sgst_a + cgst_a, 2)
+                    })
+                elif rows and (line.startswith(",") or re.match(r"^[,\d\s]+", line)):
+                    m_cont = re.match(r"^[,\d\s]+", line)
+                    if m_cont:
+                        extra = re.sub(r"\s+", "", m_cont.group(0)).strip(",")
+                        if extra:
+                            rows[-1]["hsn_sac"] += "," + extra
+
+    # 2. Check for TAX DETAILS rate matrix (e.g. FMCG agency / wholesale invoices)
+    # TAX DETAILS :
+    # TAX % 2.5% 6% 9% 14% Round Off 0.19
+    # CGST VALUE 1608.34 289.29
+    # SGST VALUE 1608.34 289.29 NETT AMOUNT 90536.00
+    tax_matrix_m = re.search(r"TAX\s*DETAILS\s*:\s*\r?\n([^\r\n]+)\r?\n([^\r\n]+)\r?\n([^\r\n]+)", ocr_text, re.IGNORECASE)
+    if tax_matrix_m:
+        rates_line = tax_matrix_m.group(1)
+        cgst_line = tax_matrix_m.group(2)
+        sgst_line = tax_matrix_m.group(3)
+        rates = re.findall(r"(\d+(?:\.\d+)?)\s*%", rates_line)
+        cgst_vals = [float(x.replace(",", "")) for x in re.findall(r"([0-9,]+\.\d{2})", cgst_line)]
+        sgst_clean = re.sub(r"NETT\s*AMOUNT.*", "", sgst_line, flags=re.IGNORECASE)
+        sgst_vals = [float(x.replace(",", "")) for x in re.findall(r"([0-9,]+\.\d{2})", sgst_clean)]
+        for i, (c_amt, s_amt) in enumerate(zip(cgst_vals, sgst_vals)):
+            rate_str = f"{rates[i]}%" if i < len(rates) else None
+            rate_num = float(rates[i]) if i < len(rates) else 0.0
+            taxable = round(c_amt / (rate_num / 100.0), 2) if rate_num > 0 else 0.0
             rows.append({
-                "hsn_sac": hsn,
+                "hsn_sac": None,
                 "taxable_value": taxable,
-                "sgst_rate": sgst_r,
-                "sgst_amount": sgst_a,
-                "cgst_rate": cgst_r,
-                "cgst_amount": cgst_a,
-                "total_tax_amount": round(sgst_a + cgst_a, 2)
+                "sgst_rate": rate_str,
+                "sgst_amount": s_amt,
+                "cgst_rate": rate_str,
+                "cgst_amount": c_amt,
+                "total_tax_amount": round(c_amt + s_amt, 2)
             })
-        elif rows and (line.startswith(",") or re.match(r"^[,\d\s]+", line)):
-            m_cont = re.match(r"^[,\d\s]+", line)
-            if m_cont:
-                extra = re.sub(r"\s+", "", m_cont.group(0)).strip(",")
-                if extra:
-                    rows[-1]["hsn_sac"] += "," + extra
+        if cgst_vals:
+            totals["cgst"] = round(sum(cgst_vals), 2)
+        if sgst_vals:
+            totals["sgst"] = round(sum(sgst_vals), 2)
+        if cgst_vals or sgst_vals:
+            totals["tax"] = round(totals.get("cgst", 0.0) + totals.get("sgst", 0.0), 2)
 
+    # 3. Check for FMCG authoritative Total row:
+    # e.g. TOTAL 468 86740.55 3795.26 90535.81
+    tot_row_m = re.search(r"\bTOTAL\s+(\d+)\s+([0-9,]+\.\d{2})\s+([0-9,]+\.\d{2})\s+([0-9,]+\.\d{2})", ocr_text, re.IGNORECASE)
+    if tot_row_m:
+        totals["total_quantity"] = float(tot_row_m.group(1))
+        totals["subtotal"] = float(tot_row_m.group(2).replace(",", ""))
+        totals["tax"] = float(tot_row_m.group(3).replace(",", ""))
+
+    # 4. Standard Subtotal / Grand Total / Round Off search
     sub_m = re.search(r"Sub\s*Total\s*[:=]?\s*([0-9,]+\.\d{2})", ocr_text, re.IGNORECASE)
     if sub_m:
         totals["subtotal"] = float(sub_m.group(1).replace(",", ""))
 
-    net_m = re.search(r"(?:NET\s*TOTAL|Grand\s*Total)\s*[:=]?\s*([0-9,]+\.\d{2})", ocr_text, re.IGNORECASE)
+    net_m = re.search(r"(?:NET\s*TOTAL|Grand\s*Total|NETT\s*AMOUNT)\s*[:=]?\s*([0-9,]+\.\d{2})", ocr_text, re.IGNORECASE)
     if net_m:
         totals["grand_total"] = float(net_m.group(1).replace(",", ""))
 
@@ -341,7 +384,7 @@ def extract_hsn_tax_summary(ocr_text: str) -> Tuple[List[Dict[str, Any]], Dict[s
         totals["rounded_off"] = float(ro_m.group(1).replace(",", ""))
 
     if rows and ("cgst" not in totals or "sgst" not in totals):
-        sum_taxable = round(sum(r["taxable_value"] for r in rows), 2)
+        sum_taxable = round(sum(r["taxable_value"] for r in rows if r.get("taxable_value")), 2)
         sum_sgst = round(sum(r["sgst_amount"] for r in rows if "sgst_amount" in r), 2)
         sum_cgst = round(sum(r["cgst_amount"] for r in rows if "cgst_amount" in r), 2)
         totals.setdefault("subtotal", sum_taxable)
@@ -383,6 +426,90 @@ def reconcile_missing_ocr_items(receipt: ReceiptData, ocr_text: str) -> None:
     for p_num, p_txt in pages_to_check:
         for line in p_txt.splitlines():
             l_str = line.strip()
+
+            # 1. FMCG / Agency wholesale table format (13 columns or FREE item):
+            # SNO [HSN] ITEM MRP UNIT TOT.PCS RATE BASIC AMT DIS % DIS AMT GST % GST Amt NETAMT
+            # e.g.: 4 1513 VVD 1Ltr Pouch 900 Ml X20Pouch 0 Box 1 6857.14 6857.14 0 0.00 5 342.86 7200.00
+            # or FREE: 12 POPULAR APPALAM RS ;10 0 Nos 8 FREE
+            m3 = re.match(
+                r"^(\d{1,3})\s+(?:(\d{4,8})\s+)?(.+?)\s+(\d+(?:\.\d+)?)\s+([A-Za-z]+)\s+(\d+(?:\.\d+)?)\s+([0-9,]+\.\d{2})\s+([0-9,]+\.\d{2})\s+(\d+(?:\.\d+)?)\s+([0-9,]+\.\d{2})\s+(\d+(?:\.\d+)?)\s+([0-9,]+\.\d{2})\s+([0-9,]+\.\d{2})$",
+                l_str
+            )
+            m3_free = None
+            if not m3:
+                m3_free = re.match(
+                    r"^(\d{1,3})\s+(?:(\d{4,8})\s+)?(.+?)\s+(\d+(?:\.\d+)?)\s+([A-Za-z]+)\s+(\d+(?:\.\d+)?)\s+FREE$",
+                    l_str,
+                    re.IGNORECASE
+                )
+
+            if m3 or m3_free:
+                match_obj = m3 or m3_free
+                sl3 = match_obj.group(1)
+                sl_to_actual_page[sl3] = p_num
+                hsn3 = match_obj.group(2)
+                iname3 = match_obj.group(3).strip()
+                mrp3 = float(match_obj.group(4))
+                uom3 = match_obj.group(5)
+                qty3 = float(match_obj.group(6))
+                is_free = bool(m3_free is not None)
+                if is_free:
+                    rate3 = 0.0
+                    rate_incl3 = 0.0
+                    gst3 = "0%"
+                    dis3 = None
+                    amt3 = 0.0
+                else:
+                    rate3 = float(m3.group(7).replace(",", ""))
+                    amt3 = float(m3.group(13).replace(",", ""))
+                    rate_incl3 = round(amt3 / qty3, 2) if qty3 > 0 else rate3
+                    dis_val3 = float(m3.group(9))
+                    dis3 = f"{dis_val3:.2f}%" if dis_val3 > 0 else "0.00%"
+                    gst_val3 = float(m3.group(11))
+                    gst3 = f"{gst_val3:g}%"
+
+                if sl3 not in existing_sl_nos:
+                    new_item = ReceiptItem(
+                        page=p_num,
+                        sl_no=sl3,
+                        item_name=iname3,
+                        hsn_sac=hsn3,
+                        quantity=qty3,
+                        uom=uom3,
+                        unit_price=rate3,
+                        rate_incl_tax=rate_incl3,
+                        discount_percent=dis3,
+                        gst_rate=gst3,
+                        total_price=amt3
+                    )
+                    receipt.items.append(new_item)
+                    existing_sl_nos.add(sl3)
+                    new_items_added = True
+                else:
+                    for it in receipt.items:
+                        if it.sl_no and re.sub(r"[^\d]", "", str(it.sl_no)) == sl3:
+                            it.page = p_num
+                            if iname3 and (len(it.item_name or "") < 3 or it.item_name == "Unknown"):
+                                it.item_name = iname3
+                            if hsn3 and not it.hsn_sac:
+                                it.hsn_sac = hsn3
+                            if (it.quantity is None or float(it.quantity) == 0.0) and qty3 > 0:
+                                it.quantity = qty3
+                            if uom3 and not it.uom:
+                                it.uom = uom3
+                            if it.unit_price is None or float(it.unit_price) == 0.0 or (not is_free and float(it.unit_price) <= 12.0 and rate3 > 50.0):
+                                it.unit_price = rate3
+                            if rate_incl3:
+                                it.rate_incl_tax = rate_incl3
+                            if gst3:
+                                it.gst_rate = gst3
+                            if dis3:
+                                it.discount_percent = dis3
+                            if it.total_price is None or float(it.total_price) == 0.0:
+                                it.total_price = amt3
+                            break
+                continue
+
             # Standard GST table format: S.No Particulars HSN/SAC GST% Qty UOM Rate Amount
             m = re.match(r"^(\d{1,3})\s+(.+?)\s+(\d{4,8})\s+(\d+)\s+([0-9,]+(?:\.\d+)?)\s*(?:%\s*)?([A-Za-z]+)\s+([0-9,]+\.\d{2})\s+([0-9,]+\.\d{2})$", l_str)
             if m:
@@ -423,6 +550,7 @@ def reconcile_missing_ocr_items(receipt: ReceiptData, ocr_text: str) -> None:
                             it.total_price = t_p
                             it.discount_percent = None
                             break
+                continue
 
             # Stationery / Retail table format: S.No Particulars Qty Rate Dis% Amount
             if not re.search(r"\b\d{6,8}\b", l_str):
@@ -459,6 +587,7 @@ def reconcile_missing_ocr_items(receipt: ReceiptData, ocr_text: str) -> None:
                                 if dis2 is not None:
                                     it.discount_percent = dis2
                                 break
+                continue
 
     # Synchronize all items with their true physical page from OCR
     for it in receipt.items:
@@ -530,9 +659,17 @@ def validate_and_reconcile_receipt(
                     # Sanity check: if unit_price > total_price when quantity > 1 (e.g. unit 220, total 33.90 for qty 2)
                     has_discount = bool(getattr(item, "discount_percent", None) and item.discount_percent not in ["0%", "0.00%"])
                     if not has_discount:
+                        gst_pct = 0.0
+                        if getattr(item, "gst_rate", None):
+                            gst_m = re.search(r"(\d+(?:\.\d+)?)", item.gst_rate)
+                            if gst_m:
+                                gst_pct = float(gst_m.group(1)) / 100.0
+                        expected_tax_incl = round(item.quantity * item.unit_price * (1.0 + gst_pct), 2)
+                        is_gst_match = bool(gst_pct > 0 and abs(expected_tax_incl - item.total_price) < 0.10)
+
                         if item.quantity > 1 and item.unit_price > item.total_price:
                             item.unit_price = round(item.total_price / item.quantity, 2)
-                        elif abs(round(item.quantity * item.unit_price, 2) - item.total_price) > 0.05:
+                        elif not is_gst_match and abs(round(item.quantity * item.unit_price, 2) - item.total_price) > 0.05:
                             item.unit_price = round(item.total_price / item.quantity, 2)
                 elif item.total_price is not None and item.unit_price is None:
                     item.unit_price = round(item.total_price / item.quantity, 2)
@@ -584,6 +721,8 @@ def validate_and_reconcile_receipt(
             receipt.hsn_tax_summary = [HSNTaxSummaryItem(**r) for r in hsn_rows]
 
         if hsn_totals:
+            if "total_quantity" in hsn_totals and receipt.total_quantity is None:
+                receipt.total_quantity = hsn_totals["total_quantity"]
             if "subtotal" in hsn_totals:
                 receipt.subtotal = hsn_totals["subtotal"]
             if "cgst" in hsn_totals:
@@ -597,17 +736,23 @@ def validate_and_reconcile_receipt(
             if "grand_total" in hsn_totals:
                 receipt.grand_total = hsn_totals["grand_total"]
 
-        # Fallbacks for any still-missing totals
-        if receipt.subtotal is None:
-            sub_m = re.search(r"(?<!Grand\s)(?<!Net\s)\b(?:Subtotal|Sub\s*Total|Taxable\s*(?:Amount|Value)?)\b\s*[:=]?\s*[$₹€£]?\s*([0-9,]+\.\d{2})", ocr_text, re.IGNORECASE)
-            if not sub_m:
-                sub_m = re.search(r"([0-9,]+\.\d{2})\s*(?:\n|\r|\s)*(?:CGST|SGST)", ocr_text, re.IGNORECASE)
-            if sub_m:
-                receipt.subtotal = float(sub_m.group(1).replace(",", ""))
-            elif getattr(receipt, "gross_amount", None) is not None:
-                receipt.subtotal = float(receipt.gross_amount)
-            elif valid_item_prices > 0 and items_total_sum > 0:
-                receipt.subtotal = items_total_sum
+        # Fallbacks for any still-missing totals (or if subtotal was accidentally set to round off like 0.19)
+        if receipt.subtotal is None or (getattr(receipt, "rounded_off", None) and abs(float(receipt.subtotal) - float(receipt.rounded_off)) < 0.001 and float(receipt.subtotal) < 2.0):
+            tot_sub_m = re.search(r"\bTOTAL\s+\d+\s+([0-9,]+\.\d{2})", ocr_text, re.IGNORECASE)
+            if tot_sub_m:
+                receipt.subtotal = float(tot_sub_m.group(1).replace(",", ""))
+            else:
+                sub_m = re.search(r"(?<!Grand\s)(?<!Net\s)\b(?:Subtotal|Sub\s*Total|Taxable\s*(?:Amount|Value)?)\b\s*[:=]?\s*[$₹€£]?\s*([0-9,]+\.\d{2})", ocr_text, re.IGNORECASE)
+                if not sub_m:
+                    sub_m = re.search(r"(?<!Round\sOff\s)(?<!Round\s)(?<!Off\s)\b([0-9,]+\.\d{2})\s*(?:\n|\r|\s)*(?:CGST|SGST)", ocr_text, re.IGNORECASE)
+                if sub_m:
+                    val = float(sub_m.group(1).replace(",", ""))
+                    if val > 1.0:
+                        receipt.subtotal = val
+                elif getattr(receipt, "gross_amount", None) is not None:
+                    receipt.subtotal = float(receipt.gross_amount)
+                elif valid_item_prices > 0 and items_total_sum > 0:
+                    receipt.subtotal = items_total_sum
 
         if receipt.tax is None:
             tax_m = re.search(r"(?:Total\s*Tax|Tax)\s*[:=]?\s*[$₹€£]?\s*([0-9,]+\.\d{2})", ocr_text, re.IGNORECASE)
@@ -1192,6 +1337,10 @@ def validate_and_reconcile_receipt(
         tot_q_m = re.search(r"\bTotal\s*(?:Qty|Quantity)\b\s*[:.]?\s*([0-9,]+(?:\.\d+)?)", ocr_text, re.IGNORECASE)
         if tot_q_m:
             receipt.total_quantity = float(tot_q_m.group(1).replace(",", ""))
+        else:
+            tot_q_row = re.search(r"\bTOTAL\s+(\d+)\s+[0-9,]+\.\d{2}", ocr_text, re.IGNORECASE)
+            if tot_q_row:
+                receipt.total_quantity = float(tot_q_row.group(1))
 
     # Gross Amount
     if getattr(receipt, "gross_amount", None) is None:

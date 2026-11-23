@@ -147,6 +147,15 @@ CRITICAL RULES:
    - Items immediately preceding "Continue..." or page boundaries (e.g. items 16, 17) MUST NOT be skipped.
    - In stationery/retail tables with product package labels like "Rs 20/-", "80/-", "120/-" in product names, extract the actual table columns: Qty is the quantity column, Rate is the rate column.
    - Tag each item with its 1-indexed integer 'page' number (e.g. 1, 2).
+12b. FMCG / AGENCY / WHOLESALE TABLE FORMATS:
+   - Column layout: SNO | HSN | ITEM NAME | MRP | UNIT | TOT.PCS | RATE | BASIC AMT | DIS % | DIS AMT | GST % | GST Amt | NETAMT
+   - "TOT.PCS" (Total Pieces) is the true QUANTITY ("quantity", e.g. 1, 20, 3, 50, 12, 5, 80, 8, 100, 10, 36, 24, 30).
+   - "UNIT" is the Unit of Measure ("uom", e.g. "Bag", "Nos", "Box").
+   - "MRP" (Maximum Retail Price, often 0 or a retail price like 90, 105) is NOT the quantity and NOT the unit price! NEVER extract MRP as quantity or rate.
+   - "RATE" is the basic unit rate before tax ("unit_price", e.g. 6857.14, 1607.14, 85.71).
+   - "GST %" is the tax percentage ("gst_rate", e.g. 5%, 12%, 0%). NEVER extract GST % (e.g. 5) as unit_price!
+   - "NETAMT" is the net line item total ("total_price", e.g. 7200.00, 5400.00, 4499.78).
+   - FREE ITEMS: Rows showing 'FREE' (e.g. '12 POPULAR APPALAM RS ;10 0 Nos 8 FREE') MUST be extracted as line items with their sl_no, name, quantity ('8 Nos'), unit_price '₹0.00', and total_price '₹0.00'. NEVER omit free items.
 13. DISCOUNT PERCENTAGE (Dis%):
    - ONLY extract "discount_percent" if a discount value is explicitly present for that item (e.g. "0.00%", "5%").
    - If there is NO discount column or NO discount value for an item, set "discount_percent" to null!
@@ -155,20 +164,20 @@ CRITICAL RULES:
 14. TOTALS, GROSS, BALANCE, ROUND OFF, AND AUTHORITATIVE FIELDS:
    - "gross_amount": If the document lists a 'Gross' amount (e.g. 'Gross 17870.99'), extract it here with currency symbol.
    - "balance_amount": If the document lists a 'Balance Amt' (e.g. 'Balance Amt : 17871.00'), extract it here.
-   - "rounded_off": If the document has 'Round Off' or 'Rounded Off' (e.g. '0.01', '-0.20'), extract it here.
+   - "rounded_off": If the document has 'Round Off' or 'Rounded Off' (e.g. '0.01', '-0.20', '0.19'), extract it here.
    - "total_items": ONLY extract if an explicit label like "Total Items : 20" appears in the text. If no explicit 'Total Items' label is printed in the document, set to null! NEVER count rows yourself to invent this field.
-   - "total_quantity": ONLY extract if an explicit label like "Total Qty : 79.00" appears. If no explicit total quantity label is printed in the document, set to null! NEVER calculate or sum quantities yourself.
+   - "total_quantity": If an explicit label like "Total Qty : 79.00" or a summary row like "TOTAL 468 86740.55 ..." appears, extract the total quantity (e.g. 468). If no explicit total quantity is printed in the document, set to null! NEVER calculate or sum quantities yourself.
    - "bill_type": Bill type (e.g. 'Credit Bill', 'Cash Bill').
    - "transport": Transport / Carrier name (e.g. 'Sdsd'). NEVER put 'Transport' or leave it in buyer address.
    - "despatch_through": Despatch through (e.g. '12345').
    - "po_number": PO number & date (e.g. '56789').
    - "dc_number": DC number & date (e.g. '546322').
    - "eway_bill_no": E-Way bill number (e.g. '123456').
-   - When an HSN/SAC tax breakdown table is present at the end, extract each combination row into "hsn_tax_summary".
-   - Top-level "cgst" and "sgst" must be the TOTAL CGST and TOTAL SGST amounts (from the Total row of the tax table or sum of all rates), NOT an individual rate row!
-   - "tax" must be the total tax (Total CGST + Total SGST + Total IGST).
-   - "subtotal" is the total taxable amount (e.g. '₹19963.26').
-   - "grand_total" is the net final payable amount (e.g. '₹22917.00').
+   - When an HSN/SAC or TAX DETAILS tax breakdown table is present at the end, extract each combination row into "hsn_tax_summary".
+   - Top-level "cgst" and "sgst" must be the TOTAL CGST and TOTAL SGST amounts (from the Total row of the tax table or sum of all rates e.g. 1608.34 + 289.29 = '₹1897.63'), NOT an individual rate row!
+   - "tax" must be the total tax (Total CGST + Total SGST + Total IGST, e.g. '₹3795.26').
+   - "subtotal" is the total taxable amount / basic amount (e.g. '₹86740.55', '₹19963.26'). NEVER confuse Round Off (e.g. 0.19) with Subtotal!
+   - "grand_total" is the net final payable amount (e.g. '₹90536.00', '₹22917.00').
 15. MISSING FIELDS AS NULL:
    - If a field is not present in the document (such as buyer_address, seller_address, gstin, etc.), specify it as null in the JSON. Do NOT omit missing fields.
 16. Return valid JSON only. No markdown fences, no explanatory text."""

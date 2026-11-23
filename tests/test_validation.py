@@ -632,6 +632,97 @@ Ph : 8553747352,0431-4000020
     assert "Total Qty" not in disp
 
 
+def test_fmcg_agency_wholesale_reconciliation_and_tax_matrix():
+    ocr_sample = """
+--- Page 1 ---
+TAX INVOICE
+BHAIRAVI AGENCY
+1/404,Senguttai Thottam,Palladam
+GSTIN : 33AAZFB9903G1Z3
+To : Annai Store (Pdm) Bill No : 2594
+Bill Dt : 07-07-2025
+SNO HSN ITEM MRP UNIT TOT.PCS RATE BASIC AMT DIS % DIS AMT GST % GST Amt NETAMT
+1 25010010 Tata Salt 1kgx25 Mrp.30 0 Bag 20 660.00 13200.00 0 0.00 0 0.00 13200.00
+4 1513 VVD 1Ltr Pouch 900 Ml X20Pouch 0 Box 1 6857.14 6857.14 0 0.00 5 342.86 7200.00
+5 1513 VVD 500ml Pouch 450ml X 40 0 Box 1 8380.95 8380.95 0 0.00 5 419.04 8799.99
+11 19059040 POPULAR APPALAM RS ;10 0 Nos 80 8.00 640.00 0 0.00 0 0.00 640.00
+12 POPULAR APPALAM RS ;10 0 Nos 8 FREE
+--- Page 2 ---
+TAX INVOICE
+16 33074100 Zb Cup Sambrani Box 3 In 1 0 Nos 36 42.86 1542.96 0 0.00 5 77.14 1620.10
+24 25010010 Tata Rock Salt 1kg 0 Box 1 1746.00 1746.00 0 0.00 0 0.00 1746.00
+TOTAL 468 86740.55 3795.26 90535.81
+TAX DETAILS : 
+TAX % 2.5% 6% 9% 14% Round Off 0.19
+CGST VALUE 1608.34 289.29
+SGST VALUE 1608.34 289.29 NETT AMOUNT 90536.00
+"""
+    # Simulate LLM returning flawed subtotal=0.19, qty=0, rate=5.00, and omitted free item
+    raw = ReceiptData(
+        seller_name="BHAIRAVI AGENCY",
+        buyer_name="Annai Store (Pdm)",
+        invoice_number="2594",
+        invoice_date="07-07-2025",
+        currency="₹",
+        subtotal="0.19",
+        cgst="1897.63",
+        cgst_rate="2.5%",
+        sgst="1897.63",
+        sgst_rate="2.5%",
+        tax="3795.26",
+        rounded_off="0.19",
+        grand_total="90536.00",
+        items=[
+            ReceiptItem(page=1, sl_no="4", item_name="VVD 1Ltr Pouch", hsn_sac="1513", quantity=0.0, uom="Box", unit_price="5.00", total_price="7200.00")
+        ]
+    )
+
+    val_receipt, _ = validate_and_reconcile_receipt(raw, ocr_sample)
+
+    # 1. Subtotal must NOT be 0.19; must be authoritative 86740.55
+    assert val_receipt.subtotal == 86740.55
+    assert val_receipt.rounded_off == 0.19
+    assert val_receipt.grand_total == 90536.00
+    assert val_receipt.total_quantity == 468.0
+
+    # 2. Tax reconciliation
+    assert val_receipt.cgst == 1897.63
+    assert val_receipt.sgst == 1897.63
+    assert val_receipt.tax == 3795.26
+    assert val_receipt.cgst_rate is None  # Multi-rate breakdown
+    assert val_receipt.sgst_rate is None
+
+    # 3. Tax summary matrix breakdown
+    assert val_receipt.hsn_tax_summary is not None
+    assert len(val_receipt.hsn_tax_summary) == 2
+    assert val_receipt.hsn_tax_summary[0].cgst_rate == "2.5%"
+    assert val_receipt.hsn_tax_summary[0].cgst_amount == 1608.34
+    assert val_receipt.hsn_tax_summary[1].cgst_rate == "6%"
+    assert val_receipt.hsn_tax_summary[1].cgst_amount == 289.29
+
+    # 4. Item 4 corrected from qty 0 and rate 5.00
+    it4 = next(it for it in val_receipt.items if it.sl_no == "4")
+    assert it4.quantity == 1.0
+    assert it4.uom == "Box"
+    assert it4.unit_price == 6857.14
+    assert it4.total_price == 7200.00
+
+    # 5. Free item 12 recovered
+    it12 = next(it for it in val_receipt.items if it.sl_no == "12")
+    assert it12.quantity == 8.0
+    assert it12.unit_price == 0.0
+    assert it12.total_price == 0.0
+
+    # 6. Formatted display checks
+    disp = format_receipt_display(val_receipt)
+    assert "Subtotal : ₹86740.55" in disp
+    assert "Total Qty : 468.0" in disp
+    assert "Round Off : ₹0.19" in disp
+    assert "Grand Total : ₹90536.00" in disp
+    assert "Rate : 2.5%" in disp
+    assert "Rate : 6%" in disp
+
+
 
 
 
