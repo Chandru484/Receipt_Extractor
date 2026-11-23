@@ -114,6 +114,62 @@ Once started:
 
 ---
 
+## 🌐 Exposing Publicly via ngrok (Public URL)
+
+To make your local FastAPI server accessible over the internet (for webhooks, testing on mobile devices, or remote API access), you can expose port `8000` using **ngrok**:
+
+### 1. Install ngrok (if not already installed)
+- **Windows (winget)**:
+  ```powershell
+  winget install ngrok
+  ```
+- **Windows (Chocolatey)**:
+  ```powershell
+  choco install ngrok
+  ```
+- **Or via Python (`pyngrok`)**:
+  ```bash
+  pip install pyngrok
+  ```
+
+### 2. Connect Your ngrok Account (One-time Setup)
+Sign up for free at [ngrok.com](https://ngrok.com), grab your authtoken from the [ngrok dashboard](https://dashboard.ngrok.com/get-started/your-authtoken), and run:
+```bash
+ngrok config add-authtoken <YOUR_NGROK_AUTHTOKEN>
+```
+
+### 3. Start the Server and ngrok Tunnel
+
+**Terminal 1 — Start the FastAPI Server:**
+```bash
+uvicorn app.main:app --port 8000
+```
+
+**Terminal 2 — Activate the ngrok Public URL:**
+```bash
+ngrok http 8000
+```
+
+*Alternatively, using Python without the standalone CLI:*
+```bash
+python -c "from pyngrok import ngrok; print('Public URL:', ngrok.connect(8000).public_url); input('Tunnel active. Press Enter to stop...')"
+```
+
+### 4. Access Your Public Endpoints
+ngrok will print an HTTPS forwarding address (e.g. `https://xxxx-xx-xx-xx-xx.ngrok-free.app`):
+- **Public API Documentation**: `https://<your-ngrok-id>.ngrok-free.app/docs`
+- **Public Extraction Endpoint**: `https://<your-ngrok-id>.ngrok-free.app/extract`
+
+> [!TIP]
+> When calling the ngrok free tier URL from automated scripts or frontend clients, add the header `-H "ngrok-skip-browser-warning: true"` to bypass the ngrok interstitial warning page:
+> ```bash
+> curl -X POST "https://<your-ngrok-id>.ngrok-free.app/extract" \
+>   -H "ngrok-skip-browser-warning: true" \
+>   -F "file=@receipt.jpg"
+> ```
+
+---
+
 ## 📡 API Endpoints
 
 ### 1. `POST /extract` — Extract Receipt & Store in MongoDB
