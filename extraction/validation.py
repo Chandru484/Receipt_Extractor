@@ -378,6 +378,7 @@ def reconcile_missing_ocr_items(receipt: ReceiptData, ocr_text: str) -> None:
     from schemas.receipt_schema import ReceiptItem
     new_items_added = False
 
+    sl_to_actual_page = {}
     for p_num, p_txt in pages_to_check:
         for line in p_txt.splitlines():
             l_str = line.strip()
@@ -385,6 +386,7 @@ def reconcile_missing_ocr_items(receipt: ReceiptData, ocr_text: str) -> None:
             m = re.match(r"^(\d{1,3})\s+(.+?)\s+(\d{4,8})\s+(\d+)\s+([0-9,]+(?:\.\d+)?)\s*(?:%\s*)?([A-Za-z]+)\s+([0-9,]+\.\d{2})\s+([0-9,]+\.\d{2})$", l_str)
             if m:
                 sl = m.group(1)
+                sl_to_actual_page[sl] = p_num
                 u_p = float(m.group(7).replace(",", ""))
                 t_p = float(m.group(8).replace(",", ""))
                 q = float(m.group(5).replace(",", ""))
@@ -426,6 +428,7 @@ def reconcile_missing_ocr_items(receipt: ReceiptData, ocr_text: str) -> None:
                 m2 = re.match(r"^(\d{1,3})\s+(.+?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+([0-9,]+\.\d{2})$", l_str)
                 if m2:
                     sl2 = m2.group(1)
+                    sl_to_actual_page[sl2] = p_num
                     q2 = float(m2.group(3))
                     r2 = float(m2.group(4))
                     dis_val = float(m2.group(5))
@@ -456,14 +459,35 @@ def reconcile_missing_ocr_items(receipt: ReceiptData, ocr_text: str) -> None:
                                     it.discount_percent = dis2
                                 break
 
-    if new_items_added:
-        def sort_key(it):
-            try:
-                sl_int = int(re.sub(r"[^\d]", "", str(it.sl_no or "0")))
-            except Exception:
-                sl_int = 0
-            return (it.page or 1, sl_int)
-        receipt.items.sort(key=sort_key)
+    # Synchronize all items with their true physical page from OCR
+    for it in receipt.items:
+        clean_sl = re.sub(r"[^\d]", "", str(it.sl_no or ""))
+        if clean_sl in sl_to_actual_page:
+            it.page = sl_to_actual_page[clean_sl]
+
+    # Check whether serial numbers are unique across the whole receipt
+    all_sls = []
+    for it in receipt.items:
+        try:
+            sl_val = int(re.sub(r"[^\d]", "", str(it.sl_no or "0")))
+            if sl_val > 0:
+                all_sls.append(sl_val)
+        except Exception:
+            pass
+
+    has_duplicate_sls = len(all_sls) != len(set(all_sls))
+
+    # ALWAYS sort receipt.items strictly in sequential order
+    def sequential_sort_key(it):
+        try:
+            sl_int = int(re.sub(r"[^\d]", "", str(it.sl_no or "0")))
+        except Exception:
+            sl_int = 0
+        if not has_duplicate_sls and sl_int > 0:
+            return (sl_int,)
+        return (it.page or 1, sl_int)
+
+    receipt.items.sort(key=sequential_sort_key)
 
 
 def validate_and_reconcile_receipt(
@@ -1150,11 +1174,23 @@ def validate_and_reconcile_receipt(
             if dc_m:
                 receipt.dc_number = dc_m.group(1).strip()
 
-    # Total Items & Total Quantity
-    tot_m = re.search(r"Total\s*Items\s*[:.]?\s*(\d+)\s+([0-9,]+(?:\.\d+)?)", ocr_text, re.IGNORECASE)
+    # Total Items & Total Quantity (Only populate if explicitly present in OCR text)
+    tot_m = re.search(r"Total\s*Items\s*[:.]?\s*(\d+)(?:\s+([0-9,]+(?:\.\d+)?))?", ocr_text, re.IGNORECASE)
     if tot_m:
         receipt.total_items = int(tot_m.group(1))
-        receipt.total_quantity = float(tot_m.group(2).replace(",", ""))
+        if tot_m.group(2):
+            receipt.total_quantity = float(tot_m.group(2).replace(",", ""))
+    else:
+        # If the document does NOT contain an explicit Total Items label, do not hallucinate/invent it!
+        if not re.search(r"\bTotal\s*Items\b", ocr_text, re.IGNORECASE):
+            receipt.total_items = None
+        if not re.search(r"\bTotal\s*Qty\b|\bTotal\s*Quantity\b", ocr_text, re.IGNORECASE):
+            receipt.total_quantity = None
+
+    if receipt.total_quantity is None and ocr_text:
+        tot_q_m = re.search(r"\bTotal\s*(?:Qty|Quantity)\b\s*[:.]?\s*([0-9,]+(?:\.\d+)?)", ocr_text, re.IGNORECASE)
+        if tot_q_m:
+            receipt.total_quantity = float(tot_q_m.group(1).replace(",", ""))
 
     # Gross Amount
     if getattr(receipt, "gross_amount", None) is None:

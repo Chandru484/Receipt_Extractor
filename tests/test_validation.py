@@ -574,6 +574,65 @@ Ph : 8553747352,0431-4000020
     assert val_receipt.tax is None
 
 
+def test_no_total_items_hallucination_and_strict_sequential_order():
+    ocr_text = """
+--- Page 1 ---
+Estimate / Quotation
+SSS STATIONERY
+No : 68104 Date : 19-04-2025
+Lucky Store Page No : 1
+S.No Particulars Qty Rate Dis% Amount
+1 Nova Grip Jar Rs 7/- 2.00 200.00 0.00 400.00
+2 Reynold Brite Jar Rs 125/- (25pcs) 1.00 100.00 0.00 100.01
+
+--- Page 2 ---
+Lucky Store Page No : 2
+S.No Particulars Qty Rate Dis% Amount
+27 C3 Colour Pencil 20/- 1.00 145.00 0.00 145.00
+28 Ko Colour Pencil 12s 80/- 2.00 58.00 0.00 115.99
+
+--- Page 3 ---
+Lucky Store Page No : 3
+S.No Particulars Qty Rate Dis% Amount
+53 Ry P.M Marker Rs 25/- 20.00 15.00 0.00 300.00
+54 Luxor Permanent Marker Rs 20/- 10.00 12.50 0.00 124.99
+Gross 17870.99
+Balance Amt : 17871.00
+Rounded Off 0.01
+GRAND TOTAL 17871.00
+Ph : 8553747352,0431-4000020
+"""
+    # Simulate LLM hallucinating total_items=26, total_quantity=136 and misassigning page 1
+    raw = ReceiptData(
+        total_items=26,
+        total_quantity=136.0,
+        items=[
+            ReceiptItem(page=1, sl_no="1", item_name="Nova Grip Jar", quantity=2.0, unit_price="200.00", total_price="400.00"),
+            ReceiptItem(page=1, sl_no="53", item_name="Ry P.M Marker", quantity=20.0, unit_price="15.00", total_price="300.00"),
+            ReceiptItem(page=1, sl_no="27", item_name="C3 Colour Pencil", quantity=1.0, unit_price="145.00", total_price="145.00"),
+        ]
+    )
+
+    val_receipt, _ = validate_and_reconcile_receipt(raw, ocr_text)
+
+    # 1. Total items and total quantity must be None because not in OCR text
+    assert val_receipt.total_items is None
+    assert val_receipt.total_quantity is None
+
+    # 2. All 6 items must be recovered and strictly ordered 1, 2, 27, 28, 53, 54
+    sl_nos = [it.sl_no for it in val_receipt.items]
+    assert sl_nos == ["1", "2", "27", "28", "53", "54"]
+
+    # 3. Item physical pages must be accurately synchronized
+    pages = [it.page for it in val_receipt.items]
+    assert pages == [1, 1, 2, 2, 3, 3]
+
+    disp = format_receipt_display(val_receipt)
+    assert "Total Items" not in disp
+    assert "Total Qty" not in disp
+
+
+
 
 
 
