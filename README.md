@@ -173,7 +173,7 @@ print(response.json())
     "cgst": 174.66,
     "sgst": 174.66,
     "tax": 349.32,
-    "rounding_off": 0.0,
+    "rounded_off": 0.0,
     "grand_total": 2290.0,
     "currency": "INR",
     "bank_details": {

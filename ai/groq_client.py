@@ -273,7 +273,7 @@ def _merge_receipt_pages(page_results: List[tuple[int, ReceiptData]]) -> Receipt
                 continue
             if value not in (None, "", [], {}):
                 # For financial totals and tax summaries, the LAST page that contains them is authoritative
-                if key in {"subtotal", "tax", "grand_total", "cgst", "sgst", "igst", "rounding_off", "amount_in_words", "hsn_tax_summary"}:
+                if key in {"subtotal", "tax", "grand_total", "cgst", "sgst", "igst", "rounded_off", "amount_in_words", "hsn_tax_summary"}:
                     merged[key] = value
                 elif str(value).strip().lower() not in {"unknown", "none", "null", ""}:
                     # Prefer valid non-unknown strings over missing or 'Unknown'

@@ -354,7 +354,7 @@ Rupees Twenty Two Thousand Nine Hundred And Seventeen Only
     assert val_receipt.cgst == 1476.77
     assert val_receipt.sgst == 1476.77
     assert val_receipt.tax == 2953.54
-    assert val_receipt.rounding_off == -0.20
+    assert val_receipt.rounded_off == -0.20
     assert val_receipt.grand_total == 22917.00
 
     # 4. Formatted display must include HSN / Tax Summary
@@ -364,7 +364,7 @@ Rupees Twenty Two Thousand Nine Hundred And Seventeen Only
     assert "CGST : ₹1476.77" in disp
     assert "SGST : ₹1476.77" in disp
     assert "Total Tax : ₹2953.54" in disp
-    assert "Rounding Off : ₹-0.20" in disp
+    assert "Round Off : ₹-0.20" in disp
     assert "Grand Total : ₹22917.00" in disp
 
 
@@ -392,7 +392,7 @@ Ph : 8553747352,0431-4000020
         invoice_number="68104",
         invoice_date="19-04-2025",
         subtotal="17870.99",
-        rounding_off="0.01",
+        rounded_off="0.01",
         grand_total="17871.00",
         items=[
             ReceiptItem(page=1, sl_no="1", item_name="Nova Grip Jar", quantity=2.0, unit_price="200.00", total_price="400.00"),
@@ -534,13 +534,13 @@ Ph : 8553747352,0431-4000020
 
     assert val_receipt.gross_amount == 17870.99
     assert val_receipt.balance_amount == 17871.00
-    assert val_receipt.rounding_off == 0.01
+    assert val_receipt.rounded_off == 0.01
     assert val_receipt.grand_total == 17871.00
 
     disp = format_receipt_display(val_receipt)
     assert "Gross : ₹17870.99" in disp
     assert "Balance Amt : ₹17871.00" in disp
-    assert "Rounding Off : ₹0.01" in disp
+    assert "Rounded Off : ₹0.01" in disp
     assert "Grand Total : ₹17871.00" in disp
     assert "Dis%: 0.00%" in disp
 
@@ -569,7 +569,7 @@ Ph : 8553747352,0431-4000020
     assert val_receipt.seller_mobile == "8553747352"
     assert val_receipt.gross_amount == 17870.99
     assert val_receipt.balance_amount == 17871.00
-    assert val_receipt.rounding_off == 0.01
+    assert val_receipt.rounded_off == 0.01
     assert val_receipt.grand_total == 17871.00
     assert val_receipt.tax is None
 

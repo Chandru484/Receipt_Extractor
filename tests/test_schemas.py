@@ -91,3 +91,35 @@ def test_receipt_data_valid_json_dump():
     assert dumped["cgst"] == 174.66
     assert len(dumped["items"]) == 1
     assert dumped["grand_total"] == 2290.00
+
+
+def test_currency_value_arithmetic_and_truediv():
+    from schemas.receipt_schema import CurrencyValue, format_currency_value
+
+    v1 = format_currency_value("400.00", "INR")
+    v2 = format_currency_value("2.00", "INR")
+
+    # Truediv operations
+    assert v1 / v2 == 200.0
+    assert v1 / 2 == 200.0
+    assert v1 / 2.0 == 200.0
+    assert 400.0 / v2 == 200.0
+    assert 400 / v2 == 200.0
+
+    # Round with division
+    assert round(v1 / v2, 2) == 200.00
+
+    # Add, sub, mul
+    assert v1 + v2 == 402.00
+    assert v1 - v2 == 398.00
+    assert 500.0 - v1 == 100.00
+    assert v1 * 2 == 800.00
+    assert 2 * v1 == 800.00
+
+    # Comparisons
+    assert v1 > v2
+    assert v2 < v1
+    assert v1 == 400.00
+    assert v1 == 400
+    assert v1 == "₹400.00"
+

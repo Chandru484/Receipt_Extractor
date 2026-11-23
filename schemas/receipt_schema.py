@@ -48,11 +48,31 @@ class CurrencyValue(str):
     def __int__(self) -> int:
         return int(self.__float__())
 
+    @staticmethod
+    def _to_num(val: Any) -> Optional[float]:
+        if isinstance(val, (int, float)):
+            return float(val)
+        if isinstance(val, CurrencyValue):
+            return float(val)
+        if isinstance(val, str):
+            try:
+                cleaned = re.sub(r"[^\d.-]", "", val)
+                if cleaned and cleaned not in ["-", ".", "-."]:
+                    return float(cleaned)
+            except Exception:
+                pass
+        return None
+
     def __eq__(self, other: Any) -> bool:
         if isinstance(other, (int, float)):
             try:
                 cleaned = re.sub(r"[^\d.-]", "", str(self))
                 return abs(float(cleaned) - float(other)) < 1e-4
+            except Exception:
+                pass
+        elif isinstance(other, CurrencyValue):
+            try:
+                return abs(float(self) - float(other)) < 1e-4
             except Exception:
                 pass
         return super().__eq__(other)
@@ -61,59 +81,88 @@ class CurrencyValue(str):
         return super().__hash__()
 
     def __add__(self, other: Any) -> Any:
-        if isinstance(other, (int, float, CurrencyValue)):
-            return float(self) + float(other)
-        return super().__add__(other)
+        other_num = self._to_num(other)
+        if other_num is not None:
+            return float(self) + other_num
+        return super().__add__(str(other))
 
     def __radd__(self, other: Any) -> Any:
-        if isinstance(other, (int, float)):
-            return float(other) + float(self)
-        return super().__radd__(other)
+        other_num = self._to_num(other)
+        if other_num is not None:
+            return other_num + float(self)
+        return NotImplemented
 
     def __sub__(self, other: Any) -> Any:
-        if isinstance(other, (int, float, CurrencyValue)):
-            return float(self) - float(other)
-        return super().__sub__(other)
+        other_num = self._to_num(other)
+        if other_num is not None:
+            return float(self) - other_num
+        return NotImplemented
 
     def __rsub__(self, other: Any) -> Any:
-        if isinstance(other, (int, float)):
-            return float(other) - float(self)
-        return super().__rsub__(other)
+        other_num = self._to_num(other)
+        if other_num is not None:
+            return other_num - float(self)
+        return NotImplemented
 
     def __mul__(self, other: Any) -> Any:
-        if isinstance(other, (int, float)):
-            return float(self) * float(other)
-        return super().__mul__(other)
+        other_num = self._to_num(other)
+        if other_num is not None:
+            return float(self) * other_num
+        return NotImplemented
 
     def __rmul__(self, other: Any) -> Any:
-        if isinstance(other, (int, float)):
-            return float(other) * float(self)
-        return super().__rmul__(other)
+        other_num = self._to_num(other)
+        if other_num is not None:
+            return other_num * float(self)
+        return NotImplemented
 
     def __truediv__(self, other: Any) -> Any:
-        if isinstance(other, (int, float)):
-            return float(self) / float(other)
-        return super().__truediv__(other)
+        other_num = self._to_num(other)
+        if other_num is not None:
+            return float(self) / other_num
+        return NotImplemented
+
+    def __rtruediv__(self, other: Any) -> Any:
+        other_num = self._to_num(other)
+        if other_num is not None:
+            return other_num / float(self)
+        return NotImplemented
+
+    def __floordiv__(self, other: Any) -> Any:
+        other_num = self._to_num(other)
+        if other_num is not None:
+            return float(self) // other_num
+        return NotImplemented
+
+    def __rfloordiv__(self, other: Any) -> Any:
+        other_num = self._to_num(other)
+        if other_num is not None:
+            return other_num // float(self)
+        return NotImplemented
 
     def __gt__(self, other: Any) -> bool:
-        if isinstance(other, (int, float, CurrencyValue)):
-            return float(self) > float(other)
-        return super().__gt__(other)
+        other_num = self._to_num(other)
+        if other_num is not None:
+            return float(self) > other_num
+        return NotImplemented
 
     def __ge__(self, other: Any) -> bool:
-        if isinstance(other, (int, float, CurrencyValue)):
-            return float(self) >= float(other)
-        return super().__ge__(other)
+        other_num = self._to_num(other)
+        if other_num is not None:
+            return float(self) >= other_num
+        return NotImplemented
 
     def __lt__(self, other: Any) -> bool:
-        if isinstance(other, (int, float, CurrencyValue)):
-            return float(self) < float(other)
-        return super().__lt__(other)
+        other_num = self._to_num(other)
+        if other_num is not None:
+            return float(self) < other_num
+        return NotImplemented
 
     def __le__(self, other: Any) -> bool:
-        if isinstance(other, (int, float, CurrencyValue)):
-            return float(self) <= float(other)
-        return super().__le__(other)
+        other_num = self._to_num(other)
+        if other_num is not None:
+            return float(self) <= other_num
+        return NotImplemented
 
 
 def format_currency_value(value: Any, default_currency: str = "USD") -> Optional[CurrencyValue]:
@@ -444,7 +493,7 @@ class ReceiptData(BaseModel):
     sgst_rate: Optional[str] = None
     igst: Optional[CurrencyValue] = None
     igst_rate: Optional[str] = None
-    rounding_off: Optional[CurrencyValue] = None
+    rounded_off: Optional[CurrencyValue] = None
     tax: Optional[CurrencyValue] = None
     grand_total: Optional[CurrencyValue] = None
     balance_amount: Optional[CurrencyValue] = None
@@ -462,7 +511,7 @@ class ReceiptData(BaseModel):
     # Additional captured fields from receipt
     extra_fields: Dict[str, Any] = Field(default_factory=dict)
 
-    @field_validator("subtotal", "tax", "grand_total", "cgst", "sgst", "igst", "rounding_off", "amount_paid", "refunded_amount", "gross_amount", "balance_amount", mode="before")
+    @field_validator("subtotal", "tax", "grand_total", "cgst", "sgst", "igst", "rounded_off", "amount_paid", "refunded_amount", "gross_amount", "balance_amount", mode="before")
     @classmethod
     def validate_totals(cls, v: Any) -> Optional[CurrencyValue]:
         return format_currency_value(v)
@@ -629,7 +678,7 @@ class ReceiptData(BaseModel):
             self.tax = format_currency_value(tax_sum, curr_sym)
 
         # Standardize all financial amounts to CurrencyValue with symbol and 2 decimals (e.g. '$93.50', '₹100.00')
-        for f in ["subtotal", "tax", "grand_total", "cgst", "sgst", "igst", "rounding_off", "amount_paid", "refunded_amount", "gross_amount", "balance_amount"]:
+        for f in ["subtotal", "tax", "grand_total", "cgst", "sgst", "igst", "rounded_off", "amount_paid", "refunded_amount", "gross_amount", "balance_amount"]:
             val = getattr(self, f, None)
             if val is not None:
                 setattr(self, f, format_currency_value(val, curr_sym))
@@ -734,8 +783,9 @@ class ReceiptData(BaseModel):
             "balance": "balance_amount",
             "balance_amount": "balance_amount",
             "balance_amt": "balance_amount",
-            "round_off": "rounding_off",
-            "rounded_off": "rounding_off",
+            "round_off": "rounded_off",
+            "rounded_off": "rounded_off",
+            "rounding_off": "rounded_off",
             "bill_type": "bill_type",
             "total_items": "total_items",
             "total_quantity": "total_quantity",
@@ -752,11 +802,11 @@ class ReceiptData(BaseModel):
             "buyer_phone", "buyer_email", "gstin", "invoice_number", "receipt_number",
             "invoice_date", "date_paid", "payment_mode", "salesman", "amount_in_words",
             "items", "subtotal", "cgst", "cgst_rate", "sgst", "sgst_rate", "igst",
-            "igst_rate", "rounding_off", "tax", "grand_total", "amount_paid",
+            "igst_rate", "rounded_off", "tax", "grand_total", "amount_paid",
             "refunded_amount", "refunded_on", "currency", "bank_details", "hsn_tax_summary",
             "gross_amount", "balance_amount", "bill_type", "total_items", "total_quantity",
             "transport", "despatch_through", "eway_bill_no", "po_number", "dc_number",
-            "rounding_off_label", "extra_fields"
+            "rounded_off_label", "extra_fields"
         }
         if self.extra_fields is None:
             self.extra_fields = {}
@@ -795,7 +845,7 @@ class ReceiptData(BaseModel):
                 target_field = KNOWN_STANDARD_ALIASES[k_lower]
                 if getattr(self, target_field, None) is None:
                     # Parse numeric or string properly
-                    if target_field in ["amount_paid", "refunded_amount", "subtotal", "tax", "grand_total", "cgst", "sgst", "igst", "rounding_off", "gross_amount", "balance_amount"]:
+                    if target_field in ["amount_paid", "refunded_amount", "subtotal", "tax", "grand_total", "cgst", "sgst", "igst", "rounded_off", "gross_amount", "balance_amount"]:
                         setattr(self, target_field, format_currency_value(v, curr_sym))
                     elif target_field == "total_items":
                         try:
@@ -815,7 +865,7 @@ class ReceiptData(BaseModel):
             self.extra_fields.pop(k, None)
 
         # Ensure all financial amounts are CurrencyValue with symbol and 2 decimals (e.g. '$93.50')
-        for f in ["subtotal", "tax", "grand_total", "cgst", "sgst", "igst", "rounding_off", "amount_paid", "refunded_amount", "gross_amount", "balance_amount"]:
+        for f in ["subtotal", "tax", "grand_total", "cgst", "sgst", "igst", "rounded_off", "amount_paid", "refunded_amount", "gross_amount", "balance_amount"]:
             val = getattr(self, f, None)
             if val is not None:
                 setattr(self, f, format_currency_value(val, curr_sym))

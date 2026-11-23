@@ -59,7 +59,7 @@ STANDARD FIELDS TO EXTRACT:
   "sgst_rate": null,
   "igst": null,
   "igst_rate": null,
-  "rounding_off": "$0.00",
+  "rounded_off": "$0.00",
   "tax": "$1.12",
   "grand_total": "$20.12",
   "balance_amount": "₹17871.00",
@@ -155,7 +155,7 @@ CRITICAL RULES:
 14. TOTALS, GROSS, BALANCE, ROUND OFF, AND AUTHORITATIVE FIELDS:
    - "gross_amount": If the document lists a 'Gross' amount (e.g. 'Gross 17870.99'), extract it here with currency symbol.
    - "balance_amount": If the document lists a 'Balance Amt' (e.g. 'Balance Amt : 17871.00'), extract it here.
-   - "rounding_off": If the document has 'Round Off' or 'Rounded Off' (e.g. '0.01', '-0.20'), extract it here.
+   - "rounded_off": If the document has 'Round Off' or 'Rounded Off' (e.g. '0.01', '-0.20'), extract it here.
    - "total_items": ONLY extract if an explicit label like "Total Items : 20" appears in the text. If no explicit 'Total Items' label is printed in the document, set to null! NEVER count rows yourself to invent this field.
    - "total_quantity": ONLY extract if an explicit label like "Total Qty : 79.00" appears. If no explicit total quantity label is printed in the document, set to null! NEVER calculate or sum quantities yourself.
    - "bill_type": Bill type (e.g. 'Credit Bill', 'Cash Bill').

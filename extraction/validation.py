@@ -140,8 +140,9 @@ def format_receipt_display(receipt: ReceiptData) -> str:
     if receipt.tax is not None:
         lines.append(f"Total Tax : {receipt.tax}")
 
-    if receipt.rounding_off is not None:
-        lines.append(f"Rounding Off : {receipt.rounding_off}")
+    if receipt.rounded_off is not None:
+        ro_label = (receipt.extra_fields.get("rounded_off_label") if receipt.extra_fields else None) or "Rounded Off"
+        lines.append(f"{ro_label} : {receipt.rounded_off}")
 
     if receipt.grand_total is not None:
         lines.append(f"Grand Total : {receipt.grand_total}")
@@ -229,7 +230,7 @@ def format_receipt_display(receipt: ReceiptData) -> str:
             "amount_paid", "refunded_amount", "refunded_on",
             "contact_email", "support_email", "seller_email", "buyer_email",
             "seller_phone", "buyer_phone", "total_due", "balance_due",
-            "amount_due", "total_amount", "sub_total", "rounding_off_label"
+            "amount_due", "total_amount", "sub_total", "rounded_off_label"
         }
         for k, v in receipt.extra_fields.items():
             if not v or k in _SKIP_IN_DISPLAY:
@@ -337,7 +338,7 @@ def extract_hsn_tax_summary(ocr_text: str) -> Tuple[List[Dict[str, Any]], Dict[s
 
     ro_m = re.search(r"(?:Rounded\s*Off|Round\s*Off)\s*[:=]?\s*([-+]?[0-9,]+\.\d{2})", ocr_text, re.IGNORECASE)
     if ro_m:
-        totals["rounding_off"] = float(ro_m.group(1).replace(",", ""))
+        totals["rounded_off"] = float(ro_m.group(1).replace(",", ""))
 
     if rows and ("cgst" not in totals or "sgst" not in totals):
         sum_taxable = round(sum(r["taxable_value"] for r in rows), 2)
@@ -571,11 +572,11 @@ def validate_and_reconcile_receipt(
                 receipt.balance_amount = format_currency_value(bal_m.group(1), receipt.currency or "₹")
 
         # Extract Rounding Off early
-        if getattr(receipt, "rounding_off", None) is None:
+        if getattr(receipt, "rounded_off", None) is None:
             ro_m = re.search(r"\b(?:Rounded\s*Off|Round\s*Off)\b\s*[:.]?\s*([-+]?[0-9,]+\.\d{2})", ocr_text, re.IGNORECASE)
             if ro_m:
                 from schemas.receipt_schema import format_currency_value
-                receipt.rounding_off = format_currency_value(ro_m.group(1), receipt.currency or "₹")
+                receipt.rounded_off = format_currency_value(ro_m.group(1), receipt.currency or "₹")
 
         hsn_rows, hsn_totals = extract_hsn_tax_summary(ocr_text)
         if hsn_rows:
@@ -591,8 +592,8 @@ def validate_and_reconcile_receipt(
                 receipt.sgst = hsn_totals["sgst"]
             if "tax" in hsn_totals:
                 receipt.tax = hsn_totals["tax"]
-            if "rounding_off" in hsn_totals:
-                receipt.rounding_off = hsn_totals["rounding_off"]
+            if "rounded_off" in hsn_totals:
+                receipt.rounded_off = hsn_totals["rounded_off"]
             if "grand_total" in hsn_totals:
                 receipt.grand_total = hsn_totals["grand_total"]
 
@@ -656,7 +657,7 @@ def validate_and_reconcile_receipt(
             receipt.tax = comp_tax_sum
 
     if subtotal is not None and grand_total is not None:
-        ro_val = float(receipt.rounding_off or 0.0)
+        ro_val = float(receipt.rounded_off or 0.0)
         expected_diff = round(grand_total - subtotal - ro_val, 2)
         has_tax_words = bool(ocr_text and re.search(r"\b(?:tax|gst|cgst|sgst|vat)\b", ocr_text, re.IGNORECASE))
         has_exact_gross_match = bool(getattr(receipt, "gross_amount", None) and abs(round(float(receipt.gross_amount) + ro_val, 2) - grand_total) < 0.05)
@@ -671,7 +672,7 @@ def validate_and_reconcile_receipt(
                     f"Mathematical mismatch: subtotal ({subtotal}) + tax ({receipt.tax}) != grand_total ({grand_total})."
                 )
         elif expected_diff > 0.05 and (not ocr_text or has_comp or has_tax_words) and not has_exact_gross_match:
-            flags.append(f"Inferred tax amount {expected_diff} from grand_total - subtotal - rounding_off.")
+            flags.append(f"Inferred tax amount {expected_diff} from grand_total - subtotal - rounded_off.")
             receipt.tax = expected_diff
 
     if receipt.items is None:
@@ -732,13 +733,13 @@ def validate_and_reconcile_receipt(
         receipt.igst_rate = None
     elif receipt.subtotal and receipt.subtotal > 0:
         if receipt.cgst and not receipt.cgst_rate:
-            r = round((receipt.cgst / receipt.subtotal) * 100, 1)
+            r = round((float(receipt.cgst) / float(receipt.subtotal)) * 100, 1)
             receipt.cgst_rate = f"{int(r)}%" if r.is_integer() else f"{r}%"
         if receipt.sgst and not receipt.sgst_rate:
-            r = round((receipt.sgst / receipt.subtotal) * 100, 1)
+            r = round((float(receipt.sgst) / float(receipt.subtotal)) * 100, 1)
             receipt.sgst_rate = f"{int(r)}%" if r.is_integer() else f"{r}%"
         if receipt.igst and not receipt.igst_rate:
-            r = round((receipt.igst / receipt.subtotal) * 100, 1)
+            r = round((float(receipt.igst) / float(receipt.subtotal)) * 100, 1)
             receipt.igst_rate = f"{int(r)}%" if r.is_integer() else f"{r}%"
 
     # 5. GSTIN and Phone Reconciliation
@@ -1213,10 +1214,10 @@ def validate_and_reconcile_receipt(
         norm_label = " ".join(word.capitalize() for word in raw_label.split())
         if receipt.extra_fields is None:
             receipt.extra_fields = {}
-        receipt.extra_fields["rounding_off_label"] = norm_label
-        if getattr(receipt, "rounding_off", None) is None:
+        receipt.extra_fields["rounded_off_label"] = norm_label
+        if getattr(receipt, "rounded_off", None) is None:
             from schemas.receipt_schema import format_currency_value
-            receipt.rounding_off = format_currency_value(ro_m.group(2), receipt.currency or "₹")
+            receipt.rounded_off = format_currency_value(ro_m.group(2), receipt.currency or "₹")
 
     # Invoice / Bill Number check: Ensure seller address door number (e.g. 97) is not used as invoice number
     bill_m = re.search(r"Bill\s*No\s+Bill\s*Date\s*\n\s*(?:.*?\b)?(\d+)\s+(\d{1,2}/\d{1,2}/\d{2,4})", ocr_text, re.IGNORECASE)
