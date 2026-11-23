@@ -118,44 +118,53 @@ Once started:
 
 To make your local FastAPI server accessible over the internet (for webhooks, testing on mobile devices, or remote API access), you can expose port `8000` using **ngrok**:
 
-### 1. Install ngrok (if not already installed)
-- **Windows (winget)**:
-  ```powershell
-  winget install ngrok
-  ```
-- **Windows (Chocolatey)**:
-  ```powershell
-  choco install ngrok
-  ```
-- **Or via Python (`pyngrok`)**:
-  ```bash
-  pip install pyngrok
-  ```
+### 1. Authenticate ngrok (One-Time Setup)
+Sign up for free at [ngrok.com](https://ngrok.com) and copy your authtoken from the [ngrok Dashboard](https://dashboard.ngrok.com/get-started/your-authtoken).
 
-### 2. Connect Your ngrok Account (One-time Setup)
-Sign up for free at [ngrok.com](https://ngrok.com), grab your authtoken from the [ngrok dashboard](https://dashboard.ngrok.com/get-started/your-authtoken), and run:
-```bash
-ngrok config add-authtoken <YOUR_NGROK_AUTHTOKEN>
+Run either:
+```powershell
+.\venv\Scripts\ngrok config add-authtoken <YOUR_NGROK_AUTHTOKEN>
+```
+or via Python:
+```powershell
+python -c "from pyngrok import ngrok; ngrok.set_auth_token('<YOUR_NGROK_AUTHTOKEN>')"
 ```
 
-### 3. Start the Server and ngrok Tunnel
+---
+
+### 2. Start the Server and ngrok Tunnel
 
 **Terminal 1 — Start the FastAPI Server:**
-```bash
-uvicorn app.main:app --port 8000
+```powershell
+.\venv\Scripts\uvicorn app.main:app --port 8000
 ```
 
 **Terminal 2 — Activate the ngrok Public URL:**
-```bash
-ngrok http 8000
-```
 
-*Alternatively, using Python without the standalone CLI:*
-```bash
-python -c "from pyngrok import ngrok; print('Public URL:', ngrok.connect(8000).public_url); input('Tunnel active. Press Enter to stop...')"
-```
+> [!NOTE]
+> If running `ngrok http 8000` gives `'ngrok' is not recognized as the name of a cmdlet`, use any of the working options below:
 
-### 4. Access Your Public Endpoints
+- **Option A (Recommended — Simple Helper Script)**:
+  ```powershell
+  python run_ngrok.py
+  ```
+- **Option B (Using the virtual environment binary)**:
+  ```powershell
+  .\venv\Scripts\ngrok http 8000
+  ```
+- **Option C (After activating virtual environment)**:
+  ```powershell
+  .\venv\Scripts\activate
+  ngrok http 8000
+  ```
+- **Option D (Using direct AppData installation)**:
+  ```powershell
+  & "$env:LOCALAPPDATA\ngrok\ngrok.exe" http 8000
+  ```
+
+---
+
+### 3. Access Your Public Endpoints
 ngrok will print an HTTPS forwarding address (e.g. `https://xxxx-xx-xx-xx-xx.ngrok-free.app`):
 - **Public API Documentation**: `https://<your-ngrok-id>.ngrok-free.app/docs`
 - **Public Extraction Endpoint**: `https://<your-ngrok-id>.ngrok-free.app/extract`
