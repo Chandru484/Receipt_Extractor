@@ -279,23 +279,26 @@ def _extract_from_pdf(pdf_bytes: bytes) -> Dict[str, Any]:
     total_pages = len(pdf)
     all_lines = []
     all_texts = []
-    has_digital_text = True
 
+    page_texts = []
+    total_digital_chars = 0
     for page_num, page in enumerate(pdf, start=1):
         text_page = page.get_textpage()
         page_text = text_page.get_text_range().strip()
-        if len(page_text) < 40:
-            has_digital_text = False
-            break
-        for l in page_text.splitlines():
-            l_str = l.strip()
-            if l_str:
-                all_lines.append({"text": l_str, "page": page_num})
-        all_texts.append(f"--- Page {page_num} ---\n{page_text}")
+        total_digital_chars += len(page_text)
+        page_texts.append((page_num, page_text))
 
-    if not has_digital_text:
-        all_lines = []
-        all_texts = []
+    has_digital_text = total_digital_chars >= 40
+
+    if has_digital_text:
+        for page_num, page_text in page_texts:
+            for l in page_text.splitlines():
+                l_str = l.strip()
+                if l_str:
+                    all_lines.append({"text": l_str, "page": page_num})
+            if page_text:
+                all_texts.append(f"--- Page {page_num} ---\n{page_text}")
+    else:
         page_images = pdf_bytes_to_images(pdf_bytes, dpi=200)
         for page_num, page_img in enumerate(page_images, start=1):
             processed = preprocess_image_from_array(page_img)

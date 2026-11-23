@@ -299,7 +299,9 @@ def _extract_multipage_with_client(
     model: str,
     ocr_result: Dict[str, Any],
 ) -> ReceiptData:
-    """Extract pages independently so response size does not truncate the bill."""
+    """Extract pages in parallel across available Groq keys so extraction finishes in seconds."""
+    from concurrent.futures import ThreadPoolExecutor
+
     page_payloads = _split_multipage_ocr(ocr_result)
     if len(page_payloads) <= 1:
         return _extract_with_single_client(
@@ -308,20 +310,36 @@ def _extract_multipage_with_client(
             build_extraction_messages(ocr_result),
         )
 
-    page_results: List[tuple[int, ReceiptData]] = []
+    all_keys = get_all_groq_api_keys()
     all_lines = ocr_result.get("lines", [])
-    for page_number, page_payload in page_payloads:
+
+    def _process_page_item(idx: int, page_number: int, page_payload: Dict[str, Any]) -> tuple[int, ReceiptData]:
         if all_lines:
             page_payload["lines"] = [
                 line for line in all_lines
                 if line.get("page") == page_number
             ]
+        # Distribute concurrent page requests across distinct Groq keys to prevent TPM rate limits
+        if all_keys and len(all_keys) > 1:
+            page_key = all_keys[idx % len(all_keys)]
+            page_client = get_groq_client(api_key=page_key)
+        else:
+            page_client = client
+
         receipt = _extract_with_single_client(
-            client,
+            page_client,
             model,
             build_extraction_messages(page_payload),
         )
-        page_results.append((page_number, receipt))
+        return (page_number, receipt)
+
+    max_workers = min(len(page_payloads), max(len(all_keys), 4))
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [
+            executor.submit(_process_page_item, idx, p_num, p_payload)
+            for idx, (p_num, p_payload) in enumerate(page_payloads)
+        ]
+        page_results = [f.result() for f in futures]
 
     return _merge_receipt_pages(page_results)
 

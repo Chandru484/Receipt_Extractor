@@ -129,7 +129,9 @@ or via Python:
 ```powershell
 python -c "from pyngrok import ngrok; ngrok.set_auth_token('<YOUR_NGROK_AUTHTOKEN>')"
 ```
+<!-- While ngrok is running, open this URL in your web browser:
 
+👉 http://127.0.0.1:4040 (or http://localhost:4040) -->
 ---
 
 ### 2. Start the Server and ngrok Tunnel
