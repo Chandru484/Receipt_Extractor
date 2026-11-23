@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile, status, Request
 from starlette.concurrency import run_in_threadpool
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from ai.chatbot import ask_chatbot
 from ai.groq_client import GroqExtractionError, get_all_groq_api_keys
@@ -139,6 +139,31 @@ async def chat_with_bot(request: ChatRequest):
     return await run_in_threadpool(ask_chatbot, request)
 
 
+@app.get("/extract", include_in_schema=False)
+@app.get("/extract/", include_in_schema=False)
+async def extract_receipt_get_info(request: Request):
+    """Guide users who attempt to visit /extract with a GET request."""
+    accept = request.headers.get("accept", "")
+    if "text/html" in accept:
+        return RedirectResponse(
+            url="/docs#/default/extract_receipt_extract_post",
+            status_code=status.HTTP_303_SEE_OTHER
+        )
+    return JSONResponse(
+        status_code=status.HTTP_405_METHOD_NOT_ALLOWED,
+        content={
+            "detail": "Method Not Allowed. The /extract endpoint requires an HTTP POST request with multipart/form-data containing a 'file' parameter.",
+            "usage": {
+                "method": "POST",
+                "endpoint": "/extract",
+                "content_type": "multipart/form-data",
+                "form_field": "file (binary PDF or image file)",
+                "interactive_docs": "/docs#/default/extract_receipt_extract_post"
+            }
+        }
+    )
+
+
 @app.post(
     "/extract",
     response_model=ReceiptResponse,
@@ -150,6 +175,7 @@ async def chat_with_bot(request: ChatRequest):
         "For multi-page PDFs, all pages are OCR'd and results are merged into a single document."
     )
 )
+@app.post("/extract/", response_model=ReceiptResponse, include_in_schema=False)
 async def extract_receipt(
     file: UploadFile = File(..., description="Receipt or invoice file (JPG, PNG, WebP, BMP, PDF)")
 ):
