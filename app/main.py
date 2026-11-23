@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile, status, Request
 from starlette.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.middleware.cors import CORSMiddleware
 
 from ai.chatbot import ask_chatbot
 from ai.groq_client import GroqExtractionError, get_all_groq_api_keys
@@ -28,6 +29,14 @@ app = FastAPI(
         "local PaddleOCR 3.x and Groq LLM semantic understanding."
     ),
     version="2.0.0"
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
