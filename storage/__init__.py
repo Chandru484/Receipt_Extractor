@@ -1,7 +1,9 @@
 """MongoDB Storage Package for Receipt Extractor."""
 from storage.mongo_client import (
     save_extraction_to_mongodb,
+    find_extraction_by_file_hash,
     find_extraction_by_invoice_number,
+    find_extraction_by_invoice_and_vendor,
     get_stored_extractions,
     get_stored_extraction_by_id,
     check_mongo_connection,
@@ -9,7 +11,9 @@ from storage.mongo_client import (
 
 __all__ = [
     "save_extraction_to_mongodb",
+    "find_extraction_by_file_hash",
     "find_extraction_by_invoice_number",
+    "find_extraction_by_invoice_and_vendor",
     "get_stored_extractions",
     "get_stored_extraction_by_id",
     "check_mongo_connection",

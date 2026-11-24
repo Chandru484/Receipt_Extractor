@@ -55,11 +55,49 @@ def get_receipt_collection() -> Optional[Collection]:
         return None
 
 
-def find_extraction_by_invoice_number(invoice_number: str) -> Optional[Dict[str, Any]]:
+def find_extraction_by_file_hash(file_hash: str) -> Optional[Dict[str, Any]]:
     """
-    Search MongoDB for an existing extraction record by invoice/receipt number.
+    Search MongoDB for an existing extraction record by file SHA-256 hash.
 
-    Performs a case-insensitive exact match and checks both string and integer representations.
+    Returns the matched document dict (with stringified '_id') if found, or None.
+    """
+    if not settings.MONGODB_ENABLED or not file_hash:
+        return None
+
+    clean_hash = str(file_hash).strip().lower()
+    if not clean_hash:
+        return None
+
+    collection = get_receipt_collection()
+    if collection is None:
+        return None
+
+    try:
+        doc = collection.find_one({"file_hash": clean_hash})
+        if doc:
+            doc["_id"] = str(doc["_id"])
+            return doc
+        return None
+    except Exception as exc:
+        logger.warning(f"Error querying existing file hash '{clean_hash[:12]}...' in MongoDB: {exc}")
+        return None
+
+
+def find_extraction_by_invoice_and_vendor(
+    invoice_number: str,
+    vendor_name: Optional[str] = None
+) -> Optional[Dict[str, Any]]:
+    """
+    Search MongoDB for an existing extraction record by combining BOTH
+    invoice/receipt number and vendor/seller name.
+
+    - A single vendor can have multiple receipts with different invoice numbers.
+    - Different vendors may issue receipts with identical invoice numbers (e.g. '1', '101', '3').
+    - Matching on BOTH invoice number and vendor/seller name ensures:
+        1. Accurate cache hits for the specific vendor.
+        2. No cross-vendor collisions.
+        3. Distinct storage for each receipt belonging to the same vendor.
+
     Returns the matched document dict (with stringified '_id') if found, or None.
     """
     if not settings.MONGODB_ENABLED or not invoice_number:
@@ -74,44 +112,85 @@ def find_extraction_by_invoice_number(invoice_number: str) -> Optional[Dict[str,
         return None
 
     try:
-        escaped = re.escape(clean_inv)
-        or_conditions: List[Dict[str, Any]] = [
-            {"data.invoice_number": {"$regex": f"^{escaped}$", "$options": "i"}},
-            {"data.receipt_number": {"$regex": f"^{escaped}$", "$options": "i"}},
-            {"invoice_number": {"$regex": f"^{escaped}$", "$options": "i"}},
-            {"receipt_number": {"$regex": f"^{escaped}$", "$options": "i"}},
+        escaped_inv = re.escape(clean_inv)
+        inv_conditions: List[Dict[str, Any]] = [
+            {"data.invoice_number": {"$regex": f"^{escaped_inv}$", "$options": "i"}},
+            {"data.receipt_number": {"$regex": f"^{escaped_inv}$", "$options": "i"}},
+            {"invoice_number": {"$regex": f"^{escaped_inv}$", "$options": "i"}},
+            {"receipt_number": {"$regex": f"^{escaped_inv}$", "$options": "i"}},
         ]
         if clean_inv.isdigit():
             int_val = int(clean_inv)
-            or_conditions.extend([
+            inv_conditions.extend([
                 {"data.invoice_number": int_val},
                 {"data.receipt_number": int_val},
                 {"invoice_number": int_val},
                 {"receipt_number": int_val},
             ])
 
-        doc = collection.find_one({"$or": or_conditions})
+        clean_vendor = str(vendor_name).strip() if vendor_name else ""
+        if clean_vendor:
+            escaped_vendor = re.escape(clean_vendor)
+            vendor_conditions: List[Dict[str, Any]] = [
+                {"data.vendor_name": {"$regex": escaped_vendor, "$options": "i"}},
+                {"data.seller_name": {"$regex": escaped_vendor, "$options": "i"}},
+                {"data.seller": {"$regex": escaped_vendor, "$options": "i"}},
+                {"data.vendor": {"$regex": escaped_vendor, "$options": "i"}},
+                {"vendor_name": {"$regex": escaped_vendor, "$options": "i"}},
+                {"seller_name": {"$regex": escaped_vendor, "$options": "i"}},
+                {"formatted_display": {"$regex": escaped_vendor, "$options": "i"}},
+            ]
+            query = {
+                "$and": [
+                    {"$or": inv_conditions},
+                    {"$or": vendor_conditions}
+                ]
+            }
+        else:
+            query = {"$or": inv_conditions}
+
+        doc = collection.find_one(query)
         if doc:
             doc["_id"] = str(doc["_id"])
             return doc
         return None
     except Exception as exc:
-        logger.warning(f"Error querying existing invoice number '{clean_inv}' in MongoDB: {exc}")
+        logger.warning(
+            f"Error querying invoice '{clean_inv}' for vendor '{vendor_name or 'any'}' in MongoDB: {exc}"
+        )
         return None
 
 
-def save_extraction_to_mongodb(response_payload: Dict[str, Any]) -> Optional[str]:
+def find_extraction_by_invoice_number(
+    invoice_number: str,
+    vendor_name: Optional[str] = None
+) -> Optional[Dict[str, Any]]:
+    """
+    Search MongoDB for an existing extraction record by invoice/receipt number and optional vendor.
+    Delegates to find_extraction_by_invoice_and_vendor.
+    """
+    return find_extraction_by_invoice_and_vendor(invoice_number=invoice_number, vendor_name=vendor_name)
+
+
+def save_extraction_to_mongodb(
+    response_payload: Dict[str, Any],
+    file_hash: Optional[str] = None,
+    file_name: Optional[str] = None,
+    vendor_name: Optional[str] = None,
+    invoice_number: Optional[str] = None
+) -> Optional[str]:
     """
     Persist the receipt extraction JSON response into the MongoDB Receipt_Extraction collection
-    ONLY if not already present based on invoice number.
+    ONLY if not already present based on file hash OR (invoice number AND vendor/seller name).
 
-    If an extraction with the same invoice number already exists in MongoDB:
+    If an extraction with the same file hash OR (same invoice number and vendor) already exists:
       - Does NOT insert a duplicate document into the database.
+      - Updates the existing document in place using its BSON ObjectId.
       - Sets response_payload["is_duplicate"] = True (if payload is a dict).
       - Returns the existing document's ID string.
 
-    If no matching invoice is found (or no invoice number is present):
-      - Inserts the new extraction document.
+    If the same vendor has a NEW invoice number (or a different vendor has the same invoice number):
+      - Inserts the new extraction document without collision.
       - Sets response_payload["is_duplicate"] = False (if payload is a dict).
       - Returns the newly inserted document's ID string.
 
@@ -126,44 +205,101 @@ def save_extraction_to_mongodb(response_payload: Dict[str, Any]) -> Optional[str
             logger.warning("MongoDB collection is unavailable; skipping storage.")
             return None
 
-        # 1. Locate invoice / receipt number from the payload
+        # Clean file hash and file name
+        resolved_hash = (
+            file_hash
+            or response_payload.get("file_hash")
+        )
+        if resolved_hash:
+            resolved_hash = str(resolved_hash).strip().lower()
+
+        resolved_name = (
+            file_name
+            or response_payload.get("file_name")
+        )
+
+        # 1. Locate invoice number and vendor/seller name from payload
         data = response_payload.get("data", {}) if isinstance(response_payload.get("data"), dict) else {}
-        invoice_num = (
-            data.get("invoice_number")
+        resolved_inv = (
+            invoice_number
+            or data.get("invoice_number")
             or data.get("receipt_number")
             or response_payload.get("invoice_number")
             or response_payload.get("receipt_number")
+        )
+        resolved_vendor = (
+            vendor_name
+            or data.get("vendor_name")
+            or data.get("seller_name")
+            or data.get("seller")
+            or data.get("vendor")
+            or response_payload.get("vendor_name")
+            or response_payload.get("seller_name")
         )
 
         doc_to_save = copy.deepcopy(response_payload)
         now_iso = datetime.now(timezone.utc).isoformat()
 
-        # 2. Check if already present in MongoDB using the invoice number
-        if invoice_num:
-            clean_inv = str(invoice_num).strip()
+        # 2. Check if already present by file SHA-256 hash (exact duplicate file)
+        if resolved_hash:
+            existing_doc = find_extraction_by_file_hash(resolved_hash)
+            if existing_doc:
+                existing_id = existing_doc["_id"]
+                mongo_id = ObjectId(existing_id) if ObjectId.is_valid(str(existing_id)) else existing_id
+                doc_to_save["_id"] = mongo_id
+                doc_to_save["file_hash"] = resolved_hash
+                if resolved_name:
+                    doc_to_save["file_name"] = resolved_name
+                doc_to_save["stored_at"] = existing_doc.get("stored_at", now_iso)
+                doc_to_save["updated_at"] = now_iso
+                collection.replace_one({"_id": mongo_id}, doc_to_save, upsert=True)
+                str_id = str(existing_id)
+                logger.info(
+                    f"File hash '{resolved_hash[:12]}...' updated in MongoDB with ID {str_id}."
+                )
+                if isinstance(response_payload, dict):
+                    response_payload["is_duplicate"] = True
+                    response_payload["document_id"] = str_id
+                return str_id
+
+        # 3. Check if already present by combining BOTH invoice number AND vendor name
+        if resolved_inv:
+            clean_inv = str(resolved_inv).strip()
+            clean_vendor = str(resolved_vendor).strip() if resolved_vendor else None
             if clean_inv:
-                existing_doc = find_extraction_by_invoice_number(clean_inv)
+                existing_doc = find_extraction_by_invoice_and_vendor(clean_inv, clean_vendor)
                 if existing_doc:
                     existing_id = existing_doc["_id"]
-                    doc_to_save["_id"] = existing_id
+                    mongo_id = ObjectId(existing_id) if ObjectId.is_valid(str(existing_id)) else existing_id
+                    doc_to_save["_id"] = mongo_id
+                    if resolved_hash:
+                        doc_to_save["file_hash"] = resolved_hash
+                    if resolved_name:
+                        doc_to_save["file_name"] = resolved_name
                     doc_to_save["stored_at"] = existing_doc.get("stored_at", now_iso)
                     doc_to_save["updated_at"] = now_iso
-                    collection.replace_one({"_id": existing_id}, doc_to_save, upsert=True)
+                    collection.replace_one({"_id": mongo_id}, doc_to_save, upsert=True)
                     str_id = str(existing_id)
                     logger.info(
-                        f"Invoice number '{clean_inv}' updated in MongoDB with ID {str_id}."
+                        f"Invoice '{clean_inv}' for vendor '{clean_vendor or 'Unknown'}' updated in MongoDB with ID {str_id}."
                     )
                     if isinstance(response_payload, dict):
                         response_payload["is_duplicate"] = True
+                        response_payload["document_id"] = str_id
                     return str_id
 
-        # 3. Not found or no invoice number — store in database as normal
+        # 4. Not found — store in database as new extraction
+        if resolved_hash:
+            doc_to_save["file_hash"] = resolved_hash
+        if resolved_name:
+            doc_to_save["file_name"] = resolved_name
         doc_to_save["stored_at"] = now_iso
         insert_result = collection.insert_one(doc_to_save)
         doc_id = str(insert_result.inserted_id)
         logger.info(f"Receipt extraction stored in MongoDB with ID: {doc_id}")
         if isinstance(response_payload, dict):
             response_payload["is_duplicate"] = False
+            response_payload["document_id"] = doc_id
         return doc_id
 
     except (ServerSelectionTimeoutError, PyMongoError) as exc:

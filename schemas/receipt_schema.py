@@ -950,6 +950,7 @@ class ReceiptResponse(BaseModel):
     ocr: OCRDiagnostics
     document_id: Optional[str] = Field(default=None, description="MongoDB document ID if persisted")
     is_duplicate: Optional[bool] = Field(default=None, description="True if record already existed in MongoDB")
+    cache_hit: Optional[bool] = Field(default=False, description="True if result was returned from database cache without re-extracting")
 
 
 def remove_none_values(obj: Any) -> Any:

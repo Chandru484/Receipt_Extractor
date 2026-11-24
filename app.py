@@ -1,7 +1,8 @@
+import hashlib
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from fastapi import FastAPI, File, HTTPException, Query, UploadFile, status, Request
+from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile, status, Request
 from starlette.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,7 +17,9 @@ from schemas.chat_schema import ChatRequest, ChatResponse
 from schemas.receipt_schema import ReceiptResponse
 from storage.mongo_client import (
     save_extraction_to_mongodb,
+    find_extraction_by_file_hash,
     find_extraction_by_invoice_number,
+    find_extraction_by_invoice_and_vendor,
     get_stored_extractions,
     get_stored_extraction_by_id,
     check_mongo_connection,
@@ -104,14 +107,24 @@ async def list_stored_receipts(
     }
 
 
-@app.get("/receipts/by-invoice/{invoice_number}", summary="Get stored receipt by invoice number")
-async def get_receipt_by_invoice(invoice_number: str):
-    """Retrieve a stored receipt from MongoDB by its invoice number."""
-    record = await run_in_threadpool(find_extraction_by_invoice_number, invoice_number)
+@app.get(
+    "/receipts/by-invoice/{invoice_number}",
+    summary="Get stored receipt by invoice number and optional vendor"
+)
+async def get_receipt_by_invoice(
+    invoice_number: str,
+    vendor_name: Optional[str] = Query(
+        None,
+        description="Optional vendor or seller name to disambiguate receipts from different vendors"
+    )
+):
+    """Retrieve a stored receipt from MongoDB by combining invoice number and optional vendor name."""
+    record = await run_in_threadpool(find_extraction_by_invoice_and_vendor, invoice_number, vendor_name)
     if not record:
+        vendor_clause = f" for vendor '{vendor_name}'" if vendor_name else ""
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Stored receipt with invoice number '{invoice_number}' not found."
+            detail=f"Stored receipt with invoice number '{invoice_number}'{vendor_clause} not found."
         )
     return record
 
@@ -181,12 +194,14 @@ async def extract_receipt_get_info(request: Request):
     description=(
         "Upload a receipt or invoice **image** (JPG, PNG, WebP, BMP) or **PDF** to extract "
         "unified structured JSON and OCR metadata in-memory and persist to MongoDB. "
-        "For multi-page PDFs, all pages are OCR'd and results are merged into a single document."
+        "Checks cache combining file SHA-256 hash and (invoice number + vendor/seller name)."
     )
 )
 @app.post("/extract/", response_model=ReceiptResponse, include_in_schema=False)
 async def extract_receipt(
-    file: UploadFile = File(..., description="Receipt or invoice file (JPG, PNG, WebP, BMP, PDF)")
+    file: UploadFile = File(..., description="Receipt or invoice file (JPG, PNG, WebP, BMP, PDF)"),
+    invoice_number: Optional[str] = Form(None, description="Optional invoice/receipt number for fast combined cache lookup"),
+    vendor_name: Optional[str] = Form(None, description="Optional vendor/seller name for combined cache lookup"),
 ):
     filename = file.filename or ""
     extension = Path(filename).suffix.lower()
@@ -218,7 +233,68 @@ async def extract_receipt(
             detail=f"Uploaded file exceeds maximum allowed size of {settings.MAX_UPLOAD_SIZE_MB} MB."
         )
 
+    # Compute SHA-256 hash of the uploaded file for instant caching and deduplication
+    file_hash = hashlib.sha256(file_bytes).hexdigest()
+    file_size_kb = len(file_bytes) / 1024.0
+
     try:
+        # 1. Fast Cache Check: Level 1 (file SHA-256 hash)
+        t_cache_start = time.perf_counter()
+        cached_doc = await run_in_threadpool(find_extraction_by_file_hash, file_hash)
+
+        # Level 2 Cache Check: Combined (invoice_number + vendor_name) if provided
+        if not cached_doc and invoice_number:
+            cached_doc = await run_in_threadpool(
+                find_extraction_by_invoice_and_vendor,
+                invoice_number,
+                vendor_name
+            )
+
+        if cached_doc:
+            cache_duration_ms = (time.perf_counter() - t_cache_start) * 1000.0
+            cached_id = str(cached_doc.get("_id", ""))
+            cached_data = cached_doc.get("data", {}) if isinstance(cached_doc.get("data"), dict) else {}
+            inv_no = (
+                cached_data.get("invoice_number")
+                or cached_data.get("receipt_number")
+                or cached_doc.get("invoice_number")
+                or "N/A"
+            )
+            vendor = (
+                cached_data.get("vendor_name")
+                or cached_data.get("seller_name")
+                or cached_doc.get("vendor_name")
+                or "N/A"
+            )
+            total = cached_data.get("grand_total") or cached_doc.get("grand_total") or "N/A"
+
+            # Print prominent terminal banner
+            print("\n" + "=" * 70, flush=True)
+            print(f"⚡ [CACHE HIT] Receipt already extracted! (Invoice: {inv_no} | Seller: {vendor})", flush=True)
+            print(f"📄 File: {filename} ({file_size_kb:.1f} KB) | Doc ID: {cached_id}", flush=True)
+            print(f"🏢 Seller: {vendor} | 🧾 Invoice: {inv_no} | Total: {total}", flush=True)
+            print(f"⚡ Skipped OCR and LLM processing completely! Zero API calls used.", flush=True)
+            print(f"👉 Returning cached extraction from MongoDB in {cache_duration_ms:.2f} ms", flush=True)
+            print("=" * 70 + "\n", flush=True)
+
+            return {
+                "success": True,
+                "message": "Receipt retrieved from database cache (already extracted)",
+                "formatted_display": cached_doc.get("formatted_display"),
+                "data": cached_data,
+                "ocr": cached_doc.get("ocr") or {"full_text": "", "lines": [], "line_count": 0},
+                "document_id": cached_id,
+                "is_duplicate": True,
+                "cache_hit": True
+            }
+
+        # 2. CACHE MISS: New receipt detected, run OCR and LLM extraction
+        print("\n" + "=" * 70, flush=True)
+        print(f"🔍 [CACHE MISS] New receipt file detected (SHA-256: {file_hash[:12]}...)", flush=True)
+        print(f"📄 File: {filename} ({file_size_kb:.1f} KB)", flush=True)
+        print(f"👉 Running extraction pipeline (OCR + Groq LLM)...", flush=True)
+        print("=" * 70 + "\n", flush=True)
+
         t_start = time.perf_counter()
         if is_pdf:
             extraction_result = await run_in_threadpool(_extract_from_pdf, file_bytes)
@@ -227,22 +303,46 @@ async def extract_receipt(
             extraction_result = await run_in_threadpool(process_receipt, processed_image)
 
         elapsed_sec = round(time.perf_counter() - t_start, 2)
+        extracted_receipt = extraction_result["receipt"]
+        extracted_inv = (
+            extracted_receipt.get("invoice_number")
+            or extracted_receipt.get("receipt_number")
+        )
+        extracted_vendor = (
+            extracted_receipt.get("vendor_name")
+            or extracted_receipt.get("seller_name")
+        )
+
         response_payload = {
             "success": True,
             "message": "Receipt extracted successfully",
             "formatted_display": extraction_result.get("formatted_display"),
-            "data": extraction_result["receipt"],
+            "data": extracted_receipt,
             "ocr": extraction_result["ocr"],
-            "document_id": None
+            "document_id": None,
+            "cache_hit": False,
         }
 
         # Persist extracted JSON to MongoDB Receipt_Extraction collection
-        # (automatically checks invoice_number and skips duplicate saving)
-        doc_id = await run_in_threadpool(save_extraction_to_mongodb, response_payload)
+        # (checks file_hash AND combines invoice_number + vendor_name to prevent duplicate saving)
+        doc_id = await run_in_threadpool(
+            save_extraction_to_mongodb,
+            response_payload,
+            file_hash=file_hash,
+            file_name=filename,
+            vendor_name=extracted_vendor,
+            invoice_number=extracted_inv
+        )
         if doc_id:
             response_payload["document_id"] = doc_id
             if response_payload.get("is_duplicate"):
                 response_payload["message"] = "Receipt extracted successfully (existing record updated in database)"
+
+        print("\n" + "=" * 70, flush=True)
+        print(f"✅ [EXTRACTION COMPLETE] Processed in {elapsed_sec}s", flush=True)
+        print(f"💾 Persisted to MongoDB with Doc ID: {response_payload.get('document_id')}", flush=True)
+        print(f"🏢 Seller: {extracted_vendor or 'N/A'} | 🧾 Invoice: {extracted_inv or 'N/A'}", flush=True)
+        print("=" * 70 + "\n", flush=True)
 
         return response_payload
 
