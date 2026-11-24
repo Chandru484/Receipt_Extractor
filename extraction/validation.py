@@ -424,8 +424,73 @@ def reconcile_missing_ocr_items(receipt: ReceiptData, ocr_text: str) -> None:
 
     sl_to_actual_page = {}
     for p_num, p_txt in pages_to_check:
-        for line in p_txt.splitlines():
+        p_lines = p_txt.splitlines()
+        for line_idx, line in enumerate(p_lines):
             l_str = line.strip()
+
+            # 1b. Agro Foods / Commodity Wholesale 11-column format:
+            # No. Particulars Hsn Code Net Qty Uom Rate Gr.Amt Dis Amt Gst% Net Amt
+            # e.g.: 1 திணை அரிசி(UNBRANDED) 10082930 62.00 5 கிலோ 62.00 310.00 0.00 0 310.00
+            m11 = re.match(
+                r"^(\d{1,3})\s+(.+?)\s+(\d{4,8})\s+([0-9,]+\.\d{2})\s+(\d+(?:\.\d+)?)\s+(\S+(?:\s+\S+)?)\s+([0-9,]+\.\d{2})\s+([0-9,]+\.\d{2})\s+([0-9,]+\.\d{2})\s+(\d+(?:\.\d+)?)\s+([0-9,]+\.\d{2})$",
+                l_str
+            )
+            if m11:
+                sl11 = m11.group(1)
+                sl_to_actual_page[sl11] = p_num
+                hsn11 = m11.group(3)
+                iname11 = m11.group(2).strip()
+                net_rate11 = float(m11.group(4).replace(",", ""))
+                qty11 = float(m11.group(5))
+                uom11 = m11.group(6).strip()
+                rate11 = float(m11.group(7).replace(",", ""))
+                gr_amt11 = float(m11.group(8).replace(",", ""))
+                dis_amt11 = float(m11.group(9).replace(",", ""))
+                gst_pct11 = f"{float(m11.group(10)):g}%"
+                amt11 = float(m11.group(11).replace(",", ""))
+                rate_incl11 = round(amt11 / qty11, 2) if qty11 > 0 else rate11
+
+                # Check for continuation line for item description on the next row
+                if line_idx + 1 < len(p_lines):
+                    next_l = p_lines[line_idx + 1].strip()
+                    if next_l and not next_l[0].isdigit() and not any(w in next_l.lower() for w in ["total", "bank", "continued", "tax invoice", "authorised"]):
+                        iname11 = f"{iname11} {next_l}"
+
+                from processing.tamil_processor import normalize_tamil_text
+                iname11 = normalize_tamil_text(iname11)
+                uom11 = normalize_tamil_text(uom11)
+
+                if sl11 not in existing_sl_nos:
+                    new_item = ReceiptItem(
+                        page=p_num,
+                        sl_no=sl11,
+                        item_name=iname11,
+                        hsn_sac=hsn11,
+                        quantity=qty11,
+                        uom=uom11,
+                        unit_price=rate11,
+                        rate_incl_tax=rate_incl11,
+                        discount_percent=f"{dis_amt11:.2f}%" if dis_amt11 > 0 else "0.00%",
+                        gst_rate=gst_pct11,
+                        total_price=amt11
+                    )
+                    receipt.items.append(new_item)
+                    existing_sl_nos.add(sl11)
+                    new_items_added = True
+                else:
+                    for it in receipt.items:
+                        if it.sl_no and re.sub(r"[^\d]", "", str(it.sl_no)) == sl11:
+                            it.page = p_num
+                            it.item_name = iname11
+                            it.hsn_sac = hsn11
+                            it.quantity = qty11
+                            it.uom = uom11
+                            it.unit_price = rate11
+                            it.rate_incl_tax = rate_incl11
+                            it.gst_rate = gst_pct11
+                            it.total_price = amt11
+                            break
+                continue
 
             # 1. FMCG / Agency wholesale table format (13 columns or FREE item):
             # SNO [HSN] ITEM MRP UNIT TOT.PCS RATE BASIC AMT DIS % DIS AMT GST % GST Amt NETAMT
@@ -1519,6 +1584,24 @@ def validate_and_reconcile_receipt(
             pan_m = re.search(r"(?:Company(?:'s)?\s*PAN|PAN\s*(?:No\.?)?)\s*[:=]?\s*([A-Z]{5}\d{4}[A-Z])\b", ocr_text, re.IGNORECASE)
             if pan_m:
                 receipt.extra_fields["company_pan"] = pan_m.group(1).upper()
+
+    # 12. Normalize Tamil text across all fields and line items
+    from processing.tamil_processor import normalize_tamil_text
+    for field in [
+        "vendor_name", "seller", "seller_name", "customer_name", "buyer", "buyer_name",
+        "seller_address", "buyer_address", "seller_address_line_1", "seller_address_line_2",
+        "buyer_address_line_1", "buyer_address_line_2", "bill_type", "salesman"
+    ]:
+        val = getattr(receipt, field, None)
+        if val and isinstance(val, str):
+            setattr(receipt, field, normalize_tamil_text(val))
+
+    if receipt.items:
+        for it in receipt.items:
+            if it.item_name:
+                it.item_name = normalize_tamil_text(it.item_name)
+            if it.uom:
+                it.uom = normalize_tamil_text(it.uom)
 
     receipt.synchronize_fields()
 
