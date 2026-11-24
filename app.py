@@ -280,11 +280,13 @@ def _extract_from_pdf(pdf_bytes: bytes) -> Dict[str, Any]:
     all_lines = []
     all_texts = []
 
+    from processing.tamil_processor import normalize_tamil_text
+
     page_texts = []
     total_digital_chars = 0
     for page_num, page in enumerate(pdf, start=1):
         text_page = page.get_textpage()
-        page_text = text_page.get_text_range().strip()
+        page_text = normalize_tamil_text(text_page.get_text_range().strip())
         total_digital_chars += len(page_text)
         page_texts.append((page_num, page_text))
 

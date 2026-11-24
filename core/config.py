@@ -19,7 +19,7 @@ os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
 
 class Settings(BaseSettings):
     GROQ_API_KEY: str = ""
-    GROQ_MODEL: str = "openai/gpt-oss-120b"
+    GROQ_MODEL: str = "openai/gpt-oss-20b"
     GROQ_FALLBACK_API_KEY: str = ""
     GROQ_FALLBACK_MODEL: str = "openai/gpt-oss-20b"
     GROQ_CHAT_MODEL: str = "openai/gpt-oss-20b"
