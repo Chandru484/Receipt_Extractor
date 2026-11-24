@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Universal AI Chatbot — Integration Demo</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f8fafc;
+      color: #0f172a;
+      padding: 40px 20px;
+      line-height: 1.6;
+    }
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      background: #fff;
+      padding: 32px;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+    }
+    h1 { color: #1e3a8a; margin-top: 0; }
+    .badge {
+      display: inline-block;
+      background: #dbeafe;
+      color: #1d4ed8;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 16px;
+    }
+    pre {
+      background: #0f172a;
+      color: #f8fafc;
+      padding: 16px;
+      border-radius: 8px;
+      overflow-x: auto;
+      font-size: 13px;
+    }
+    .features {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-top: 24px;
+    }
+    .card {
+      border: 1px solid #e2e8f0;
+      padding: 16px;
+      border-radius: 8px;
+    }
+    .card h3 { margin-top: 0; font-size: 15px; color: #1e40af; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <span class="badge">Standalone Embeddable Widget</span>
+    <h1>Universal AI Chatbot Platform</h1>
+    <p>
+      This demo page simulates an external website or application embedding the Universal AI Chatbot.
+      Look at the <strong>bottom-right corner</strong> to interact with the floating chatbot widget.
+    </p>
+
+    <h3>Embed Code Snippet</h3>
+    <pre>&lt;!-- Add this snippet to any website or web application --&gt;
+&lt;script
+  src="http://localhost:8080/widget.js"
+  data-website-id="site_demo"
+  async&gt;
+&lt;/script&gt;</pre>
+
+    <div class="features">
+      <div class="card">
+        <h3>🌐 Multilingual (Tamil & English)</h3>
+        <p>Switch between English and தமிழ் at any time directly in the widget header.</p>
+      </div>
+      <div class="card">
+        <h3>🎙️ Voice Assistant (STT & TTS)</h3>
+        <p>Press the microphone button to speak, or click the speaker button to hear replies aloud.</p>
+      </div>
+      <div class="card">
+        <h3>⚡ Multi-Provider AI Fallback</h3>
+        <p>Uses Groq API key rotation with secondary fallback so the bot never goes down.</p>
+      </div>
+      <div class="card">
+        <h3>🤝 Human Support Handoff</h3>
+        <p>Click "Talk to Human Agent" to trigger seamless escalation to Tawk.to.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Embed the Chatbot Widget from the local server -->
+  <script src="/widget.js" data-website-id="site_demo"></script>
+</body>
+</html>
