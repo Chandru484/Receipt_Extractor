@@ -146,9 +146,10 @@ def format_receipt_display(receipt: ReceiptData) -> str:
     if receipt.tax is not None:
         lines.append(f"Total Tax : {receipt.tax}")
 
-    if receipt.rounded_off is not None:
-        ro_label = (receipt.extra_fields.get("rounded_off_label") if receipt.extra_fields else None) or "Rounded Off"
-        lines.append(f"{ro_label} : {receipt.rounded_off}")
+    if getattr(receipt, "round_off", None) is not None:
+        lines.append(f"Round Off : {receipt.round_off}")
+    elif getattr(receipt, "rounded_off", None) is not None:
+        lines.append(f"Round Off : {receipt.rounded_off}")
 
     if receipt.grand_total is not None:
         lines.append(f"Grand Total : {receipt.grand_total}")
@@ -576,6 +577,53 @@ def reconcile_missing_ocr_items(receipt: ReceiptData, ocr_text: str) -> None:
                                 it.discount_percent = dis3
                             if it.total_price is None or float(it.total_price) == 0.0:
                                 it.total_price = amt3
+                            break
+                continue
+
+            # Export / Textile GST table format: S.No Description HSN/SAC Qty Rate(Incl.Tax) Rate UOM Amount
+            m_tax_incl = re.match(
+                r"^(\d{1,3})\s+(.+?)\s+(\d{4,8})\s+([0-9,]+(?:\.\d+)?)\s+([0-9,]+(?:\.\d+)?)\s+([0-9,]+\.\d{2})\s+([A-Za-z]+)\s+([0-9,]+\.\d{2})$",
+                l_str
+            )
+            if m_tax_incl:
+                sl_ti = m_tax_incl.group(1)
+                sl_to_actual_page[sl_ti] = p_num
+                iname_ti = m_tax_incl.group(2).strip()
+                hsn_ti = m_tax_incl.group(3)
+                q_ti = float(m_tax_incl.group(4).replace(",", ""))
+                r_incl_ti = float(m_tax_incl.group(5).replace(",", ""))
+                rate_ti = float(m_tax_incl.group(6).replace(",", ""))
+                uom_ti = m_tax_incl.group(7)
+                amt_ti = float(m_tax_incl.group(8).replace(",", ""))
+
+                if sl_ti not in existing_sl_nos:
+                    new_item = ReceiptItem(
+                        page=p_num,
+                        sl_no=sl_ti,
+                        item_name=iname_ti,
+                        hsn_sac=hsn_ti,
+                        quantity=q_ti,
+                        uom=uom_ti,
+                        unit_price=rate_ti,
+                        rate_incl_tax=r_incl_ti if r_incl_ti > 0 else None,
+                        total_price=amt_ti,
+                        discount_percent=None
+                    )
+                    receipt.items.append(new_item)
+                    existing_sl_nos.add(sl_ti)
+                    new_items_added = True
+                else:
+                    for it in receipt.items:
+                        if it.sl_no and re.sub(r"[^\d]", "", str(it.sl_no)) == sl_ti:
+                            if iname_ti:
+                                it.item_name = iname_ti
+                            it.hsn_sac = hsn_ti
+                            it.quantity = q_ti
+                            it.uom = uom_ti
+                            it.unit_price = rate_ti
+                            if r_incl_ti > 0:
+                                it.rate_incl_tax = r_incl_ti
+                            it.total_price = amt_ti
                             break
                 continue
 
@@ -1391,10 +1439,22 @@ def validate_and_reconcile_receipt(
             if dt_m:
                 receipt.despatch_through = dt_m.group(1).strip()
 
+    # E-Way Bill Number validation and extraction
+    if getattr(receipt, "eway_bill_no", None):
+        ew_str = str(receipt.eway_bill_no).strip()
+        if ew_str.lower() in ["vehicle", "vehicle no", "vehicleno", "order", "order no", "dated", "none", "null", "n/a", "p"] or not any(c.isdigit() for c in ew_str):
+            receipt.eway_bill_no = None
+
     if not getattr(receipt, "eway_bill_no", None):
-        ew_m = re.search(r"E-?Way\s*Bill(?:\s*No)?\s*[:.]?\s*([A-Za-z0-9_-]+)", ocr_text, re.IGNORECASE)
+        ew_m = re.search(r"E-?Way\s*Bill(?:\s*No)?\s*[:.]?\s*(\d{4,16})\b", ocr_text, re.IGNORECASE)
         if ew_m:
             receipt.eway_bill_no = ew_m.group(1).strip()
+
+    # P.O. Number validation and extraction
+    if getattr(receipt, "po_number", None):
+        po_str = str(receipt.po_number).strip()
+        if po_str.lower() in ["p", "p.", "p.o", "p.o.", "date", "p.o.date", "order", "none", "null", "n/a", "vehicle"]:
+            receipt.po_number = None
 
     podc_m = re.search(r"P\.?O\.?\s*No\s*&\s*Date\s+D\.?C\.?\s*No\s*&\s*Date\s*\n.*?\b(\d{3,10})\s+(\d{3,10})\b", ocr_text, re.IGNORECASE)
     if podc_m:
@@ -1405,7 +1465,7 @@ def validate_and_reconcile_receipt(
     else:
         if not getattr(receipt, "po_number", None):
             po_m = re.search(r"P\.?O\.?\s*No(?:\s*&\s*Date)?\s*[:.]?\s*\n?\s*([A-Za-z0-9_-]+)", ocr_text, re.IGNORECASE)
-            if po_m:
+            if po_m and po_m.group(1).strip().lower() not in ["p", "p.", "p.o", "p.o.", "date", "p.o.date", "order", "none", "null", "n/a", "vehicle"]:
                 receipt.po_number = po_m.group(1).strip()
         if not getattr(receipt, "dc_number", None):
             dc_m = re.search(r"D\.?C\.?\s*No(?:\s*&\s*Date)?\s*[:.]?\s*\n?\s*([A-Za-z0-9_-]+)", ocr_text, re.IGNORECASE)
@@ -1430,9 +1490,9 @@ def validate_and_reconcile_receipt(
         if tot_q_m:
             receipt.total_quantity = float(tot_q_m.group(1).replace(",", ""))
         else:
-            tot_q_row = re.search(r"\bTOTAL\s+(\d+)\s+[0-9,]+\.\d{2}", ocr_text, re.IGNORECASE)
+            tot_q_row = re.search(r"\bTOTAL\s+([0-9,]+(?:\.\d+)?)\s+[0-9,]+\.\d{2}", ocr_text, re.IGNORECASE)
             if tot_q_row:
-                receipt.total_quantity = float(tot_q_row.group(1))
+                receipt.total_quantity = float(tot_q_row.group(1).replace(",", ""))
 
     # Gross Amount
     if getattr(receipt, "gross_amount", None) is None:
@@ -1448,17 +1508,12 @@ def validate_and_reconcile_receipt(
             from schemas.receipt_schema import format_currency_value
             receipt.balance_amount = format_currency_value(bal_m.group(1), receipt.currency or "₹")
 
-    # Rounding Off fallback and label preservation
+    # Rounding Off fallback (do NOT store rounded_off_label in extra_fields)
     ro_m = re.search(r"\b(Rounded\s*Off|Round\s*Off|Rounding\s*Off)\b\s*[:.]?\s*([-+]?[0-9,]+\.\d{2})", ocr_text, re.IGNORECASE)
     if ro_m:
-        raw_label = ro_m.group(1).strip()
-        norm_label = " ".join(word.capitalize() for word in raw_label.split())
-        if receipt.extra_fields is None:
-            receipt.extra_fields = {}
-        receipt.extra_fields["rounded_off_label"] = norm_label
-        if getattr(receipt, "rounded_off", None) is None:
+        if getattr(receipt, "round_off", None) is None:
             from schemas.receipt_schema import format_currency_value
-            receipt.rounded_off = format_currency_value(ro_m.group(2), receipt.currency or "₹")
+            receipt.round_off = format_currency_value(ro_m.group(2), receipt.currency or "₹")
 
     # Invoice / Bill Number check: Ensure seller address door number (e.g. 97) is not used as invoice number
     bill_m = re.search(r"Bill\s*No\s+Bill\s*Date\s*\n\s*(?:.*?\b)?(\d+)\s+(\d{1,2}/\d{1,2}/\d{2,4})", ocr_text, re.IGNORECASE)
@@ -1676,6 +1731,10 @@ def validate_and_reconcile_receipt(
                 it.item_name = normalize_tamil_text(it.item_name)
             if it.uom:
                 it.uom = normalize_tamil_text(it.uom)
+
+    if receipt.extra_fields:
+        for bad_k in ["rounded_off_label", "round_off_label", "round_off", "rounded_off", "rounding_off"]:
+            receipt.extra_fields.pop(bad_k, None)
 
     receipt.synchronize_fields()
 

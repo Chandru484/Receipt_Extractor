@@ -542,7 +542,7 @@ Ph : 8553747352,0431-4000020
     disp = format_receipt_display(val_receipt)
     assert "Gross : ₹17870.99" in disp
     assert "Balance Amt : ₹17871.00" in disp
-    assert "Rounded Off : ₹0.01" in disp
+    assert "Round Off : ₹0.01" in disp
     assert "Grand Total : ₹17871.00" in disp
     assert "Dis%: 0.00%" in disp
 
@@ -793,6 +793,87 @@ Gross 8738.00
     assert items_by_sl["20"] == "Ko Colour Pencil 12s 25/-"
     assert items_by_sl["24"] == "Kores Crayons Rs 15/-"
     assert items_by_sl["26"] == "C3 10-Colour Pencil Rs 12/-"
+
+
+def test_continue_2_export_textile_reconciliation():
+    sample_ocr = """
+--- Page 1 ---
+SPT EXPORT
+16/3,THIRUMAL NAGAR,
+VEERAPPANCHATHIRAM
+ERODE-638011
+GSTIN/UIN : 33AEWFS9142M1Z5
+State Name : TamilNadu State Code : 33
+Consignee (Ship To) Invoice No Dated
+VSMTEXTILES ENGINEERING 3 30-12-2025
+ 255/2 ALAGAINAGAR e-Way Bill No Vehicle No
+RAJAPALAYAM-626117 
+VIRUDHUNAGAR (DT) Order No Order Date
+GSTIN/UIN : 33FRKPS8254Q1ZP State Name : TamilNadu ,Code : 33 
+Buyer (Bill To) Place Transport
+VSMTEXTILES ENGINEERING 
+ 255/2 ALAGAINAGAR Destination Mode/Terms Of Paymt
+RAJAPALAYAM-626117 
+VIRUDHUNAGAR (DT) P.O.No P.O.Date
+GSTIN/UIN : 33FRKPS8254Q1ZP State Name : TamilNadu ,Code : 33 
+Sl Description Of Goods HSN/SAC Quantity Rate
+(Incl.of Tax) Rate Per Amount No.
+1 100% COTTON 1/40S DYED CONE YARN 5205 1.000 0.00 305.00 Kgs 305.00
+2 100% COTTON 2/40s HANK YARN 5205 2.000 0.00 290.00 Kgs 580.00
+3 100% COTTON 2/74S DYED CONE YARN 5205 1.000 0.00 410.00 Kgs 410.00
+15 2/60S TWO-PLY (8 MTR CUTTING) 5208 1.000 0.00 360.00 Mtrs 360.00
+16 2/74s CGM YARN 5205 1.000 0.00 80.00 Kgs 80.00
+17 2/100s GM HANK YARN 5205 1.000 0.00 90.00 Kgs 90.00
+37 B2 SENSORS 8448 1 0.00 130.00 Nos 130.00
+Continued.......
+
+--- Page 2 ---
+Sl Description Of Goods HSN/SAC Quantity Rate
+(Incl.of Tax) Rate Per Amount No.
+38 BEDSHEET 48*80 D .DOUBLE 6304 1 0.00 220.00 Nos 220.00
+42 COLOR FABRICS 5208 1.000 0.00 270.00 Mtrs 270.00
+Round Off 0.02
+Total 100.00 14,834.00
+"""
+
+    raw = ReceiptData(
+        document_type="invoice",
+        vendor_name="SPT EXPORT",
+        buyer_name="VSMTEXTILES ENGINEERING",
+        eway_bill_no="Vehicle",  # leaked header
+        po_number="P",          # leaked header
+        invoice_number="3",
+        invoice_date="30-12-2025",
+        subtotal="₹13180.00",
+        grand_total="₹14834.00",
+        rounded_off="₹0.02",    # alias input
+        items=[
+            ReceiptItem(page=1, sl_no="1", item_name="100% COTTON 1/40S DYED CONE YARN", quantity=1.0, unit_price="₹305.00", total_price="₹305.00"),
+            ReceiptItem(page=2, sl_no="38", item_name="BEDSHEET 48*80 D .DOUBLE", quantity=1.0, unit_price="₹220.00", total_price="₹220.00")
+        ]
+    )
+
+    val_receipt, _ = validate_and_reconcile_receipt(raw, sample_ocr)
+
+    # 1. eway_bill_no and po_number cleared from leaked column headers
+    assert val_receipt.eway_bill_no is None
+    assert val_receipt.po_number is None
+
+    # 2. total_quantity recovered from 'Total 100.00 14,834.00'
+    assert val_receipt.total_quantity == 100.0
+
+    # 3. round_off field used, rounded_off_label not in extra_fields
+    assert val_receipt.round_off == 0.02
+    assert "rounded_off_label" not in (val_receipt.extra_fields or {})
+    d = val_receipt.model_dump()
+    assert d["round_off"] == "₹0.02"
+    assert "rounded_off" not in d
+
+    # 4. formatted display check
+    disp = format_receipt_display(val_receipt)
+    assert "Round Off : ₹0.02" in disp
+    assert "Total Qty : 100.0" in disp
+
 
 
 

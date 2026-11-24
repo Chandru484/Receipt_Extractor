@@ -61,7 +61,7 @@ STANDARD FIELDS TO EXTRACT:
   "sgst_rate": null,
   "igst": null,
   "igst_rate": null,
-  "rounded_off": "$0.00",
+  "round_off": "$0.00",
   "tax": "$1.12",
   "grand_total": "$20.12",
   "balance_amount": "₹17871.00",
@@ -168,15 +168,15 @@ CRITICAL RULES:
 14. TOTALS, GROSS, BALANCE, ROUND OFF, AND AUTHORITATIVE FIELDS:
    - "gross_amount": If the document lists a 'Gross' amount (e.g. 'Gross 17870.99'), extract it here with currency symbol.
    - "balance_amount": If the document lists a 'Balance Amt' (e.g. 'Balance Amt : 17871.00'), extract it here.
-   - "rounded_off": If the document has 'Round Off' or 'Rounded Off' (e.g. '0.01', '-0.20', '0.19'), extract it here.
+   - "round_off": If the document has 'Round Off' or 'Rounded Off' (e.g. '0.01', '-0.20', '0.19', '0.02'), extract it into "round_off" with currency symbol. Do NOT put Round Off or rounded_off_label into extra_fields.
    - "total_items": ONLY extract if an explicit label like "Total Items : 20" appears in the text. If no explicit 'Total Items' label is printed in the document, set to null! NEVER count rows yourself to invent this field.
-   - "total_quantity": If an explicit label like "Total Qty : 79.00" or a summary row like "TOTAL 468 86740.55 ..." appears, extract the total quantity (e.g. 468). If no explicit total quantity is printed in the document, set to null! NEVER calculate or sum quantities yourself.
+   - "total_quantity": If an explicit label like "Total Qty : 79.00" or a summary row like "TOTAL 468 86740.55 ..." or "Total 100.00 14,834.00" appears, extract the total quantity (e.g. 468, 100.0). If no explicit total quantity is printed in the document, set to null! NEVER calculate or sum quantities yourself.
    - "bill_type": Bill type (e.g. 'Credit Bill', 'Cash Bill').
    - "transport": Transport / Carrier name (e.g. 'Sdsd'). NEVER put 'Transport' or leave it in buyer address.
    - "despatch_through": Despatch through (e.g. '12345').
-   - "po_number": PO number & date (e.g. '56789').
+   - "po_number": PO number & date (e.g. '56789'). If empty, set to null! NEVER extract single letters like 'P' or 'P.O.' as po_number.
    - "dc_number": DC number & date (e.g. '546322').
-   - "eway_bill_no": E-Way bill number (e.g. '123456').
+   - "eway_bill_no": E-Way bill number (typically 12 digits, e.g. '123456789012'). If empty, set to null! NEVER extract adjacent column headers like 'Vehicle', 'Vehicle No', 'Order No' as eway_bill_no.
    - When an HSN/SAC or TAX DETAILS tax breakdown table is present at the end, extract each combination row into "hsn_tax_summary".
    - Top-level "cgst" and "sgst" must be the TOTAL CGST and TOTAL SGST amounts (from the Total row of the tax table or sum of all rates e.g. 1608.34 + 289.29 = '₹1897.63'), NOT an individual rate row!
    - "tax" must be the total tax (Total CGST + Total SGST + Total IGST, e.g. '₹3795.26').

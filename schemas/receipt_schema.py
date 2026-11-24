@@ -511,7 +511,7 @@ class ReceiptData(BaseModel):
     sgst_rate: Optional[str] = None
     igst: Optional[CurrencyValue] = None
     igst_rate: Optional[str] = None
-    rounded_off: Optional[CurrencyValue] = None
+    round_off: Optional[CurrencyValue] = None
     tax: Optional[CurrencyValue] = None
     grand_total: Optional[CurrencyValue] = None
     balance_amount: Optional[CurrencyValue] = None
@@ -529,10 +529,18 @@ class ReceiptData(BaseModel):
     # Additional captured fields from receipt
     extra_fields: Dict[str, Any] = Field(default_factory=dict)
 
-    @field_validator("subtotal", "total_amt_before_tax", "total_amt_after_tax", "tax", "grand_total", "cgst", "sgst", "igst", "rounded_off", "amount_paid", "refunded_amount", "gross_amount", "balance_amount", mode="before")
+    @field_validator("subtotal", "total_amt_before_tax", "total_amt_after_tax", "tax", "grand_total", "cgst", "sgst", "igst", "round_off", "amount_paid", "refunded_amount", "gross_amount", "balance_amount", mode="before")
     @classmethod
     def validate_totals(cls, v: Any) -> Optional[CurrencyValue]:
         return format_currency_value(v)
+
+    @property
+    def rounded_off(self) -> Optional[CurrencyValue]:
+        return self.round_off
+
+    @rounded_off.setter
+    def rounded_off(self, value: Any):
+        self.round_off = value
 
     @model_validator(mode="before")
     @classmethod
@@ -557,6 +565,13 @@ class ReceiptData(BaseModel):
             if s_gst:
                 data["seller_gstin"] = s_gst
                 data["gstin"] = s_gst
+
+            # Round off resolution from round_off / rounded_off / rounding_off
+            ro_val = data.get("round_off") if data.get("round_off") is not None else (data.get("rounded_off") if data.get("rounded_off") is not None else data.get("rounding_off"))
+            if ro_val is not None:
+                data["round_off"] = ro_val
+            data.pop("rounded_off", None)
+            data.pop("rounding_off", None)
 
             # Phone and mobile aliases
             s_ph = data.get("seller_phone") or data.get("phone")
@@ -703,7 +718,7 @@ class ReceiptData(BaseModel):
             self.tax = format_currency_value(tax_sum, curr_sym)
 
         # Standardize all financial amounts to CurrencyValue with symbol and 2 decimals (e.g. '$93.50', '₹100.00')
-        for f in ["subtotal", "total_amt_before_tax", "total_amt_after_tax", "tax", "grand_total", "cgst", "sgst", "igst", "rounded_off", "amount_paid", "refunded_amount", "gross_amount", "balance_amount"]:
+        for f in ["subtotal", "total_amt_before_tax", "total_amt_after_tax", "tax", "grand_total", "cgst", "sgst", "igst", "round_off", "amount_paid", "refunded_amount", "gross_amount", "balance_amount"]:
             val = getattr(self, f, None)
             if val is not None:
                 setattr(self, f, format_currency_value(val, curr_sym))
@@ -808,9 +823,9 @@ class ReceiptData(BaseModel):
             "balance": "balance_amount",
             "balance_amount": "balance_amount",
             "balance_amt": "balance_amount",
-            "round_off": "rounded_off",
-            "rounded_off": "rounded_off",
-            "rounding_off": "rounded_off",
+            "round_off": "round_off",
+            "rounded_off": "round_off",
+            "rounding_off": "round_off",
             "bill_type": "bill_type",
             "total_items": "total_items",
             "total_quantity": "total_quantity",
@@ -827,7 +842,7 @@ class ReceiptData(BaseModel):
             "buyer_phone", "buyer_email", "gstin", "invoice_number", "receipt_number",
             "invoice_date", "date_paid", "payment_mode", "salesman", "amount_in_words",
             "items", "subtotal", "cgst", "cgst_rate", "sgst", "sgst_rate", "igst",
-            "igst_rate", "rounded_off", "tax", "grand_total", "amount_paid",
+            "igst_rate", "round_off", "rounded_off", "rounding_off", "tax", "grand_total", "amount_paid",
             "refunded_amount", "refunded_on", "currency", "bank_details", "hsn_tax_summary",
             "gross_amount", "balance_amount", "bill_type", "total_items", "total_quantity",
             "transport", "despatch_through", "eway_bill_no", "po_number", "dc_number",
@@ -870,7 +885,7 @@ class ReceiptData(BaseModel):
                 target_field = KNOWN_STANDARD_ALIASES[k_lower]
                 if getattr(self, target_field, None) is None:
                     # Parse numeric or string properly
-                    if target_field in ["amount_paid", "refunded_amount", "subtotal", "tax", "grand_total", "cgst", "sgst", "igst", "rounded_off", "gross_amount", "balance_amount"]:
+                    if target_field in ["amount_paid", "refunded_amount", "subtotal", "tax", "grand_total", "cgst", "sgst", "igst", "round_off", "gross_amount", "balance_amount"]:
                         setattr(self, target_field, format_currency_value(v, curr_sym))
                     elif target_field == "total_items":
                         try:
@@ -889,8 +904,12 @@ class ReceiptData(BaseModel):
         for k in keys_to_remove:
             self.extra_fields.pop(k, None)
 
+        # Never leave round off markers in extra_fields
+        for bad_k in ["rounded_off_label", "round_off_label", "round_off", "rounded_off", "rounding_off"]:
+            self.extra_fields.pop(bad_k, None)
+
         # Ensure all financial amounts are CurrencyValue with symbol and 2 decimals (e.g. '$93.50')
-        for f in ["subtotal", "tax", "grand_total", "cgst", "sgst", "igst", "rounded_off", "amount_paid", "refunded_amount", "gross_amount", "balance_amount"]:
+        for f in ["subtotal", "tax", "grand_total", "cgst", "sgst", "igst", "round_off", "amount_paid", "refunded_amount", "gross_amount", "balance_amount"]:
             val = getattr(self, f, None)
             if val is not None:
                 setattr(self, f, format_currency_value(val, curr_sym))
