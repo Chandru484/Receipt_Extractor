@@ -174,6 +174,11 @@ def clean_bank_account_number(val: Optional[str], ocr_text: str = "") -> Optiona
             if 6 <= len(digits) <= 24:
                 return cand
 
+        # Fallback: line above or near IFSC code with 9-18 digits
+        m_ifsc_acc = re.search(r"^[^\S\r\n]*([0-9]{9,18})\b.*(?:\n|\r\n)[^\S\r\n]*[A-Za-z]{4}0[0-9A-Za-z]{6}\b", ocr_text, re.MULTILINE)
+        if m_ifsc_acc:
+            return m_ifsc_acc.group(1).strip()
+
     return None
 
 

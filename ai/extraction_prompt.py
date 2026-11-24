@@ -16,6 +16,7 @@ STANDARD FIELDS TO EXTRACT:
   "seller_address_line_1": "Primary line of seller address (e.g. 'ADD1')",
   "seller_address_line_2": "Secondary line of seller address (e.g. 'ADD2, ADD3, ADD4')",
   "seller_gstin": "Seller's 15-character GSTIN/Tax ID in CAPITAL LETTERS ONLY",
+  "fssai_no": "Seller's 14-digit FSSAI registration number if present (e.g. '12416007000620')",
   "seller_state": "Seller State name",
   "seller_state_code": "Seller State code (e.g. '33')",
   "seller_email": "Seller email if present",
@@ -52,6 +53,7 @@ STANDARD FIELDS TO EXTRACT:
   "total_items": 20,
   "total_quantity": 79.0,
   "gross_amount": "₹17870.99",
+  "total_amt_before_tax": "₹17870.99",
   "subtotal": "$19.00",
   "cgst": null,
   "cgst_rate": null,
@@ -70,11 +72,11 @@ STANDARD FIELDS TO EXTRACT:
   "currency": "USD",
 
   "bank_details": {
-    "bank_name": "Bank Name if present (e.g. 'ANZ Bank', 'Axis Bank')",
+    "bank_name": "Bank Name only without branch (e.g. 'HDFC BANK', 'Axis Bank')",
     "account_holder": "Account Holder Name",
     "account_no": "Account Number (e.g. '1234 1234' from 'ACC # 1234 1234' or '924030030073241')",
     "ifsc_code": "11-character IFS Code in CAPITAL LETTERS ONLY (e.g. 'UTIB0000118')",
-    "branch": "Branch name"
+    "branch": "Branch name (e.g. 'KARUNGALPALAIYAM BRANCH')"
   },
 
   "items": [

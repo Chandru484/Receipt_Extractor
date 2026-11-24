@@ -271,6 +271,21 @@ class BankDetails(BaseModel):
                     if data.get(k):
                         data["ifsc_code"] = str(data[k]).strip()
                         break
+
+            # If bank_name contains branch name separated by comma/dash/slash or ending in BRANCH
+            b_name = data.get("bank_name")
+            if b_name and isinstance(b_name, str):
+                m_sep = re.match(r"^(.+?)[,\-–/]\s*(.*?\bBRANCH\b.*?)$", b_name, re.IGNORECASE)
+                if m_sep:
+                    data["bank_name"] = m_sep.group(1).strip()
+                    if not data.get("branch"):
+                        data["branch"] = m_sep.group(2).strip()
+                else:
+                    m_sp = re.match(r"^(.*?\bBANK\b)\s+(.+?\bBRANCH\b)$", b_name, re.IGNORECASE)
+                    if m_sp:
+                        data["bank_name"] = m_sp.group(1).strip()
+                        if not data.get("branch"):
+                            data["branch"] = m_sp.group(2).strip()
         return data
 
 
@@ -444,6 +459,7 @@ class ReceiptData(BaseModel):
     seller_mobile: Optional[str] = None
     phone: Optional[str] = None
     mobile: Optional[str] = None
+    fssai_no: Optional[str] = None
 
     # Core Buyer / Customer Details
     customer_name: Optional[str] = None
@@ -487,6 +503,8 @@ class ReceiptData(BaseModel):
     # Financial totals & tax breakdown (with currency symbol and 2 decimal places e.g. '$93.50')
     gross_amount: Optional[CurrencyValue] = None
     subtotal: Optional[CurrencyValue] = None
+    total_amt_before_tax: Optional[CurrencyValue] = None
+    total_amt_after_tax: Optional[CurrencyValue] = None
     cgst: Optional[CurrencyValue] = None
     cgst_rate: Optional[str] = None
     sgst: Optional[CurrencyValue] = None
@@ -511,7 +529,7 @@ class ReceiptData(BaseModel):
     # Additional captured fields from receipt
     extra_fields: Dict[str, Any] = Field(default_factory=dict)
 
-    @field_validator("subtotal", "tax", "grand_total", "cgst", "sgst", "igst", "rounded_off", "amount_paid", "refunded_amount", "gross_amount", "balance_amount", mode="before")
+    @field_validator("subtotal", "total_amt_before_tax", "total_amt_after_tax", "tax", "grand_total", "cgst", "sgst", "igst", "rounded_off", "amount_paid", "refunded_amount", "gross_amount", "balance_amount", mode="before")
     @classmethod
     def validate_totals(cls, v: Any) -> Optional[CurrencyValue]:
         return format_currency_value(v)
@@ -550,6 +568,13 @@ class ReceiptData(BaseModel):
             if s_mob:
                 data["seller_mobile"] = str(s_mob).strip()
                 data["mobile"] = str(s_mob).strip()
+
+            # FSSAI resolution
+            if not data.get("fssai_no"):
+                for k in ["fssai", "fssai_no", "fssai_number", "seller_fssai", "fssai_lic_no", "FSSAI NO", "FSSAI No"]:
+                    if data.get(k):
+                        data["fssai_no"] = str(data[k]).strip()
+                        break
 
         return data
 
@@ -678,7 +703,7 @@ class ReceiptData(BaseModel):
             self.tax = format_currency_value(tax_sum, curr_sym)
 
         # Standardize all financial amounts to CurrencyValue with symbol and 2 decimals (e.g. '$93.50', '₹100.00')
-        for f in ["subtotal", "tax", "grand_total", "cgst", "sgst", "igst", "rounded_off", "amount_paid", "refunded_amount", "gross_amount", "balance_amount"]:
+        for f in ["subtotal", "total_amt_before_tax", "total_amt_after_tax", "tax", "grand_total", "cgst", "sgst", "igst", "rounded_off", "amount_paid", "refunded_amount", "gross_amount", "balance_amount"]:
             val = getattr(self, f, None)
             if val is not None:
                 setattr(self, f, format_currency_value(val, curr_sym))

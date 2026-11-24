@@ -29,6 +29,8 @@ def format_receipt_display(receipt: ReceiptData) -> str:
     seller_gst = receipt.seller_gstin or receipt.gstin
     if seller_gst:
         lines.append(f"Seller GSTIN : {seller_gst}")
+    if getattr(receipt, "fssai_no", None):
+        lines.append(f"Seller FSSAI No : {receipt.fssai_no}")
     if receipt.seller_state:
         state_str = receipt.seller_state
         if receipt.seller_state_code:
@@ -122,8 +124,12 @@ def format_receipt_display(receipt: ReceiptData) -> str:
         lines.append(f"Total Qty : {receipt.total_quantity}")
     if getattr(receipt, "gross_amount", None) is not None:
         lines.append(f"Gross : {receipt.gross_amount}")
-    if receipt.subtotal is not None and receipt.subtotal != getattr(receipt, "gross_amount", None) and receipt.subtotal != receipt.grand_total:
+    if getattr(receipt, "total_amt_before_tax", None) is not None:
+        lines.append(f"Total Amt Before Tax : {receipt.total_amt_before_tax}")
+    if receipt.subtotal is not None and receipt.subtotal != getattr(receipt, "gross_amount", None) and receipt.subtotal != receipt.grand_total and getattr(receipt, "total_amt_before_tax", None) is None:
         lines.append(f"Subtotal : {receipt.subtotal}")
+    if getattr(receipt, "total_amt_after_tax", None) is not None:
+        lines.append(f"Total Amt After Tax : {receipt.total_amt_after_tax}")
 
     if receipt.sgst is not None:
         rate_str = f" ({receipt.sgst_rate})" if receipt.sgst_rate else ""
@@ -207,12 +213,10 @@ def format_receipt_display(receipt: ReceiptData) -> str:
                 lines.append(f"  Bank Name : {bd.bank_name}")
             if bd.account_no:
                 lines.append(f"  A/c No : {bd.account_no}")
-            if bd.branch and bd.ifsc_code:
-                lines.append(f"  Branch & IFS Code : {bd.branch} & {bd.ifsc_code}")
-            elif bd.branch:
-                lines.append(f"  Branch : {bd.branch}")
-            elif bd.ifsc_code:
+            if bd.ifsc_code:
                 lines.append(f"  IFS Code : {bd.ifsc_code}")
+            if bd.branch:
+                lines.append(f"  Branch : {bd.branch}")
             if getattr(bd, "bsb_number", None):
                 lines.append(f"  BSB No : {bd.bsb_number}")
             if getattr(bd, "swift_code", None):
@@ -819,6 +823,24 @@ def validate_and_reconcile_receipt(
                 elif valid_item_prices > 0 and items_total_sum > 0:
                     receipt.subtotal = items_total_sum
 
+        # Extract Total Amt Before / After Tax
+        m_before = re.search(r"\bTotal\s*Amt\s*Before\s*Tax\s*[:=.]?\s*([0-9,]+\.\d{2})", ocr_text, re.IGNORECASE)
+        if m_before:
+            from schemas.receipt_schema import format_currency_value
+            receipt.total_amt_before_tax = format_currency_value(m_before.group(1), receipt.currency or "₹")
+            if receipt.subtotal is None:
+                receipt.subtotal = receipt.total_amt_before_tax
+        elif receipt.subtotal is not None and "total amt before tax" in ocr_text.lower():
+            from schemas.receipt_schema import format_currency_value
+            receipt.total_amt_before_tax = format_currency_value(receipt.subtotal, receipt.currency or "₹")
+
+        m_after = re.search(r"\bTotal\s*Amt\s*After\s*Tax\s*[:=.]?\s*([0-9,]+\.\d{2})", ocr_text, re.IGNORECASE)
+        if m_after:
+            from schemas.receipt_schema import format_currency_value
+            receipt.total_amt_after_tax = format_currency_value(m_after.group(1), receipt.currency or "₹")
+            if receipt.gross_amount is None:
+                receipt.gross_amount = receipt.total_amt_after_tax
+
         if receipt.tax is None:
             tax_m = re.search(r"(?:Total\s*Tax|Tax)\s*[:=]?\s*[$₹€£]?\s*([0-9,]+\.\d{2})", ocr_text, re.IGNORECASE)
             if tax_m:
@@ -835,7 +857,7 @@ def validate_and_reconcile_receipt(
                 receipt.sgst = float(sgst_m.group(1).replace(",", ""))
 
         if receipt.grand_total is None:
-            gt_m = re.search(r"(?:Grand\s*Total|Total\s*Due|Balance\s*Due|GRAND\s*TOTAL)\s*[:=]?\s*[$₹€£]?\s*([0-9,]+\.\d{2})", ocr_text, re.IGNORECASE)
+            gt_m = re.search(r"(?:Grand\s*Total|Total\s*Due|Balance\s*Due|Net\s*Amount|GRAND\s*TOTAL)\s*[:=]?\s*[$₹€£]?\s*([0-9,]+\.\d{2})", ocr_text, re.IGNORECASE)
             if gt_m:
                 receipt.grand_total = float(gt_m.group(1).replace(",", ""))
 
@@ -1569,12 +1591,41 @@ def validate_and_reconcile_receipt(
                 if clean_br and not re.match(r"^\d+$", clean_br) and "company" not in clean_br.lower():
                     bd.branch = clean_br
 
+        # Check for Bank Line with branch: e.g. "HDFC BANK,KARUNGALPALAIYAM BRANCH"
+        if not bd.branch:
+            m_bline = re.search(
+                r"^[^\S\r\n]*[A-Za-z0-9\t &]+?\s+Bank[,\-–/]\s*([A-Za-z0-9\s()]+?\bBRANCH\b)",
+                ocr_text, re.MULTILINE | re.IGNORECASE
+            )
+            if m_bline:
+                bd.branch = m_bline.group(1).strip()
+            else:
+                br_standalone = re.search(r"\b([A-Za-z0-9\s()]{3,35}\bBRANCH\b)", ocr_text, re.IGNORECASE)
+                if br_standalone:
+                    cand_br = br_standalone.group(1).strip()
+                    if cand_br and not cand_br.lower().startswith("bank"):
+                        bd.branch = cand_br
+
     # Strictly validate and format Bank Details
     if receipt.bank_details:
         bd = receipt.bank_details
         bd.bank_name = clean_bank_name(bd.bank_name, ocr_text)
         bd.account_no = clean_bank_account_number(bd.account_no, ocr_text)
         bd.ifsc_code = validate_and_format_ifsc(bd.ifsc_code)
+
+        # Split branch from bank_name if joined (e.g. 'HDFC BANK,KARUNGALPALAIYAM BRANCH')
+        if bd.bank_name:
+            m_sep = re.match(r"^(.+?)[,\-–/]\s*(.*?\bBRANCH\b.*?)$", bd.bank_name, re.IGNORECASE)
+            if m_sep:
+                bd.bank_name = m_sep.group(1).strip()
+                if not bd.branch:
+                    bd.branch = m_sep.group(2).strip()
+            else:
+                m_sp = re.match(r"^(.*?\bBANK\b)\s+(.+?\bBRANCH\b)$", bd.bank_name, re.IGNORECASE)
+                if m_sp:
+                    bd.bank_name = m_sp.group(1).strip()
+                    if not bd.branch:
+                        bd.branch = m_sp.group(2).strip()
 
     # 11. Extract Company PAN into extra_fields
     if ocr_text:
@@ -1584,6 +1635,24 @@ def validate_and_reconcile_receipt(
             pan_m = re.search(r"(?:Company(?:'s)?\s*PAN|PAN\s*(?:No\.?)?)\s*[:=]?\s*([A-Z]{5}\d{4}[A-Z])\b", ocr_text, re.IGNORECASE)
             if pan_m:
                 receipt.extra_fields["company_pan"] = pan_m.group(1).upper()
+
+    # 11b. Extract FSSAI number into receipt.fssai_no and extra_fields
+    if ocr_text and not getattr(receipt, "fssai_no", None):
+        fssai_m = re.search(r"\bFSSAI(?:\s*NO\.?|\s*LIC(?:\.?|ENCE|ENSE)?|\s*REG(?:\.?|ISTRATION)?)?\s*[:=.]?\s*(\d{14})\b", ocr_text, re.IGNORECASE)
+        if fssai_m:
+            receipt.fssai_no = fssai_m.group(1).strip()
+            if receipt.extra_fields is None:
+                receipt.extra_fields = {}
+            receipt.extra_fields["fssai_no"] = receipt.fssai_no
+
+    # 11c. Ensure total_items is populated if sequential 1..N items are fully extracted
+    if receipt.total_items is None and receipt.items:
+        try:
+            sl_nums = [int(re.sub(r"[^\d]", "", str(it.sl_no))) for it in receipt.items if it.sl_no and re.sub(r"[^\d]", "", str(it.sl_no))]
+            if sl_nums and len(sl_nums) == len(receipt.items) and min(sl_nums) == 1 and max(sl_nums) == len(receipt.items):
+                receipt.total_items = len(receipt.items)
+        except Exception:
+            pass
 
     # 12. Normalize Tamil text across all fields and line items
     from processing.tamil_processor import normalize_tamil_text

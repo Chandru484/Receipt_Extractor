@@ -53,8 +53,21 @@ def test_soundaryas_agro_foods_tamil_and_reconciliation():
     total_qty = sum(it.quantity for it in validated.items if it.quantity)
     assert total_qty == 307.0, f"Expected 307.0 total quantity, got {total_qty}"
 
-    # 4. Verify formatted display contains Tamil Unicode
+    # 4. Verify FSSAI, total_items, total_amt_before_tax, bank and branch
+    assert validated.fssai_no == "12416007000620"
+    assert validated.total_items == 34
+    assert validated.total_amt_before_tax == 25178.66
+    assert validated.bank_details is not None
+    assert validated.bank_details.bank_name == "HDFC BANK"
+    assert validated.bank_details.branch == "KARUNGALPALAIYAM BRANCH"
+
+    # 5. Verify formatted display contains all expected fields
     display = format_receipt_display(validated)
     assert "திணை அரிசி" in display
     assert "கம்பு" in display
+    assert "Seller FSSAI No : 12416007000620" in display
+    assert "Total Items : 34" in display
     assert "Total Qty : 307.0" in display
+    assert "Total Amt Before Tax : ₹25178.66" in display
+    assert "Bank Name : HDFC BANK" in display
+    assert "Branch : KARUNGALPALAIYAM BRANCH" in display
