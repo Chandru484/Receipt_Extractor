@@ -1,6 +1,6 @@
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 
 from ai.groq_client import get_groq_client, get_all_groq_api_keys, _sanitize_error, GroqExtractionError
@@ -151,8 +151,11 @@ def _log_chat_interaction(user_msg: str, bot_reply: str, escalated: bool, sessio
             return
         db = client[settings.MONGODB_DB_NAME]
         chat_collection = db["Chat_Logs"]
+        IST = timezone(timedelta(hours=5, minutes=30))
+        now_ist = datetime.now(IST)
         chat_collection.insert_one({
-            "timestamp": datetime.now(timezone.utc),
+            "timestamp": now_ist.strftime("%d-%m-%Y %H:%M:%S"),
+            "date": now_ist.strftime("%d-%m-%Y"),
             "session_id": session_id or "anonymous",
             "user_message": user_msg,
             "bot_reply": bot_reply,

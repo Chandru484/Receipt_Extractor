@@ -1,3 +1,4 @@
+import re
 from unittest.mock import MagicMock, patch
 from bson import ObjectId
 from core.config import settings
@@ -9,6 +10,9 @@ from storage.mongo_client import (
     get_stored_extractions,
     get_stored_extraction_by_id,
     check_mongo_connection,
+    get_current_ist_datetime_str,
+    get_current_ist_date_str,
+    format_to_ist_str,
 )
 
 
@@ -312,4 +316,32 @@ def test_different_vendors_same_invoice_no_collision():
         mock_collection.replace_one.assert_not_called()
         assert ret_id == str(new_vsm_id)
         assert payload_vsm.get("is_duplicate") is False
+
+
+def test_stored_at_in_ist_dd_mm_yyyy_format():
+    """Verify that stored_at and stored_date are saved in Indian Standard Time (IST) in DD-MM-YYYY format."""
+    mock_collection = MagicMock()
+    mock_collection.insert_one.return_value.inserted_id = ObjectId("507f1f77bcf86cd7994390aa")
+
+    with patch("storage.mongo_client.get_receipt_collection", return_value=mock_collection):
+        payload = {
+            "success": True,
+            "data": {"vendor_name": "Test IST Vendor"},
+        }
+        save_extraction_to_mongodb(payload)
+        mock_collection.insert_one.assert_called_once()
+        saved_doc = mock_collection.insert_one.call_args[0][0]
+
+        # stored_at must match DD-MM-YYYY HH:MM:SS format
+        assert "stored_at" in saved_doc
+        assert re.match(r"^\d{2}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}$", saved_doc["stored_at"])
+
+        # stored_date must match DD-MM-YYYY format
+        assert "stored_date" in saved_doc
+        assert re.match(r"^\d{2}-\d{2}-\d{4}$", saved_doc["stored_date"])
+
+        # format_to_ist_str converts UTC ISO to IST DD-MM-YYYY HH:MM:SS
+        utc_iso = "2026-11-24T10:00:00+00:00"
+        ist_converted = format_to_ist_str(utc_iso)
+        assert ist_converted == "24-11-2026 15:30:00"
 

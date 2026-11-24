@@ -1,7 +1,7 @@
 import copy
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 from bson import ObjectId
 from pymongo import MongoClient
@@ -11,6 +11,40 @@ from pymongo.errors import PyMongoError, ServerSelectionTimeoutError
 from core.config import settings
 
 logger = logging.getLogger(__name__)
+
+# Indian Standard Time (IST, UTC+05:30)
+IST = timezone(timedelta(hours=5, minutes=30))
+
+
+def get_current_ist_datetime_str() -> str:
+    """Return the current timestamp in Indian Standard Time (IST) in DD-MM-YYYY HH:MM:SS format."""
+    return datetime.now(IST).strftime("%d-%m-%Y %H:%M:%S")
+
+
+def get_current_ist_date_str() -> str:
+    """Return the current date in Indian Standard Time (IST) in DD-MM-YYYY format."""
+    return datetime.now(IST).strftime("%d-%m-%Y")
+
+
+def format_to_ist_str(dt_val: Any) -> str:
+    """Normalize a datetime object or ISO string into DD-MM-YYYY HH:MM:SS in Indian Standard Time (IST)."""
+    if not dt_val:
+        return get_current_ist_datetime_str()
+    if isinstance(dt_val, str):
+        # Already DD-MM-YYYY format
+        if re.match(r"^\d{2}-\d{2}-\d{4}", dt_val):
+            return dt_val
+        try:
+            parsed = datetime.fromisoformat(dt_val.replace("Z", "+00:00"))
+            return parsed.astimezone(IST).strftime("%d-%m-%Y %H:%M:%S")
+        except Exception:
+            return dt_val
+    elif isinstance(dt_val, datetime):
+        if dt_val.tzinfo is None:
+            dt_val = dt_val.replace(tzinfo=timezone.utc)
+        return dt_val.astimezone(IST).strftime("%d-%m-%Y %H:%M:%S")
+    return str(dt_val)
+
 
 _mongo_client: Optional[MongoClient] = None
 
@@ -238,7 +272,8 @@ def save_extraction_to_mongodb(
         )
 
         doc_to_save = copy.deepcopy(response_payload)
-        now_iso = datetime.now(timezone.utc).isoformat()
+        now_ist_str = get_current_ist_datetime_str()
+        now_ist_date = get_current_ist_date_str()
 
         # 2. Check if already present by file SHA-256 hash (exact duplicate file)
         if resolved_hash:
@@ -250,12 +285,14 @@ def save_extraction_to_mongodb(
                 doc_to_save["file_hash"] = resolved_hash
                 if resolved_name:
                     doc_to_save["file_name"] = resolved_name
-                doc_to_save["stored_at"] = existing_doc.get("stored_at", now_iso)
-                doc_to_save["updated_at"] = now_iso
+                doc_to_save["stored_at"] = format_to_ist_str(existing_doc.get("stored_at", now_ist_str))
+                doc_to_save["stored_date"] = existing_doc.get("stored_date", now_ist_date)
+                doc_to_save["updated_at"] = now_ist_str
+                doc_to_save["updated_date"] = now_ist_date
                 collection.replace_one({"_id": mongo_id}, doc_to_save, upsert=True)
                 str_id = str(existing_id)
                 logger.info(
-                    f"File hash '{resolved_hash[:12]}...' updated in MongoDB with ID {str_id}."
+                    f"File hash '{resolved_hash[:12]}...' updated in MongoDB with ID {str_id} at {now_ist_str} IST."
                 )
                 if isinstance(response_payload, dict):
                     response_payload["is_duplicate"] = True
@@ -276,12 +313,14 @@ def save_extraction_to_mongodb(
                         doc_to_save["file_hash"] = resolved_hash
                     if resolved_name:
                         doc_to_save["file_name"] = resolved_name
-                    doc_to_save["stored_at"] = existing_doc.get("stored_at", now_iso)
-                    doc_to_save["updated_at"] = now_iso
+                    doc_to_save["stored_at"] = format_to_ist_str(existing_doc.get("stored_at", now_ist_str))
+                    doc_to_save["stored_date"] = existing_doc.get("stored_date", now_ist_date)
+                    doc_to_save["updated_at"] = now_ist_str
+                    doc_to_save["updated_date"] = now_ist_date
                     collection.replace_one({"_id": mongo_id}, doc_to_save, upsert=True)
                     str_id = str(existing_id)
                     logger.info(
-                        f"Invoice '{clean_inv}' for vendor '{clean_vendor or 'Unknown'}' updated in MongoDB with ID {str_id}."
+                        f"Invoice '{clean_inv}' for vendor '{clean_vendor or 'Unknown'}' updated in MongoDB with ID {str_id} at {now_ist_str} IST."
                     )
                     if isinstance(response_payload, dict):
                         response_payload["is_duplicate"] = True
@@ -293,10 +332,13 @@ def save_extraction_to_mongodb(
             doc_to_save["file_hash"] = resolved_hash
         if resolved_name:
             doc_to_save["file_name"] = resolved_name
-        doc_to_save["stored_at"] = now_iso
+        doc_to_save["stored_at"] = now_ist_str
+        doc_to_save["stored_date"] = now_ist_date
+        doc_to_save["updated_at"] = now_ist_str
+        doc_to_save["updated_date"] = now_ist_date
         insert_result = collection.insert_one(doc_to_save)
         doc_id = str(insert_result.inserted_id)
-        logger.info(f"Receipt extraction stored in MongoDB with ID: {doc_id}")
+        logger.info(f"Receipt extraction stored in MongoDB with ID: {doc_id} at {now_ist_str} IST")
         if isinstance(response_payload, dict):
             response_payload["is_duplicate"] = False
             response_payload["document_id"] = doc_id
