@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     GROQ_MODEL: str = "openai/gpt-oss-120b"
     GROQ_FALLBACK_API_KEY: str = ""
     GROQ_FALLBACK_MODEL: str = "openai/gpt-oss-20b"
+    GROQ_CHAT_MODEL: str = "openai/gpt-oss-20b"
     GROQ_API_KEYS: str = ""  # Comma-separated list of Groq API keys
     GROQ_FALLBACK_API_KEYS: str = ""  # Comma-separated list of fallback Groq API keys
     GROQ_TIMEOUT_SECONDS: float = 60.0

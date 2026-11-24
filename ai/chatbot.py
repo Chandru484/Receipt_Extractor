@@ -94,7 +94,8 @@ def ask_chatbot(request: ChatRequest) -> ChatResponse:
     chatbot_success = False
 
     for idx, key in enumerate(all_keys):
-        model = settings.GROQ_MODEL if idx == 0 else (settings.GROQ_FALLBACK_MODEL or settings.GROQ_MODEL or "openai/gpt-oss-20b")
+        chat_model = getattr(settings, "GROQ_CHAT_MODEL", None) or settings.GROQ_MODEL or "openai/gpt-oss-20b"
+        model = chat_model if idx == 0 else (settings.GROQ_FALLBACK_MODEL or "openai/gpt-oss-20b")
         try:
             client = get_groq_client(api_key=key)
             response = client.chat.completions.create(
