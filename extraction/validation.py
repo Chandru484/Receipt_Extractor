@@ -632,11 +632,12 @@ def reconcile_missing_ocr_items(receipt: ReceiptData, ocr_text: str) -> None:
                     dis_val = float(m2.group(5))
                     dis2 = f"{dis_val:.2f}%" if dis_val <= 100.0 else None
                     amt2 = float(m2.group(6).replace(",", ""))
+                    iname2 = m2.group(2).strip()
                     if sl2 not in existing_sl_nos:
                         new_item = ReceiptItem(
                             page=p_num,
                             sl_no=sl2,
-                            item_name=m2.group(2).strip(),
+                            item_name=iname2,
                             quantity=q2,
                             unit_price=r2,
                             discount_percent=dis2,
@@ -649,6 +650,10 @@ def reconcile_missing_ocr_items(receipt: ReceiptData, ocr_text: str) -> None:
                         # Reconcile existing item against OCR truth to resolve packaging label confusion (e.g. 'Rs 20/-' in item name)
                         for it in receipt.items:
                             if it.sl_no and re.sub(r"[^\d]", "", str(it.sl_no)) == sl2:
+                                if iname2:
+                                    curr_name = (it.item_name or "").strip()
+                                    if not curr_name or len(iname2) > len(curr_name) or any(w in iname2 for w in ["/-", "Rs", "pcs", "Jar"]):
+                                        it.item_name = iname2
                                 if it.quantity != q2 or it.unit_price != r2:
                                     it.quantity = q2
                                     it.unit_price = r2

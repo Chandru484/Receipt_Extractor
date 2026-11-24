@@ -409,12 +409,14 @@ Ph : 8553747352,0431-4000020
     assert val_receipt.vendor_name == "SSS STATIONERY"
     assert val_receipt.customer_name == "Lucky Store"
 
-    # 2. Item 7 quantity and rate fixed
+    # 2. Item 7 quantity and rate fixed, and full product names retained from OCR
+    assert val_receipt.items[0].item_name == "Nova Grip Jar Rs 7/-"
     assert val_receipt.items[1].quantity == 2.0
     assert val_receipt.items[1].unit_price == 180.0
     assert val_receipt.items[1].total_price == 360.0
 
-    # 3. Item 27 quantity and rate fixed
+    # 3. Item 27 quantity, rate, and name fixed
+    assert val_receipt.items[2].item_name == "C3 Colour Pencil 20/-"
     assert val_receipt.items[2].quantity == 1.0
     assert val_receipt.items[2].unit_price == 145.0
     assert val_receipt.items[2].total_price == 145.0
@@ -721,6 +723,77 @@ SGST VALUE 1608.34 289.29 NETT AMOUNT 90536.00
     assert "Grand Total : ₹90536.00" in disp
     assert "Rate : 2.5%" in disp
     assert "Rate : 6%" in disp
+
+
+def test_stationery_full_product_name_preservation():
+    ocr_text = """
+Estimate / Quotation
+SSS STATIONERY
+No : 68104 Date : 21-05-2025
+Lucky Store Page No : 1
+S.No Particulars Qty Rate Dis% Amount
+1 Nova Grip Jar Rs 7/- 2.00 200.00 0.00 400.00
+2 Reynold Brite Jar Rs 125/- (25pcs) 1.00 100.00 0.00 100.01
+3 Stylish X3 Jar 75pcs Rs 7/- 1.00 360.00 0.00 360.00
+4 Paras 6G 50p Jar 5/- 1.00 125.00 0.00 125.00
+5 Snappy Jar Rs 7/- 1.00 108.00 0.00 108.01
+6 Reynods Pen Rs 10/- 1.00 300.00 0.00 300.00
+7 Barfi Topper Jar 2.00 180.00 0.00 360.00
+8 Nataraj Eraser Jar Rs 1/- 1.00 80.00 0.00 79.99
+9 Fevigum 18ml Jar (25pcs) Rs 5/- 3.00 105.00 0.00 315.01
+10 Camlin Water Colour Rs 30/- 20.00 22.00 0.00 440.00
+11 Cam Water Colour Rs 20/- 20.00 15.00 0.00 300.00
+12 Cam Water Colour Rs 60/- 5.00 47.00 0.00 235.00
+13 Cam Water Colour Rs 70/- 3.00 55.00 0.00 164.99
+14 Camlin Water Colour Rs 35/- 5.00 26.00 0.00 130.01
+15 Camlin WaterColour 24's Rs 110/- 1.00 88.00 0.00 88.00
+16 Apsara Platinum Kit Rs 25/- 20.00 19.00 0.00 380.00
+17 FlexKwik Rs 60/- 10.00 45.50 0.00 454.99
+18 743 Anabond Rs 75/- 10.00 29.50 0.00 295.00
+19 Nataraj Colour Pencil Rs 30/- 20.00 22.00 0.00 440.00
+20 Ko Colour Pencil 12s 25/- 20.00 17.50 0.00 350.00
+21 Ko Colourpencil 10s 15/- 20.00 105.00 0.00 2100.00
+22 C3 Color Pencil Rs 40/- 10.00 28.00 0.00 280.01
+23 Ko Crayons 13s 35/- 10.00 26.00 0.00 260.00
+24 Kores Crayons Rs 15/- 30.00 10.50 0.00 315.01
+25 Ko Oil Pastel 12s 50/- 10.00 35.00 0.00 350.00
+26 C3 10-Colour Pencil Rs 12/- 3.00 80.00 0.00 240.00
+Gross 8738.00
+"""
+    # Simulate LLM stripping packaging labels like 'Rs 7/-' or '(25pcs)'
+    raw = ReceiptData(
+        seller_name="SSS STATIONERY",
+        buyer_name="Lucky Store",
+        items=[
+            ReceiptItem(page=1, sl_no="1", item_name="Nova Grip Jar", quantity=2.0, unit_price="200.00", total_price="400.00"),
+            ReceiptItem(page=1, sl_no="2", item_name="Reynold Brite Jar", quantity=1.0, unit_price="100.00", total_price="100.01"),
+            ReceiptItem(page=1, sl_no="11", item_name="Cam Water Colour", quantity=20.0, unit_price="15.00", total_price="300.00"),
+            ReceiptItem(page=1, sl_no="12", item_name="Cam Water Colour", quantity=5.0, unit_price="47.00", total_price="235.00"),
+            ReceiptItem(page=1, sl_no="13", item_name="Cam Water Colour", quantity=3.0, unit_price="55.00", total_price="164.99"),
+        ]
+    )
+
+    val_receipt, _ = validate_and_reconcile_receipt(raw, ocr_text)
+
+    # All 26 items must be present
+    assert len(val_receipt.items) == 26
+
+    # Packaging labels must be preserved in full
+    items_by_sl = {it.sl_no: it.item_name for it in val_receipt.items}
+    assert items_by_sl["1"] == "Nova Grip Jar Rs 7/-"
+    assert items_by_sl["2"] == "Reynold Brite Jar Rs 125/- (25pcs)"
+    assert items_by_sl["3"] == "Stylish X3 Jar 75pcs Rs 7/-"
+    assert items_by_sl["4"] == "Paras 6G 50p Jar 5/-"
+    assert items_by_sl["10"] == "Camlin Water Colour Rs 30/-"
+    assert items_by_sl["11"] == "Cam Water Colour Rs 20/-"
+    assert items_by_sl["12"] == "Cam Water Colour Rs 60/-"
+    assert items_by_sl["13"] == "Cam Water Colour Rs 70/-"
+    assert items_by_sl["15"] == "Camlin WaterColour 24's Rs 110/-"
+    assert items_by_sl["16"] == "Apsara Platinum Kit Rs 25/-"
+    assert items_by_sl["20"] == "Ko Colour Pencil 12s 25/-"
+    assert items_by_sl["24"] == "Kores Crayons Rs 15/-"
+    assert items_by_sl["26"] == "C3 10-Colour Pencil Rs 12/-"
+
 
 
 

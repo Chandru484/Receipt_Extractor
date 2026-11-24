@@ -147,7 +147,9 @@ CRITICAL RULES:
 12. MULTI-PAGE & COMPLETE ITEM EXTRACTION:
    - Extract EVERY SINGLE product / line item from ALL pages without omitting or truncating any rows.
    - Items immediately preceding "Continue..." or page boundaries (e.g. items 16, 17) MUST NOT be skipped.
-   - In stationery/retail tables with product package labels like "Rs 20/-", "80/-", "120/-" in product names, extract the actual table columns: Qty is the quantity column, Rate is the rate column.
+   - In stationery/retail tables with product package labels like "Rs 7/-", "Rs 20/-", "Rs 125/- (25pcs)", "5/-" in product names:
+     * Keep the FULL product name including the packaging/MRP labels (e.g. "Nova Grip Jar Rs 7/-", "Reynold Brite Jar Rs 125/- (25pcs)", "Cam Water Colour Rs 20/-", "Cam Water Colour Rs 60/-", "Ko Colour Pencil 12s 25/-"). Do NOT strip, omit, or remove "Rs .../-", "5/-", or "(...pcs)" from item_name!
+     * Extract the actual table columns: Qty is the quantity column, Rate is the rate column.
    - Tag each item with its 1-indexed integer 'page' number (e.g. 1, 2).
 12b. FMCG / AGENCY / WHOLESALE TABLE FORMATS:
    - Column layout: SNO | HSN | ITEM NAME | MRP | UNIT | TOT.PCS | RATE | BASIC AMT | DIS % | DIS AMT | GST % | GST Amt | NETAMT
