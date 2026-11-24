@@ -19,7 +19,7 @@ class ChatbotSettings(BaseSettings):
 
     # Dedicated Chatbot AI Keys (Isolated from host applications)
     CHATBOT_GROQ_API_KEYS: str = Field(default="", description="Comma-separated Groq API keys for key rotation")
-    CHATBOT_GROQ_MODEL: str = "llama-3.3-70b-versatile"
+    CHATBOT_GROQ_MODEL: str = "openai/gpt-oss-120b"
     CHATBOT_GROQ_TIMEOUT: float = 45.0
     CHATBOT_GROQ_MAX_RETRIES: int = 2
 

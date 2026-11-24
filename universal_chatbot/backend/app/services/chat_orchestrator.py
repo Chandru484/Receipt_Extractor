@@ -1,3 +1,4 @@
+import json
 import logging
 import re
 from typing import Any, Dict, List, Optional
@@ -15,6 +16,8 @@ from universal_chatbot.backend.app.services.conversation_service import (
     save_message_interaction,
     record_support_handoff,
 )
+from universal_chatbot.backend.app.services.rag_service import rag_service
+from universal_chatbot.backend.app.application_adapters.mongodb_adapter import app_mongo_adapter
 
 logger = logging.getLogger(__name__)
 
@@ -24,19 +27,25 @@ HUMAN_SUPPORT_KEYWORDS = [
 ]
 
 
-def _build_system_prompt(bot_name: str, language: str) -> str:
+def _build_system_prompt(bot_name: str, language: str, context_blocks: List[str]) -> str:
+    context_str = "\n\n".join(context_blocks) if context_blocks else ""
+
     if language == "ta":
-        return f"""நீங்கள் '{bot_name}' என்ற அதிகாரப்பூர்வ AI உதவியாளர்.
+        base_prompt = f"""நீங்கள் '{bot_name}' என்ற அதிகாரப்பூர்வ AI உதவியாளர்.
 பயனரின் கேள்விகளுக்குத் தெளிவான, சுருக்கமான, கண்ணியமான மற்றும் துல்லியமான தமிழில் பதிலளிக்கவும்.
 பயனர் தமிழில் கேட்டால் கட்டாயமாக தமிழிலேயே பதிலளிக்கவும்.
-விடை தெரியாத விஷயங்களுக்கு தவறான தகவல்களை உருவாக்க வேண்டாம்.
-தேவைப்பட்டால் மனித உதவியாளரை அணுக பரிந்துரைக்கவும்."""
+விடை தெரியாத விஷயங்களுக்கு தவறான தகவல்களை உருவாக்க வேண்டாம்."""
+        if context_str:
+            base_prompt += f"""\n\nபின்வரும் அங்கீகரிக்கப்பட்ட தகவல் மற்றும் ஆவணங்களின் அடிப்படையில் பதிலளிக்கவும்:\n{context_str}"""
     else:
-        return f"""You are '{bot_name}', the official AI conversational assistant.
+        base_prompt = f"""You are '{bot_name}', the official AI conversational assistant.
 Provide helpful, concise, professional, and accurate answers to the user's questions.
 If the user asks in English, respond in clear English.
-If you do not know the answer based on authorized information, politely state so without hallucinating.
-Offer human support assistance whenever appropriate."""
+If you do not know the answer based on authorized information, politely state so without hallucinating."""
+        if context_str:
+            base_prompt += f"""\n\nBase your answers on the following authorized knowledge and business records:\n{context_str}"""
+
+    return base_prompt
 
 
 class ChatOrchestrator:
@@ -50,11 +59,10 @@ class ChatOrchestrator:
         # 1. Resolve website configuration & tenant
         site = get_website_by_id(request.website_id)
         if not site:
-            # Fallback mock for demo/sandbox if site not registered yet
             site = {
                 "website_id": request.website_id,
                 "tenant_id": "ten_default",
-                "name": "Default Platform Assistant",
+                "name": "Universal Assistant",
                 "widget_config": {
                     "bot_name": "Universal Assistant",
                     "enable_tawk_to": True,
@@ -106,12 +114,62 @@ class ChatOrchestrator:
         )
         active_conv_id = conv["conversation_id"]
 
-        # 4. Load past context history (up to last 10 messages)
+        # 4. Context Retrieval (RAG + Application Database)
+        context_blocks: List[str] = []
+        citations: List[SourceCitation] = []
+        response_source = "general"
+
+        # 4a. RAG Chunks (Website knowledge + User uploaded docs)
+        relevant_chunks = rag_service.retrieve_relevant_chunks(
+            tenant_id=tenant_id,
+            website_id=request.website_id,
+            query=request.message,
+            conversation_id=active_conv_id,
+            session_id=request.session_id,
+            top_k=3,
+        )
+        if relevant_chunks:
+            is_user_doc = any(c.get("is_user_document") for c in relevant_chunks)
+            response_source = "user_document" if is_user_doc else "website_knowledge"
+            rag_texts = []
+            for c in relevant_chunks:
+                source_label = f"Uploaded Document: {c['source_name']}" if c.get("is_user_document") else f"Knowledge: {c['source_name']}"
+                rag_texts.append(f"[{source_label}]\n{c['content']}")
+                citations.append(
+                    SourceCitation(
+                        source_type="document" if c.get("is_user_document") else "website",
+                        title=c["source_name"],
+                        snippet=c["content"][:150] + "...",
+                    )
+                )
+            context_blocks.append("--- RELEVANT KNOWLEDGE & DOCUMENT EXCERPTS ---\n" + "\n\n".join(rag_texts))
+
+        # 4b. Application Database Search (e.g. Receipt Extractor DB or App DB)
+        app_data = app_mongo_adapter.query_application_data(
+            website_id=request.website_id,
+            user_query=request.message,
+            user_id=verified_user_id,
+        )
+        if app_data and app_data.get("records"):
+            response_source = "app_database"
+            db_summary = json.dumps(app_data["records"], indent=2, default=str)
+            context_blocks.append(
+                f"--- APPLICATION DATABASE RECORDS ({app_data['collection']}) ---\n{db_summary}"
+            )
+            citations.append(
+                SourceCitation(
+                    source_type="database",
+                    title=f"Application DB ({app_data['collection']})",
+                    snippet=f"Retrieved {app_data['record_count']} matching records.",
+                )
+            )
+
+        # 5. Load past context history (up to last 10 messages)
         history = get_conversation_history(active_conv_id, limit=10)
         history.append({"role": "user", "content": request.message})
 
-        # 5. Build prompt & call MultiProvider AI Engine
-        system_prompt = _build_system_prompt(bot_name, request.language)
+        # 6. Build prompt & call MultiProvider AI Engine
+        system_prompt = _build_system_prompt(bot_name, request.language, context_blocks)
         ai_res = ai_engine.generate_chat_response(
             messages=history,
             system_prompt=system_prompt,
@@ -120,7 +178,7 @@ class ChatOrchestrator:
 
         bot_reply = ai_res.get("reply", "")
 
-        # 6. Save message interaction into MongoDB
+        # 7. Save message interaction into MongoDB
         msg_id = save_message_interaction(
             conversation_id=active_conv_id,
             website_id=request.website_id,
@@ -128,12 +186,13 @@ class ChatOrchestrator:
             user_message=request.message,
             bot_reply=bot_reply,
             language=request.language,
-            source="general",
+            source=response_source,
             meta={
                 "provider": ai_res.get("provider"),
                 "model": ai_res.get("model"),
                 "latency": ai_res.get("latency"),
                 "tokens": ai_res.get("tokens_used"),
+                "citation_count": len(citations),
             },
         )
 
@@ -142,8 +201,8 @@ class ChatOrchestrator:
             message_id=msg_id,
             reply=bot_reply,
             language=request.language,
-            source="general",
-            citations=[],
+            source=response_source,
+            citations=citations,
             escalate_to_human=False,
             created_at=get_ist_now_str(),
         )

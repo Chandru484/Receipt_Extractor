@@ -11,6 +11,7 @@ from universal_chatbot.backend.app.database.mongodb import check_mongo_health
 from universal_chatbot.backend.app.database.indexes import ensure_indexes
 from universal_chatbot.backend.app.api.v1.chat_routes import router as chat_router
 from universal_chatbot.backend.app.api.v1.admin_routes import router as admin_router
+from universal_chatbot.backend.app.api.v1.document_routes import router as document_router
 
 
 @asynccontextmanager
@@ -44,6 +45,7 @@ app.add_middleware(
 # API v1 routers
 app.include_router(chat_router, prefix="/api/v1")
 app.include_router(admin_router, prefix="/api/v1")
+app.include_router(document_router, prefix="/api/v1")
 
 
 @app.get("/health", summary="Platform Health Check")

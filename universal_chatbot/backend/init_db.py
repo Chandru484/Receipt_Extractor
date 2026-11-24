@@ -69,6 +69,29 @@ def initialize_database():
     )
     print("✅ Created collection 'websites' and stored default website 'site_demo'.")
 
+    # 4b. Create 'app_connections' collection and link host Receipt Extractor DB
+    app_conn_col = db["app_connections"]
+    app_conn_col.replace_one(
+        {"website_id": "site_demo"},
+        {
+            "website_id": "site_demo",
+            "tenant_id": "ten_default",
+            "app_name": "Receipt Extractor App",
+            "db_type": "mongodb",
+            "target_uri": chatbot_settings.CHATBOT_MONGODB_URI,
+            "target_db": "receipt_db",
+            "allowed_collection": "Receipt_Extraction",
+            "allowed_fields": [
+                "invoice_number", "vendor_name", "date", "category",
+                "total_amount", "currency", "buyer_name", "items"
+            ],
+            "status": "active",
+            "created_at": now_ist,
+        },
+        upsert=True
+    )
+    print("✅ Created collection 'app_connections' and linked receipt_db.Receipt_Extraction.")
+
     # 5. Build indexes on database 'mongodb'
     from universal_chatbot.backend.app.database.indexes import ensure_indexes
     ensure_indexes()
