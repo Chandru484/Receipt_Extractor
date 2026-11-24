@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile, status, Request
 from starlette.concurrency import run_in_threadpool
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from ai.chatbot import ask_chatbot
@@ -42,6 +42,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Integrate Universal AI Chatbot Platform routers
+try:
+    from universal_chatbot.backend.app.api.v1.chat_routes import router as chatbot_chat_router
+    from universal_chatbot.backend.app.api.v1.document_routes import router as chatbot_doc_router
+    from universal_chatbot.backend.app.api.v1.admin_routes import router as chatbot_admin_router
+
+    app.include_router(chatbot_chat_router, prefix="/api/v1")
+    app.include_router(chatbot_doc_router, prefix="/api/v1")
+    app.include_router(chatbot_admin_router, prefix="/api/v1")
+except Exception as _cb_err:
+    print(f"Warning: Universal Chatbot routers could not be loaded into app: {_cb_err}", flush=True)
+
 
 @app.middleware("http")
 async def measure_and_display_response_time(request: Request, call_next):
@@ -71,11 +83,35 @@ async def measure_and_display_response_time(request: Request, call_next):
     return response
 
 
-@app.get("/", summary="Root status")
-async def root():
+UI_PATH = Path(__file__).resolve().parent / "ui.html"
+WIDGET_PATH = Path(__file__).resolve().parent / "universal_chatbot" / "widget" / "widget.js"
+
+
+@app.get("/widget.js", include_in_schema=False)
+async def serve_chatbot_widget():
+    """Serve the embeddable Universal AI Chatbot script directly from this server."""
+    if WIDGET_PATH.exists():
+        return FileResponse(WIDGET_PATH, media_type="application/javascript")
+    return JSONResponse(status_code=404, content={"detail": "Widget script not found"})
+
+
+@app.get("/", summary="Root status and Web UI")
+async def root(request: Request):
+    accept = request.headers.get("accept", "")
+    if "text/html" in accept and UI_PATH.exists():
+        return FileResponse(UI_PATH, media_type="text/html")
     return {
         "message": "Receipt Extraction API is running"
     }
+
+
+@app.get("/ui", response_class=HTMLResponse, include_in_schema=False)
+@app.get("/dashboard", response_class=HTMLResponse, include_in_schema=False)
+async def serve_web_ui():
+    """Serve the Receipt Extractor Web Dashboard with embedded Chatbot."""
+    if UI_PATH.exists():
+        return FileResponse(UI_PATH, media_type="text/html")
+    return HTMLResponse("<h1>Receipt Extractor UI</h1>", status_code=200)
 
 
 @app.get("/health", summary="Health check")

@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Receipt & Invoice Extractor — AI Platform</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧾</text></svg>">
+  <style>
+    :root {
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --success: #10b981;
+      --bg: #f8fafc;
+      --card-bg: #ffffff;
+      --text: #0f172a;
+      --text-muted: #64748b;
+      --border: #e2e8f0;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background: var(--bg); color: var(--text); padding-bottom: 60px; }
+    
+    /* Navbar */
+    .navbar {
+      background: #ffffff;
+      border-bottom: 1px solid var(--border);
+      padding: 16px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 50;
+    }
+    .brand { display: flex; align-items: center; gap: 12px; font-weight: 700; font-size: 18px; color: #1e3a8a; }
+    .brand span { font-size: 24px; }
+    .nav-links { display: flex; gap: 16px; align-items: center; }
+    .nav-links a { color: var(--text-muted); text-decoration: none; font-size: 14px; font-weight: 500; transition: color 0.2s; }
+    .nav-links a:hover { color: var(--primary); }
+    .badge-pill { background: #dbeafe; color: #1e40af; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+
+    /* Container */
+    .container { max-width: 1100px; margin: 32px auto; padding: 0 20px; }
+    .hero { text-align: center; margin-bottom: 32px; }
+    .hero h1 { font-size: 28px; color: #0f172a; margin-bottom: 8px; font-weight: 800; }
+    .hero p { color: var(--text-muted); font-size: 15px; }
+
+    /* Upload Card */
+    .card { background: var(--card-bg); border-radius: 12px; border: 1px solid var(--border); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); padding: 24px; margin-bottom: 24px; }
+    .drop-zone {
+      border: 2px dashed #94a3b8;
+      border-radius: 10px;
+      padding: 40px 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      background: #f8fafc;
+    }
+    .drop-zone:hover, .drop-zone.dragover { border-color: var(--primary); background: #eff6ff; }
+    .drop-icon { font-size: 40px; margin-bottom: 8px; }
+    .drop-title { font-weight: 600; font-size: 16px; color: #1e293b; margin-bottom: 4px; }
+    .drop-sub { font-size: 13px; color: var(--text-muted); }
+    
+    .btn-submit {
+      margin-top: 16px;
+      width: 100%;
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 12px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+    .btn-submit:hover { background: var(--primary-hover); }
+    .btn-submit:disabled { background: #94a3b8; cursor: not-allowed; }
+
+    /* Results */
+    .results-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-top: 20px; }
+    .metric-card { background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
+    .metric-title { font-size: 12px; color: var(--text-muted); text-transform: uppercase; font-weight: 600; }
+    .metric-val { font-size: 18px; font-weight: 700; color: #0f172a; margin-top: 4px; word-break: break-all; }
+    
+    .items-table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 13.5px; }
+    .items-table th, .items-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); text-align: left; }
+    .items-table th { background: #f1f5f9; font-weight: 600; color: #334155; }
+    
+    pre { background: #0f172a; color: #f8fafc; padding: 16px; border-radius: 8px; overflow-x: auto; font-size: 12.5px; margin-top: 16px; }
+    .loading-spinner { display: inline-block; width: 18px; height: 18px; border: 2px solid rgba(255,255,255,0.3); border-radius: 50%; border-top-color: #fff; animation: spin 0.8s ease-in-out infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Stored receipts */
+    .receipts-list { margin-top: 16px; }
+    .receipt-item { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+    .receipt-item:hover { background: #f8fafc; }
+  </style>
+</head>
+<body>
+
+  <!-- Top Navigation -->
+  <nav class="navbar">
+    <div class="brand">
+      <span>🧾</span> Receipt Extractor API
+    </div>
+    <div class="nav-links">
+      <span class="badge-pill">PaddleOCR 3.x + Groq LLM + MongoDB</span>
+      <a href="/docs" target="_blank">Swagger Docs</a>
+      <a href="/receipts" target="_blank">Stored JSON</a>
+      <a href="/health" target="_blank">Health</a>
+    </div>
+  </nav>
+
+  <div class="container">
+    <div class="hero">
+      <h1>AI Receipt & Invoice Extraction</h1>
+      <p>High-precision entity recognition for invoices, cash bills, retail receipts, and thermal slips.</p>
+    </div>
+
+    <!-- Upload Box -->
+    <div class="card">
+      <div class="drop-zone" id="dropZone">
+        <div class="drop-icon">📤</div>
+        <div class="drop-title" id="dropTitle">Drag & Drop receipt PDF or image here</div>
+        <div class="drop-sub">Supported formats: PDF, PNG, JPG, JPEG, WEBP, TIFF (Max 15MB)</div>
+        <input type="file" id="fileInput" accept=".pdf,.png,.jpg,.jpeg,.webp,.tiff" style="display:none;" />
+      </div>
+
+      <button class="btn-submit" id="extractBtn" disabled>
+        <span>Extract Receipt Data</span>
+      </button>
+    </div>
+
+    <!-- Output Section -->
+    <div class="card" id="outputCard" style="display:none;">
+      <h2 style="font-size: 18px; margin-bottom: 16px;">📊 Extracted Receipt Information</h2>
+      
+      <div class="results-grid" id="metricsGrid"></div>
+
+      <h3 style="font-size: 15px; margin-top: 24px; margin-bottom: 8px;">🛒 Line Items</h3>
+      <div style="overflow-x: auto;">
+        <table class="items-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Description</th>
+              <th>HSN/SAC</th>
+              <th>Qty</th>
+              <th>Unit Price</th>
+              <th>GST Rate</th>
+              <th>Total</th>
+            </tr>
+          </thead>
+          <tbody id="itemsTableBody"></tbody>
+        </table>
+      </div>
+
+      <h3 style="font-size: 15px; margin-top: 24px; margin-bottom: 8px;">📑 Formatted Summary</h3>
+      <pre id="formattedDisplay"></pre>
+    </div>
+  </div>
+
+  <!-- Client-side Logic -->
+  <script>
+    const dropZone = document.getElementById("dropZone");
+    const fileInput = document.getElementById("fileInput");
+    const dropTitle = document.getElementById("dropTitle");
+    const extractBtn = document.getElementById("extractBtn");
+    const outputCard = document.getElementById("outputCard");
+    const metricsGrid = document.getElementById("metricsGrid");
+    const itemsTableBody = document.getElementById("itemsTableBody");
+    const formattedDisplay = document.getElementById("formattedDisplay");
+
+    let selectedFile = null;
+
+    dropZone.onclick = () => fileInput.click();
+    fileInput.onchange = (e) => handleFile(e.target.files[0]);
+
+    dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add("dragover"); };
+    dropZone.ondragleave = () => dropZone.classList.remove("dragover");
+    dropZone.ondrop = (e) => {
+      e.preventDefault();
+      dropZone.classList.remove("dragover");
+      if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+    };
+
+    function handleFile(file) {
+      if (!file) return;
+      selectedFile = file;
+      dropTitle.textContent = `Selected: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+      extractBtn.disabled = false;
+    }
+
+    extractBtn.onclick = async () => {
+      if (!selectedFile) return;
+
+      extractBtn.disabled = true;
+      extractBtn.innerHTML = '<span class="loading-spinner"></span> Extracting with OCR & LLM...';
+
+      const formData = new FormData();
+      formData.append("file", selectedFile);
+
+      try {
+        const res = await fetch("/extract", {
+          method: "POST",
+          body: formData
+        });
+        const data = await res.json();
+
+        extractBtn.disabled = false;
+        extractBtn.innerHTML = '<span>Extract Receipt Data</span>';
+
+        if (!res.ok) {
+          alert(`Extraction Error: ${data.detail || "Failed to process receipt"}`);
+          return;
+        }
+
+        renderOutput(data);
+      } catch (err) {
+        extractBtn.disabled = false;
+        extractBtn.innerHTML = '<span>Extract Receipt Data</span>';
+        alert(`Network Error: ${err.message}`);
+      }
+    };
+
+    function renderOutput(result) {
+      outputCard.style.display = "block";
+      const rec = result.data || {};
+
+      metricsGrid.innerHTML = `
+        <div class="metric-card">
+          <div class="metric-title">Vendor / Seller</div>
+          <div class="metric-val">${rec.vendor_name || rec.seller || "N/A"}</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-title">Invoice Number</div>
+          <div class="metric-val">${rec.invoice_number || "N/A"}</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-title">Date</div>
+          <div class="metric-val">${rec.invoice_date || rec.date || "N/A"}</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-title">Grand Total</div>
+          <div class="metric-val" style="color:#2563eb;">${rec.currency || "₹"} ${rec.grand_total || rec.total_amount || "0.00"}</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-title">Customer / Buyer</div>
+          <div class="metric-val">${rec.buyer || rec.customer_name || "N/A"}</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-title">Payment Mode</div>
+          <div class="metric-val">${rec.payment_mode || "N/A"}</div>
+        </div>
+      `;
+
+      itemsTableBody.innerHTML = "";
+      const items = rec.items || [];
+      if (items.length === 0) {
+        itemsTableBody.innerHTML = `<tr><td colspan="7" style="text-align:center; color:#94a3b8;">No individual line items parsed</td></tr>`;
+      } else {
+        items.forEach((it, idx) => {
+          itemsTableBody.innerHTML += `
+            <tr>
+              <td>${it.sl_no || (idx + 1)}</td>
+              <td><strong>${it.item_name || "Item"}</strong></td>
+              <td>${it.hsn_sac || "-"}</td>
+              <td>${it.quantity || "1"} ${it.uom || ""}</td>
+              <td>${it.unit_price ? "₹ " + it.unit_price : "-"}</td>
+              <td>${it.gst_rate || "-"}</td>
+              <td><strong>${it.total_price ? "₹ " + it.total_price : "-"}</strong></td>
+            </tr>
+          `;
+        });
+      }
+
+      formattedDisplay.textContent = result.formatted_display || JSON.stringify(result, null, 2);
+      outputCard.scrollIntoView({ behavior: "smooth" });
+    }
+  </script>
+
+  <!-- ======================================================== -->
+  <!-- 🤖 EMBEDDED UNIVERSAL AI CHATBOT PLATFORM WIDGET        -->
+  <!-- ======================================================== -->
+  <script
+    src="/widget.js"
+    data-website-id="site_demo"
+    async>
+  </script>
+
+</body>
+</html>
