@@ -52,7 +52,14 @@ def sanitize_text_for_speech(text: str, language: str = "en") -> str:
     cleaned = re.sub(r"^\s*\d+\.\s+", "", cleaned, flags=re.MULTILINE)
 
     if language == "ta":
-        # Expand common symbols to spoken Tamil
+        # Strip .00 from numbers so TTS does not pronounce "புள்ளி பூஜ்ஜியம் பூஜ்ஜியம்"
+        cleaned = re.sub(r"(\d+)\.00\b", r"\1", cleaned)
+
+        # Smooth out bookish suffixes into natural spoken Tamil
+        cleaned = re.sub(r"\bஆகும்\b", "", cleaned)
+        cleaned = re.sub(r"\bஆவார்\b", "", cleaned)
+
+        # Expand common symbols to spoken conversational Tamil
         cleaned = cleaned.replace("₹", " ரூபாய் ")
         cleaned = cleaned.replace("Rs.", " ரூபாய் ")
         cleaned = cleaned.replace("Rs", " ரூபாய் ")
@@ -63,7 +70,7 @@ def sanitize_text_for_speech(text: str, language: str = "en") -> str:
         cleaned = cleaned.replace("Invoice No", " இன்வாய்ஸ் எண் ")
         cleaned = cleaned.replace("Bill No", " பில் எண் ")
         cleaned = cleaned.replace("Date:", " தேதி ")
-        cleaned = cleaned.replace("Total", " மொத்தம் ")
+        cleaned = cleaned.replace("Total", " மொத்தத் தொகை ")
         cleaned = cleaned.replace("Nos", " எண்ணிக்கை ")
         cleaned = cleaned.replace("MTR", " மீட்டர் ")
         cleaned = cleaned.replace("Qty", " அளவு ")
@@ -112,7 +119,9 @@ async def generate_speech_stream(
     if not selected_voice:
         selected_voice = DEFAULT_VOICES.get(language, DEFAULT_VOICES["en"])
 
-    communicate = edge_tts.Communicate(clean_text, selected_voice)
+    # Natural conversational pacing (+4% rate removes robotic drag for Tamil neural voice)
+    rate_param = "+4%" if language == "ta" else "+0%"
+    communicate = edge_tts.Communicate(clean_text, selected_voice, rate=rate_param)
     async for chunk in communicate.stream():
         if chunk["type"] == "audio":
             yield chunk["data"]

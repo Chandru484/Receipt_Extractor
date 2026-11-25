@@ -15,8 +15,8 @@
   let widgetConfig = {
     bot_name: "Universal Assistant",
     primary_color: "#2563eb",
-    welcome_message_en: "வணக்கம்! இன்று நான் உங்களுக்கு என்ன உதவ வேண்டும்?",
-    welcome_message_ta: "வணக்கம்! இன்று நான் உங்களுக்கு என்ன உதவ வேண்டும்?",
+    welcome_message_en: "வணக்கம்! நான் உங்களுக்கு எப்படி உதவலாம்?",
+    welcome_message_ta: "வணக்கம்! நான் உங்களுக்கு எப்படி உதவலாம்?",
     available_languages: ["ta"],
     allow_file_uploads: true,
     allow_voice_input: true,
@@ -145,7 +145,7 @@
   const callPulseDot = shadow.getElementById("callPulseDot");
 
   // Render initial welcome message immediately so it is available before async fetches
-  appendMessage("bot", widgetConfig.welcome_message_ta || "வணக்கம்! இன்று நான் உங்களுக்கு என்ன உதவ வேண்டும்?");
+  appendMessage("bot", widgetConfig.welcome_message_ta || "வணக்கம்! நான் உங்களுக்கு எப்படி உதவலாம்?");
 
   // Fetch website config
   fetch(`${apiBase}/api/v1/chat/widget-config/${websiteId}`)
@@ -177,7 +177,7 @@
     if (welcomeSpoken) return;
     welcomeSpoken = true;
     unlockAudioPlayback();
-    const welcomeVoiceText = "வணக்கம்! இன்று நான் உங்களுக்கு என்ன உதவ வேண்டும்?";
+    const welcomeVoiceText = "வணக்கம்! நான் உங்களுக்கு எப்படி உதவலாம்?";
     const firstSpeakBtn = msgList.querySelector(".speak-btn");
     playSpeech(welcomeVoiceText, "ta", firstSpeakBtn, () => {
       if (isCallModeActive) {
