@@ -1,9 +1,11 @@
 (function () {
   "use strict";
 
-  // Find host script tag and extract parameters
-  const currentScript = document.currentScript || document.querySelector("script[data-website-id]");
-  const websiteId = currentScript ? currentScript.getAttribute("data-website-id") : "site_demo";
+  // Find host script tag and extract parameters (supports website-id, project-id, role, user-id)
+  const currentScript = document.currentScript || document.querySelector("script[data-website-id], script[data-project-id]");
+  const websiteId = currentScript ? (currentScript.getAttribute("data-project-id") || currentScript.getAttribute("data-website-id") || "site_demo") : "site_demo";
+  const candidateRole = (currentScript ? (currentScript.getAttribute("data-role") || "user") : "user").toLowerCase();
+  const candidateId = currentScript ? (currentScript.getAttribute("data-user-id") || currentScript.getAttribute("data-candidate-id")) : null;
   const apiBase = currentScript ? (new URL(currentScript.src)).origin : window.location.origin;
 
   let activeLang = "en";
@@ -69,6 +71,13 @@
     .send-btn:hover { opacity: 0.9; }
     .support-bar { padding: 6px 12px; background: #f3f4f6; border-top: 1px solid #e5e7eb; text-align: center; font-size: 11.5px; }
     .support-link { color: ${widgetConfig.primary_color}; text-decoration: none; cursor: pointer; font-weight: 500; }
+    .suggestions-container { background: #f8fafc; border-top: 1px solid #e5e7eb; padding: 7px 12px; display: none; flex-direction: column; gap: 5px; }
+    .suggestions-header { display: flex; align-items: center; justify-content: space-between; font-size: 11px; font-weight: 600; color: #64748b; }
+    .suggestions-list { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 3px; scrollbar-width: thin; }
+    .suggestions-list::-webkit-scrollbar { height: 4px; }
+    .suggestions-list::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+    .sugg-chip { background: #ffffff; border: 1px solid #cbd5e1; border-radius: 14px; padding: 4px 10px; font-size: 11.5px; color: #1e293b; white-space: nowrap; cursor: pointer; transition: all 0.15s; flex-shrink: 0; box-shadow: 0 1px 2px rgba(0,0,0,0.03); }
+    .sugg-chip:hover { border-color: ${widgetConfig.primary_color}; color: ${widgetConfig.primary_color}; background: #eff6ff; }
     @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.15); } 100% { transform: scale(1); } }
   `;
 
@@ -86,6 +95,12 @@
         </select>
       </div>
       <div class="chat-messages" id="msgList"></div>
+      <div class="suggestions-container" id="suggBox">
+        <div class="suggestions-header">
+          <span id="suggTitle">💡 Suggested Questions</span>
+        </div>
+        <div class="suggestions-list" id="suggList"></div>
+      </div>
       <div class="chat-input-area">
         <input type="file" id="filePicker" style="display:none" accept=".pdf,.docx,.xlsx,.pptx,.txt,.csv,.json,.md,.xml,.html,.log,.png,.jpg,.jpeg,.webp,.tiff,.bmp" />
         <button class="action-btn" id="attachBtn" title="Attach any file (PDF, Word, Excel, PowerPoint, Image, TXT, CSV)">
@@ -130,6 +145,42 @@
     .catch(() => {
       appendMessage("bot", widgetConfig.welcome_message_en);
     });
+
+  // Fetch candidate's role-specific package questions (Admin, Worker, User)
+  const suggBox = shadow.getElementById("suggBox");
+  const suggList = shadow.getElementById("suggList");
+  const suggTitle = shadow.getElementById("suggTitle");
+
+  function loadRoleSuggestions() {
+    const roleParam = encodeURIComponent(candidateRole || "user");
+    const idParam = candidateId ? `&candidate_id=${encodeURIComponent(candidateId)}` : "";
+    fetch(`${apiBase}/api/v1/projects/${encodeURIComponent(websiteId)}/suggestions?role=${roleParam}${idParam}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.suggested_questions && data.suggested_questions.length > 0) {
+          const roleLabels = {
+            admin: "👑 Admin Questions",
+            worker: "🛠️ Worker Questions",
+            user: "💡 Suggested Questions"
+          };
+          suggTitle.textContent = roleLabels[data.role] || (data.package_name || "💡 Suggested Questions");
+          suggList.innerHTML = "";
+          data.suggested_questions.forEach(q => {
+            const chip = document.createElement("button");
+            chip.className = "sugg-chip";
+            chip.textContent = q;
+            chip.onclick = () => {
+              userInput.value = q;
+              sendMessage();
+            };
+            suggList.appendChild(chip);
+          });
+          suggBox.style.display = "flex";
+        }
+      })
+      .catch(err => console.log("Suggestion package note:", err));
+  }
+  loadRoleSuggestions();
 
   // Toggle open/close
   toggleBtn.onclick = () => {

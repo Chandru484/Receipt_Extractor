@@ -48,11 +48,13 @@ try:
     from universal_chatbot.backend.app.api.v1.document_routes import router as chatbot_doc_router
     from universal_chatbot.backend.app.api.v1.admin_routes import router as chatbot_admin_router
     from universal_chatbot.backend.app.api.v1.voice_routes import router as chatbot_voice_router
+    from universal_chatbot.backend.app.api.v1.package_routes import router as chatbot_package_router
 
     app.include_router(chatbot_chat_router, prefix="/api/v1")
     app.include_router(chatbot_doc_router, prefix="/api/v1")
     app.include_router(chatbot_admin_router, prefix="/api/v1")
     app.include_router(chatbot_voice_router, prefix="/api/v1")
+    app.include_router(chatbot_package_router, prefix="/api/v1")
 except Exception as _cb_err:
     print(f"Warning: Universal Chatbot routers could not be loaded into app: {_cb_err}", flush=True)
 

@@ -13,6 +13,7 @@ from universal_chatbot.backend.app.api.v1.chat_routes import router as chat_rout
 from universal_chatbot.backend.app.api.v1.admin_routes import router as admin_router
 from universal_chatbot.backend.app.api.v1.document_routes import router as document_router
 from universal_chatbot.backend.app.api.v1.voice_routes import router as voice_router
+from universal_chatbot.backend.app.api.v1.package_routes import router as package_router
 
 
 @asynccontextmanager
@@ -48,6 +49,7 @@ app.include_router(chat_router, prefix="/api/v1")
 app.include_router(admin_router, prefix="/api/v1")
 app.include_router(document_router, prefix="/api/v1")
 app.include_router(voice_router, prefix="/api/v1")
+app.include_router(package_router, prefix="/api/v1")
 
 
 @app.get("/health", summary="Platform Health Check")
