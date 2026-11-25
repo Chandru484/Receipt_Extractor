@@ -126,7 +126,11 @@
         </button>
       </div>
       <div class="support-bar" id="supportBar">
-        Need help? <a class="support-link" id="humanAgentBtn">Talk to a Human Agent</a>
+        <span id="supportText">Need help? <a class="support-link" id="humanAgentBtn">Talk to a Human Agent</a></span>
+        <span id="tawkActiveControls" style="display:none; align-items:center; justify-content:center; gap:8px;">
+          <span>💬 Live Support Active</span>
+          <button id="hideTawkBtn" style="background:#fee2e2; color:#b91c1c; border:1px solid #fca5a5; border-radius:10px; padding:2px 8px; font-size:11px; cursor:pointer; font-weight:600;">❌ Remove Live Chat</button>
+        </span>
       </div>
     </div>
   `;
@@ -142,11 +146,45 @@
   const attachBtn = shadow.getElementById("attachBtn");
   const filePicker = shadow.getElementById("filePicker");
   const humanAgentBtn = shadow.getElementById("humanAgentBtn");
+  const supportText = shadow.getElementById("supportText");
+  const tawkActiveControls = shadow.getElementById("tawkActiveControls");
+  const hideTawkBtn = shadow.getElementById("hideTawkBtn");
   const botHeader = shadow.getElementById("botHeader");
   const newChatBtn = shadow.getElementById("newChatBtn");
 
+  function removeTawkTo(notify = true) {
+    if (window.Tawk_API && typeof window.Tawk_API.hideWidget === "function") {
+      try { window.Tawk_API.hideWidget(); } catch (_) {}
+    }
+    // Visually hide any injected Tawk elements or iframes in the host DOM
+    document.querySelectorAll('iframe[src*="tawk.to"], div[id*="tawk"], div[class*="tawk"]').forEach(el => {
+      try {
+        el.style.setProperty("display", "none", "important");
+      } catch (_) {
+        el.style.display = "none";
+      }
+    });
+
+    if (tawkActiveControls) tawkActiveControls.style.display = "none";
+    if (supportText) supportText.style.display = "inline";
+
+    if (notify) {
+      appendMessage(
+        "system-note",
+        activeLang === "ta"
+          ? "✅ Tawk.to நேரடி அரட்டை விட்ஜெட் திரையிலிருந்து அகற்றப்பட்டது."
+          : "✅ Tawk.to live chat widget removed from screen."
+      );
+    }
+  }
+
+  if (hideTawkBtn) {
+    hideTawkBtn.onclick = () => removeTawkTo(true);
+  }
+
   function resetConversation(clearMessages = true, welcomeText = null) {
     stopCurrentAudio();
+    removeTawkTo(false);
     activeConvId = null;
     activeSessionId = "sess_" + Math.random().toString(36).substring(2, 10);
     welcomeSpoken = false;
@@ -690,26 +728,55 @@
     const widId = widgetId || widgetConfig.tawk_to_widget_id || "1k7rtq4pg";
     const chatUrl = directUrl || `https://tawk.to/chat/${propId}/${widId}`;
 
-    // 1. If Tawk.to is already active on the host page, maximize it immediately
-    if (window.Tawk_API && typeof window.Tawk_API.maximize === "function") {
-      try {
-        window.Tawk_API.maximize();
-        return;
-      } catch (_) {}
-    }
+    // Switch support bar to active controls
+    if (tawkActiveControls) tawkActiveControls.style.display = "inline-flex";
+    if (supportText) supportText.style.display = "none";
 
-    // 2. Prepare Tawk.to API callbacks
+    // Restore visibility if previously hidden
+    document.querySelectorAll('iframe[src*="tawk.to"], div[id*="tawk"], div[class*="tawk"]').forEach(el => {
+      try {
+        el.style.removeProperty("display");
+      } catch (_) {
+        el.style.display = "";
+      }
+    });
+
+    // 1. Prepare Tawk.to API callbacks & prevent overlapping when minimized
     window.Tawk_API = window.Tawk_API || {};
     window.Tawk_LoadStart = new Date();
+
+    // When user minimizes Tawk chat, hide widget completely so it NEVER covers our chatbot!
+    window.Tawk_API.onChatMinimized = function () {
+      try {
+        if (typeof window.Tawk_API.hideWidget === "function") {
+          window.Tawk_API.hideWidget();
+        }
+      } catch (_) {}
+    };
+
     window.Tawk_API.onLoad = function () {
       try {
+        if (typeof window.Tawk_API.showWidget === "function") {
+          window.Tawk_API.showWidget();
+        }
         if (typeof window.Tawk_API.maximize === "function") {
           window.Tawk_API.maximize();
         }
       } catch (_) {}
     };
 
-    // 3. Dynamically inject Tawk.to script into document if not already loaded
+    // If already loaded, show and maximize immediately
+    if (typeof window.Tawk_API.showWidget === "function") {
+      try {
+        window.Tawk_API.showWidget();
+        if (typeof window.Tawk_API.maximize === "function") {
+          window.Tawk_API.maximize();
+        }
+        return;
+      } catch (_) {}
+    }
+
+    // 2. Dynamically inject Tawk.to script into document if not already loaded
     const scriptSelector = `script[src*="tawk.to/${propId}"]`;
     if (!document.querySelector(scriptSelector)) {
       const s1 = document.createElement("script");
@@ -720,12 +787,12 @@
       document.head.appendChild(s1);
     }
 
-    // 4. Also provide a direct 1-click fallback link in the conversation
+    // 3. Also provide a direct 1-click fallback link in the conversation
     appendMessage(
       "system-note",
       activeLang === "ta"
-        ? `💬 நேரடி மனித வாடிக்கையாளர் சேவை இணைக்கப்படுகிறது... தானாகத் திறக்கவில்லை என்றால் <a href="${chatUrl}" target="_blank" style="font-weight:bold;color:#0369a1;text-decoration:underline;">இங்கே கிளிக் செய்து நேரலையாகப் பேசலாம்</a>.`
-        : `💬 Connecting to live support agent on Tawk.to... If the widget doesn't pop up automatically, <a href="${chatUrl}" target="_blank" style="font-weight:bold;color:#0369a1;text-decoration:underline;">Click Here to Open Direct Chat</a>.`
+        ? `💬 நேரடி மனித வாடிக்கையாளர் சேவை இணைக்கப்படுகிறது... (<a href="${chatUrl}" target="_blank" style="font-weight:bold;color:#0369a1;text-decoration:underline;">இங்கே கிளிக் செய்து நேரலையாகப் பேசலாம்</a>)`
+        : `💬 Connecting to live support agent on Tawk.to... (<a href="${chatUrl}" target="_blank" style="font-weight:bold;color:#0369a1;text-decoration:underline;">Click Here to Open Direct Chat</a>)`
     );
   }
 
@@ -755,6 +822,15 @@
       unlockAudioPlayback();
       resetConversation(true);
       speakWelcomeGreeting();
+    },
+    removeTawkTo: function () {
+      removeTawkTo(true);
+    },
+    hideTawkTo: function () {
+      removeTawkTo(false);
+    },
+    showTawkTo: function () {
+      loadAndOpenTawkTo();
     },
     getRole: function () {
       return candidateRole;
