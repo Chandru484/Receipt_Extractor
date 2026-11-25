@@ -52,15 +52,25 @@ def sanitize_text_for_speech(text: str, language: str = "en") -> str:
     cleaned = re.sub(r"^\s*\d+\.\s+", "", cleaned, flags=re.MULTILINE)
 
     if language == "ta":
-        # Strip .00 from numbers so TTS does not pronounce "புள்ளி பூஜ்ஜியம் பூஜ்ஜியம்"
+        # Strip decimal cents/paise from currency amounts so TTS speaks clean numbers (e.g. ₹ 254 instead of robotic 'புள்ளி இருபத்து நான்கு')
+        cleaned = re.sub(r"₹\s*(\d+)\.\d+", r"₹ \1", cleaned)
+        cleaned = re.sub(r"Rs\.?\s*(\d+)\.\d+", r"Rs \1", cleaned)
         cleaned = re.sub(r"(\d+)\.00\b", r"\1", cleaned)
 
-        # Smooth out bookish/formal words into natural everyday conversational spoken Tamil
+        # Remove rude/disrespectful singular slang if LLM ever outputs it
+        cleaned = re.sub(r"\bஇப்போடா\b", "இப்போதைக்கு", cleaned)
+        cleaned = re.sub(r"\bஇப்பொடா\b", "இப்போதைக்கு", cleaned)
+        cleaned = re.sub(r"\bசொல்லுடா\b", "சொல்லுங்க", cleaned)
+        cleaned = re.sub(r"\bபண்ணுடா\b", "பண்ணுங்க", cleaned)
+        cleaned = re.sub(r"\bபாருடா\b", "பாருங்க", cleaned)
+        cleaned = re.sub(r"\bடா\b", "", cleaned)
+
+        # Smooth out bookish/formal words into natural polite conversational spoken Tamil
         cleaned = re.sub(r"\bஆகும்\b", "", cleaned)
         cleaned = re.sub(r"\bஆவார்\b", "", cleaned)
         cleaned = re.sub(r"\bஉள்ளது\b", "இருக்கு", cleaned)
         cleaned = re.sub(r"\bஉள்ளன\b", "இருக்கு", cleaned)
-        cleaned = re.sub(r"\bகாணப்படவில்லை\b", "இல்லை", cleaned)
+        cleaned = re.sub(r"\bகாணப்படவில்லை\b", "இல்லைங்க", cleaned)
         cleaned = re.sub(r"\bதேவைப்படுகிறதா\b", "வேணுமா", cleaned)
         cleaned = re.sub(r"\bதெரிவிக்கவும்\b", "சொல்லுங்க", cleaned)
         cleaned = re.sub(r"\bபட்டியலிடப்பட்டுள்ளன\b", "இதோ இருக்கு", cleaned)

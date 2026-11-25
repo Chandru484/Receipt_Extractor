@@ -77,8 +77,9 @@ class ApplicationMongoAdapter:
                 "show", "me", "all", "the", "my", "receipts", "receipt", "invoices",
                 "invoice", "from", "for", "latest", "what", "how", "much", "did",
                 "spend", "at", "in", "bill", "bills", "get", "view", "details",
+                "address", "kadayin", "kadaisi", "sollu", "sol", "patri", "kooru", "mukavari",
                 "ரசீது", "ரசீதுகள்", "காட்டு", "எனது", "விவரங்கள்", "சுருக்கமாக",
-                "தகவல்கள்", "உள்ள"
+                "தகவல்கள்", "உள்ள", "பற்றி", "சொல்", "முகவரி", "எங்கே", "கடை"
             }
             search_terms = [t for t in tokens if t.lower() not in stop_words and len(t) > 2]
 
@@ -105,7 +106,17 @@ class ApplicationMongoAdapter:
             cursor = collection.find(filter_query).sort("_id", -1).limit(max_results)
             raw_records = list(cursor)
 
-            if not raw_records and not search_terms and not user_id:
+            # Fallback: if search by term yielded no matches, but candidate user_id is provided,
+            # retrieve that user's owned records so broad questions (e.g. "kadayin address ai sollu") can answer from their receipt
+            if not raw_records and user_id:
+                user_filter = {
+                    "$or": [
+                        {"user_id": user_id},
+                        {"candidate_id": user_id},
+                    ]
+                }
+                raw_records = list(collection.find(user_filter).sort("_id", -1).limit(max_results))
+            elif not raw_records and not search_terms and not user_id:
                 # If broad inquiry without specific keyword or user, fetch the latest recent records
                 cursor = collection.find({}).sort("_id", -1).limit(max_results)
                 raw_records = list(cursor)
@@ -122,9 +133,13 @@ class ApplicationMongoAdapter:
                 inv_no = data_sub.get("invoice_number") or r.get("invoice_number")
                 inv_date = data_sub.get("invoice_date") or r.get("stored_date")
                 total = data_sub.get("grand_total") or r.get("total_amount")
+                seller_addr = data_sub.get("seller_address") or data_sub.get("vendor_address") or data_sub.get("address") or r.get("seller_address")
                 sanitized_records.append({
                     "vendor_or_seller": vendor,
                     "vendor_name": vendor,
+                    "vendor_address": seller_addr,
+                    "address": seller_addr,
+                    "seller_phone": data_sub.get("seller_phone"),
                     "buyer": buyer,
                     "invoice_number": inv_no,
                     "invoice_date": inv_date,
@@ -134,7 +149,7 @@ class ApplicationMongoAdapter:
                     "currency": data_sub.get("currency", "INR"),
                     "items": [
                         {"name": it.get("item_name"), "qty": it.get("quantity"), "amount": it.get("total_price")}
-                        for it in data_sub.get("items", [])[:3]
+                        for it in data_sub.get("items", [])[:5]
                     ] if isinstance(data_sub.get("items"), list) else [],
                 })
 
