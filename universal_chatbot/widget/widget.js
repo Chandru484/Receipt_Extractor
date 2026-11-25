@@ -89,9 +89,17 @@
     </button>
     <div class="chat-window" id="chatWin">
       <div class="chat-header">
-        <span class="chat-title" id="botHeader">${widgetConfig.bot_name}</span>
-        <div style="font-size: 12px; color: #fff; opacity: 0.95; font-weight: 500; display: flex; align-items: center; gap: 4px;">
-          <span>🇮🇳 தமிழ் (Tamil Voice AI)</span>
+        <div>
+          <span class="chat-title" id="botHeader">${widgetConfig.bot_name}</span>
+          <div id="callStatusIndicator" style="font-size: 11px; color: #dbeafe; display: flex; align-items: center; gap: 4px; margin-top: 2px;">
+            <span id="callPulseDot" style="width: 7px; height: 7px; border-radius: 50%; background: #22c55e; display: inline-block;"></span>
+            <span id="callStatusText">🇮🇳 தமிழ் குரல் AI (Tamil Voice AI)</span>
+          </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 6px;">
+          <button id="callToggleBtn" class="call-btn" style="background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.45); color: #fff; border-radius: 14px; padding: 4px 10px; font-size: 11.5px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 4px; transition: all 0.2s;">
+            📞 Voice Call
+          </button>
         </div>
       </div>
       <div class="chat-messages" id="msgList"></div>
@@ -132,6 +140,12 @@
   const filePicker = shadow.getElementById("filePicker");
   const humanAgentBtn = shadow.getElementById("humanAgentBtn");
   const botHeader = shadow.getElementById("botHeader");
+  const callToggleBtn = shadow.getElementById("callToggleBtn");
+  const callStatusText = shadow.getElementById("callStatusText");
+  const callPulseDot = shadow.getElementById("callPulseDot");
+
+  // Render initial welcome message immediately so it is available before async fetches
+  appendMessage("bot", widgetConfig.welcome_message_ta || "வணக்கம்! இன்று நான் உங்களுக்கு என்ன உதவ வேண்டும்?");
 
   // Fetch website config
   fetch(`${apiBase}/api/v1/chat/widget-config/${websiteId}`)
@@ -139,19 +153,37 @@
     .then(cfg => {
       Object.assign(widgetConfig, cfg);
       botHeader.textContent = widgetConfig.bot_name;
-      appendMessage("bot", widgetConfig.welcome_message_ta || "வணக்கம்! இன்று நான் உங்களுக்கு என்ன உதவ வேண்டும்?");
     })
-    .catch(() => {
-      appendMessage("bot", "வணக்கம்! இன்று நான் உங்களுக்கு என்ன உதவ வேண்டும்?");
-    });
+    .catch(() => {});
 
-  // Welcome voice greeting trigger
+  // Pre-unlocked HTML5 Audio element for seamless auto-speech without browser autoplay blocks
+  let sharedAudio = new Audio();
+  let audioUnlocked = false;
+  let isCallModeActive = false;
+
+  function unlockAudioPlayback() {
+    if (audioUnlocked) return;
+    audioUnlocked = true;
+    try {
+      sharedAudio.src = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
+      sharedAudio.play().then(() => {
+        sharedAudio.pause();
+      }).catch(() => {});
+    } catch (_) {}
+  }
+
+  // Welcome voice greeting trigger on open
   function speakWelcomeGreeting() {
     if (welcomeSpoken) return;
     welcomeSpoken = true;
+    unlockAudioPlayback();
     const welcomeVoiceText = "வணக்கம்! இன்று நான் உங்களுக்கு என்ன உதவ வேண்டும்?";
     const firstSpeakBtn = msgList.querySelector(".speak-btn");
-    toggleSpeech(welcomeVoiceText, "ta", firstSpeakBtn);
+    playSpeech(welcomeVoiceText, "ta", firstSpeakBtn, () => {
+      if (isCallModeActive) {
+        startListening();
+      }
+    });
   }
 
   // Fetch candidate's role-specific package questions (Admin, Worker, User)
@@ -178,6 +210,7 @@
             chip.className = "sugg-chip";
             chip.textContent = q;
             chip.onclick = () => {
+              unlockAudioPlayback();
               userInput.value = q;
               sendMessage();
             };
@@ -192,11 +225,50 @@
 
   // Toggle open/close
   toggleBtn.onclick = () => {
+    unlockAudioPlayback();
     chatWin.classList.toggle("open");
     if (chatWin.classList.contains("open")) {
       userInput.focus();
       speakWelcomeGreeting();
     }
+  };
+
+  // Toggle live voice call mode
+  function setCallMode(active) {
+    isCallModeActive = active;
+    unlockAudioPlayback();
+    if (isCallModeActive) {
+      callToggleBtn.innerHTML = "⏹️ End Call";
+      callToggleBtn.style.background = "#ef4444";
+      callToggleBtn.style.borderColor = "#f87171";
+      callStatusText.textContent = "அழைப்பில் உள்ளது (Live Call Active)";
+      callPulseDot.style.background = "#ef4444";
+      callPulseDot.style.animation = "pulse 1s infinite";
+      appendMessage("system-note", "📞 நேரலை குரல் அழைப்பு இணைக்கப்பட்டது. பேசி உரையாடலாம்! (Live Voice Call active. Speak freely!)");
+      
+      if (!welcomeSpoken) {
+        speakWelcomeGreeting();
+      } else {
+        startListening();
+      }
+    } else {
+      callToggleBtn.innerHTML = "📞 Voice Call";
+      callToggleBtn.style.background = "rgba(255,255,255,0.2)";
+      callToggleBtn.style.borderColor = "rgba(255,255,255,0.45)";
+      callStatusText.textContent = "🇮🇳 தமிழ் குரல் AI (Tamil Voice AI)";
+      callPulseDot.style.background = "#22c55e";
+      callPulseDot.style.animation = "none";
+      stopCurrentAudio();
+      if (recognition && micBtn.classList.contains("recording")) {
+        try { recognition.stop(); } catch (_) {}
+        micBtn.classList.remove("recording");
+      }
+      appendMessage("system-note", "⏹️ குரல் அழைப்பு நிறைவுற்றது. (Voice call ended.)");
+    }
+  }
+
+  callToggleBtn.onclick = () => {
+    setCallMode(!isCallModeActive);
   };
 
   // Safe Markdown to HTML formatter (supports bold, italic, headings, lists, and tables)
@@ -307,6 +379,10 @@
       currentAudio.currentTime = 0;
       currentAudio = null;
     }
+    try {
+      sharedAudio.pause();
+      sharedAudio.currentTime = 0;
+    } catch (_) {}
     if (window.speechSynthesis) {
       window.speechSynthesis.cancel();
     }
@@ -317,7 +393,7 @@
     }
   }
 
-  function toggleSpeech(text, lang, btn = null) {
+  function playSpeech(text, lang, btn = null, onEndedCallback = null) {
     if (btn && currentPlayingBtn === btn) {
       stopCurrentAudio();
       return;
@@ -330,7 +406,7 @@
       currentPlayingBtn = btn;
     }
 
-    // Clean text before sending to avoid URL issues
+    // Clean text before sending to avoid URL/markdown issues
     const cleanText = text
       .replace(/[*#_`|]/g, " ")
       .replace(/https?:\/\/\S+/g, "")
@@ -347,38 +423,48 @@
         return res.blob();
       })
       .then(blob => {
-        if (btn && currentPlayingBtn !== btn) return; // cancelled while loading
+        if (btn && currentPlayingBtn !== btn) return;
         const blobUrl = URL.createObjectURL(blob);
-        const audio = new Audio(blobUrl);
-        currentAudio = audio;
+        
+        sharedAudio.src = blobUrl;
+        currentAudio = sharedAudio;
 
         if (btn) btn.innerHTML = "⏹️ Stop";
 
-        audio.onended = () => {
+        sharedAudio.onended = () => {
           URL.revokeObjectURL(blobUrl);
           stopCurrentAudio();
-        };
-        audio.onerror = (err) => {
-          console.warn("Audio element error, trying browser synthesis:", err);
-          URL.revokeObjectURL(blobUrl);
-          playBrowserSpeech(cleanText, targetLang, btn);
+          if (onEndedCallback) onEndedCallback();
         };
 
-        return audio.play().catch(playErr => {
-          console.warn("Audio.play rejected (e.g. autoplay restriction):", playErr);
-          if (btn) btn.innerHTML = "🔊 Listen";
-          if (btn) btn.classList.remove("playing");
-        });
+        sharedAudio.onerror = (err) => {
+          console.warn("sharedAudio error, falling back to browser speech:", err);
+          URL.revokeObjectURL(blobUrl);
+          playBrowserSpeech(cleanText, targetLang, btn, onEndedCallback);
+        };
+
+        const playPromise = sharedAudio.play();
+        if (playPromise !== undefined) {
+          playPromise.catch(playErr => {
+            console.warn("sharedAudio play blocked, using browser fallback:", playErr);
+            playBrowserSpeech(cleanText, targetLang, btn, onEndedCallback);
+          });
+        }
       })
       .catch(err => {
         console.warn("TTS fetch error, using browser fallback:", err);
-        playBrowserSpeech(cleanText, targetLang, btn);
+        playBrowserSpeech(cleanText, targetLang, btn, onEndedCallback);
       });
   }
 
-  function playBrowserSpeech(text, lang, btn) {
+  function toggleSpeech(text, lang, btn = null) {
+    playSpeech(text, lang, btn, null);
+  }
+
+  function playBrowserSpeech(text, lang, btn = null, onEndedCallback = null) {
     if (!window.speechSynthesis) {
       stopCurrentAudio();
+      if (onEndedCallback) onEndedCallback();
       return;
     }
     window.speechSynthesis.cancel();
@@ -392,8 +478,20 @@
       if (taVoice) utterance.voice = taVoice;
     }
 
-    utterance.onend = () => stopCurrentAudio();
-    utterance.onerror = () => stopCurrentAudio();
+    if (btn) {
+      btn.innerHTML = "⏹️ Stop";
+      btn.classList.add("playing");
+      currentPlayingBtn = btn;
+    }
+
+    utterance.onend = () => {
+      stopCurrentAudio();
+      if (onEndedCallback) onEndedCallback();
+    };
+    utterance.onerror = () => {
+      stopCurrentAudio();
+      if (onEndedCallback) onEndedCallback();
+    };
     window.speechSynthesis.speak(utterance);
   }
 
@@ -440,10 +538,11 @@
     if (!text) return;
     appendMessage("user", text);
     userInput.value = "";
+    unlockAudioPlayback();
 
     const loadingDiv = document.createElement("div");
     loadingDiv.className = "msg bot";
-    loadingDiv.textContent = activeLang === "ta" ? "சிந்திக்கிறது..." : "Thinking...";
+    loadingDiv.textContent = "சிந்திக்கிறது...";
     msgList.appendChild(loadingDiv);
     msgList.scrollTop = msgList.scrollHeight;
 
@@ -466,13 +565,6 @@
         loadingDiv.remove();
         activeConvId = data.conversation_id;
 
-        // Auto-synchronize UI language if query was detected in another language (e.g. Tamil voice)
-        if (data.language && data.language !== activeLang) {
-          activeLang = data.language;
-          langSelect.value = activeLang;
-          userInput.placeholder = activeLang === "ta" ? "உங்கள் கேள்வியைக் கேளுங்கள்..." : "Ask a question...";
-        }
-
         const msgRes = appendMessage("bot", data.reply, data.citations, data.action);
 
         // Execute website action if command detected
@@ -480,11 +572,14 @@
           executeWebsiteAction(data.action);
         }
 
-        // Auto-reply in voice if queried by voice or backend signaled is_voice
-        if (isVoice || data.is_voice) {
-          if (msgRes && msgRes.speakBtn) {
-            toggleSpeech(data.reply, data.language, msgRes.speakBtn);
-          }
+        // ALWAYS auto-speak every reply in authentic Tamil neural voice!
+        if (msgRes && msgRes.speakBtn) {
+          playSpeech(data.reply, "ta", msgRes.speakBtn, () => {
+            // In Call Mode, automatically activate the mic for the user's turn
+            if (isCallModeActive) {
+              startListening();
+            }
+          });
         }
 
         if (data.escalate_to_human) {
@@ -493,7 +588,7 @@
       })
       .catch(() => {
         loadingDiv.remove();
-        appendMessage("bot", activeLang === "ta" ? "சேவையகப் பிழை ஏற்பட்டது." : "Could not connect to server.");
+        appendMessage("bot", "சேவையகப் பிழை ஏற்பட்டது. மீண்டும் முயற்சிக்கவும்.");
       });
   }
 
@@ -543,6 +638,23 @@
   // Microphone Voice Input (High-Precision STT)
   let recognition = null;
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+  function startListening() {
+    if (!recognition) return;
+    if (micBtn.classList.contains("recording")) return;
+    stopCurrentAudio();
+    recognition.lang = "ta-IN";
+    userInput.value = "";
+    userInput.placeholder = "🎙️ தமிழில் பேசவும்... கேட்கிறேன் (Listening... speak)...";
+    micBtn.classList.add("recording");
+    try {
+      recognition.start();
+    } catch (err) {
+      console.warn("Recognition start note:", err);
+      micBtn.classList.remove("recording");
+    }
+  }
+
   if (SpeechRecognition) {
     recognition = new SpeechRecognition();
     recognition.continuous = false;
@@ -563,7 +675,7 @@
       if (final) {
         userInput.value = final;
         micBtn.classList.remove("recording");
-        userInput.placeholder = activeLang === "ta" ? "உங்கள் கேள்வியைக் கேளுங்கள்..." : "Ask a question...";
+        userInput.placeholder = "உங்கள் கேள்வியைக் கேளுங்கள் (Ask in Tamil or English)...";
         sendMessage(true);
       } else if (interim) {
         userInput.value = interim;
@@ -578,39 +690,35 @@
       } else if (e.error === "network") {
         appendMessage("system-note", "⚠️ Speech recognition service unreachable. Please check internet access or type your question.");
       } else if (e.error === "no-speech") {
-        userInput.placeholder = activeLang === "ta" ? "பேச்சு கேட்கவில்லை, மீண்டும் பேசவும்..." : "No speech detected. Please speak closer to the mic...";
-        setTimeout(() => {
-          userInput.placeholder = activeLang === "ta" ? "உங்கள் கேள்வியைக் கேளுங்கள்..." : "Ask a question...";
-        }, 3000);
+        if (isCallModeActive) {
+          // In Call Mode, if no speech detected after turn, keep listening or prompt gently
+          setTimeout(() => { if (isCallModeActive) startListening(); }, 1500);
+        } else {
+          userInput.placeholder = "பேச்சு கேட்கவில்லை, மீண்டும் பேசவும்...";
+          setTimeout(() => {
+            userInput.placeholder = "உங்கள் கேள்வியைக் கேளுங்கள் (Ask in Tamil or English)...";
+          }, 3000);
+        }
       } else {
-        userInput.placeholder = activeLang === "ta" ? "உங்கள் கேள்வியைக் கேளுங்கள்..." : "Ask a question...";
+        userInput.placeholder = "உங்கள் கேள்வியைக் கேளுங்கள் (Ask in Tamil or English)...";
       }
     };
 
     recognition.onend = () => {
       micBtn.classList.remove("recording");
       if (!userInput.value.trim()) {
-        userInput.placeholder = activeLang === "ta" ? "உங்கள் கேள்வியைக் கேளுங்கள்..." : "Ask a question...";
+        userInput.placeholder = "உங்கள் கேள்வியைக் கேளுங்கள் (Ask in Tamil or English)...";
       }
     };
 
     micBtn.onclick = () => {
+      unlockAudioPlayback();
       if (micBtn.classList.contains("recording")) {
         try { recognition.stop(); } catch (_) {}
         micBtn.classList.remove("recording");
         return;
       }
-      stopCurrentAudio();
-      recognition.lang = activeLang === "ta" ? "ta-IN" : "en-IN";
-      userInput.value = "";
-      userInput.placeholder = activeLang === "ta" ? "🎙️ தமிழில் பேசவும்... கேட்கிறேன்..." : "🎙️ Listening... please speak...";
-      micBtn.classList.add("recording");
-      try {
-        recognition.start();
-      } catch (err) {
-        console.warn("Recognition start error:", err);
-        micBtn.classList.remove("recording");
-      }
+      startListening();
     };
   } else {
     micBtn.onclick = () => {
@@ -673,16 +781,16 @@
   // Expose global controller for host application testing & role switching
   window.UniversalChatbot = {
     setRole: function (role, id = null, name = null) {
+      unlockAudioPlayback();
       candidateRole = (role || "user").toLowerCase();
       candidateId = id;
       activeConvId = null; // Start a clean conversation context for the new candidate profile
+      welcomeSpoken = false; // Reset so next open can greet
       loadRoleSuggestions();
       const displayName = name || (id ? `${role} (${id})` : role);
       appendMessage(
         "system-note",
-        activeLang === "ta"
-          ? `🔄 பயனர் கணக்கு மாற்றப்பட்டது: ${displayName}`
-          : `🔄 Switched active profile to: ${displayName}. Strict user isolation active.`
+        `🔄 பயனர் கணக்கு மாற்றப்பட்டது: ${displayName}. Strict user isolation active.`
       );
     },
     getRole: function () {
@@ -692,9 +800,15 @@
       return candidateId;
     },
     open: function () {
+      unlockAudioPlayback();
       chatWin.classList.add("open");
       userInput.focus();
       speakWelcomeGreeting();
+    },
+    startCall: function () {
+      unlockAudioPlayback();
+      chatWin.classList.add("open");
+      setCallMode(true);
     },
     close: function () {
       chatWin.classList.remove("open");

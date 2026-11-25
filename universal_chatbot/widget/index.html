@@ -105,6 +105,18 @@
       </div>
     </div>
 
+    <div style="background: #fdf2f8; border: 1px solid #fbcfe8; border-radius: 10px; padding: 16px; margin: 20px 0; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+      <div>
+        <h4 style="margin: 0; color: #9d174d; font-size: 15px;">📞 நேரலை குரல் அழைப்பு (Interactive Live Voice Call)</h4>
+        <p style="margin: 4px 0 0 0; font-size: 13px; color: #be185d;">
+          தொலைபேசி அழைப்பு போன்ற நேரலை உரையாடல்: உதவியாளர் தானாகவே தமிழில் பேசி பதிலளிப்பார்; ஒவ்வொரு முறை பேசியதும் மைக்ரோஃபோன் தானாக இயங்கும்.
+        </p>
+      </div>
+      <button onclick="startVoiceCall()" style="background: #db2777; color: #fff; border: none; padding: 10px 18px; border-radius: 20px; font-weight: 700; font-size: 13px; cursor: pointer; box-shadow: 0 2px 8px rgba(219,39,119,0.3); display: flex; align-items: center; gap: 6px;">
+        📞 Start Voice Call
+      </button>
+    </div>
+
     <h3>Embed Code Snippet</h3>
     <pre>&lt;!-- Add this snippet to any website or web application --&gt;
 &lt;script
@@ -144,6 +156,12 @@
         if (roleStatusEl) {
           roleStatusEl.innerHTML = `Active Session: <strong>${label || role}</strong> (ID: <code>${id || 'None'}</code>) • Role: <span style="text-transform: capitalize;">${role}</span>`;
         }
+      }
+    }
+
+    function startVoiceCall() {
+      if (window.UniversalChatbot) {
+        window.UniversalChatbot.startCall();
       }
     }
   </script>
