@@ -78,8 +78,8 @@
       </div>
       <div class="chat-messages" id="msgList"></div>
       <div class="chat-input-area">
-        <input type="file" id="filePicker" style="display:none" accept=".pdf,.txt,.csv,.json,.md,.docx" />
-        <button class="action-btn" id="attachBtn" title="Attach Document (PDF, TXT, CSV)">
+        <input type="file" id="filePicker" style="display:none" accept=".pdf,.docx,.xlsx,.pptx,.txt,.csv,.json,.md,.xml,.html,.log,.png,.jpg,.jpeg,.webp,.tiff,.bmp" />
+        <button class="action-btn" id="attachBtn" title="Attach any file (PDF, Word, Excel, PowerPoint, Image, TXT, CSV)">
           <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/></svg>
         </button>
         <button class="action-btn" id="micBtn" title="Speak in Tamil or English">

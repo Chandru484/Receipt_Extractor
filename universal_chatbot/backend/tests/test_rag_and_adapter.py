@@ -176,3 +176,57 @@ def test_document_upload_endpoint():
         assert data["document_id"] == "doc_test123"
         assert data["chunk_count"] == 2
         assert "sample_invoice.txt" in data["message"]
+
+
+def test_extract_docx_xlsx_pptx_csv_and_image():
+    """Verify document_parser extracts text cleanly from DOCX, XLSX, PPTX, CSV, and Images."""
+    import zipfile
+
+    # 1. Test .docx
+    docx_buf = io.BytesIO()
+    with zipfile.ZipFile(docx_buf, "w") as zf:
+        zf.writestr(
+            "word/document.xml",
+            '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+            '<w:body><w:p><w:r><w:t>Employee Handbook 2026</w:t></w:r></w:p></w:body></w:document>',
+        )
+    assert "Employee Handbook 2026" in extract_text_from_bytes(docx_buf.getvalue(), "handbook.docx")
+
+    # 2. Test .xlsx
+    xlsx_buf = io.BytesIO()
+    with zipfile.ZipFile(xlsx_buf, "w") as zf:
+        zf.writestr(
+            "xl/sharedStrings.xml",
+            '<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+            '<si><t>Product</t></si><si><t>Laptop</t></si></sst>',
+        )
+        zf.writestr(
+            "xl/worksheets/sheet1.xml",
+            '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+            '<sheetData><row><c t="s"><v>0</v></c><c t="s"><v>1</v></c><c><v>1200</v></c></row></sheetData></worksheet>',
+        )
+    xlsx_text = extract_text_from_bytes(xlsx_buf.getvalue(), "inventory.xlsx")
+    assert "Product | Laptop | 1200" in xlsx_text
+
+    # 3. Test .pptx
+    pptx_buf = io.BytesIO()
+    with zipfile.ZipFile(pptx_buf, "w") as zf:
+        zf.writestr(
+            "ppt/slides/slide1.xml",
+            '<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" '
+            'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
+            '<p:cSld><p:spTree><p:sp><p:txBody><a:p><a:r><a:t>Q4 Revenue Growth</a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld></p:sld>',
+        )
+    assert "Q4 Revenue Growth" in extract_text_from_bytes(pptx_buf.getvalue(), "deck.pptx")
+
+    # 4. Test .csv
+    csv_bytes = b"Name,Role,City\nAlice,Engineer,Chennai\nBob,Designer,Coimbatore"
+    assert "Alice,Engineer,Chennai" in extract_text_from_bytes(csv_bytes, "team.csv")
+
+    # 5. Test .png image via OCR mock
+    from PIL import Image
+    img_buf = io.BytesIO()
+    Image.new("RGB", (50, 50), color="white").save(img_buf, format="PNG")
+    with patch("universal_chatbot.backend.app.services.document_parser._ocr_np_image", return_value="Receipt Total 500"):
+        img_text = extract_text_from_bytes(img_buf.getvalue(), "bill.png")
+        assert "Receipt Total 500" in img_text
