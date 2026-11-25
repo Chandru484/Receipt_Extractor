@@ -171,7 +171,7 @@ class ChatOrchestrator:
         effective_lang = _detect_language(request.message, current_lang=request.language)
         needs_escalation = any(k in user_msg_lower for k in HUMAN_SUPPORT_KEYWORDS)
 
-        if needs_escalation and widget_cfg.get("enable_tawk_to"):
+        if needs_escalation and widget_cfg.get("enable_tawk_to", True):
             handoff_id = record_support_handoff(
                 website_id=request.website_id,
                 tenant_id=tenant_id,
@@ -179,10 +179,14 @@ class ChatOrchestrator:
                 user_query=request.message,
                 user_id=verified_user_id,
             )
+            tawk_prop = widget_cfg.get("tawk_to_property_id") or "6afff70e6c90d43c92f4c111"
+            tawk_wid = widget_cfg.get("tawk_to_widget_id") or "1k7rtq4pg"
+            direct_url = f"https://tawk.to/chat/{tawk_prop}/{tawk_wid}"
+
             reply = (
-                "மனித வாடிக்கையாளர் சேவை முகவரிடம் உங்களை இணைக்கிறேன். தயவுசெய்து காத்திருக்கவும்..."
+                f"மனித வாடிக்கையாளர் சேவை முகவரிடம் உங்களை இணைக்கிறேன். தானாகத் திறக்கவில்லை என்றால் [இங்கே கிளிக் செய்து நேரலையாகப் பேசலாம்]({direct_url})."
                 if effective_lang == "ta"
-                else "I am transferring you to a human support agent right now. Please hold on..."
+                else f"I am transferring you to a live human support agent on Tawk.to right now. If the chat window does not open automatically, [Click Here to Open Direct Chat]({direct_url})."
             )
             return ChatMessageResponse(
                 conversation_id=request.conversation_id or "conv_support",
@@ -192,7 +196,9 @@ class ChatOrchestrator:
                 source="handoff",
                 citations=[],
                 escalate_to_human=True,
-                tawk_property_id=widget_cfg.get("tawk_to_property_id"),
+                tawk_property_id=tawk_prop,
+                tawk_widget_id=tawk_wid,
+                tawk_direct_url=direct_url,
                 created_at=get_ist_now_str(),
                 is_voice=request.is_voice,
             )

@@ -232,6 +232,7 @@
     html = html.replace(/^---$/gm, "<hr style='border:none;border-top:1px solid #e5e7eb;margin:6px 0;'>");
     html = html.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
     html = html.replace(/\*(.*?)\*/g, "<em>$1</em>");
+    html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" style="color:#2563eb;font-weight:600;text-decoration:underline;">$1</a>');
     html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
     html = html.replace(/^\s*[-*]\s+(.*)$/gm, "<li>$1</li>");
     html = html.replace(/(<li>.*<\/li>\n?)+/g, m => `<ul>${m.replace(/\n/g, "")}</ul>`);
@@ -480,8 +481,8 @@
           }
         }
 
-        if (data.escalate_to_human && window.Tawk_API) {
-          window.Tawk_API.maximize();
+        if (data.escalate_to_human) {
+          loadAndOpenTawkTo(data.tawk_property_id, data.tawk_widget_id, data.tawk_direct_url);
         }
       })
       .catch(() => {
@@ -611,14 +612,56 @@
     };
   }
 
+  // Dynamic Tawk.to Live Support Loader & Opener
+  function loadAndOpenTawkTo(propertyId, widgetId, directUrl) {
+    const propId = propertyId || widgetConfig.tawk_to_property_id || "6afff70e6c90d43c92f4c111";
+    const widId = widgetId || widgetConfig.tawk_to_widget_id || "1k7rtq4pg";
+    const chatUrl = directUrl || `https://tawk.to/chat/${propId}/${widId}`;
+
+    // 1. If Tawk.to is already active on the host page, maximize it immediately
+    if (window.Tawk_API && typeof window.Tawk_API.maximize === "function") {
+      try {
+        window.Tawk_API.maximize();
+        return;
+      } catch (_) {}
+    }
+
+    // 2. Prepare Tawk.to API callbacks
+    window.Tawk_API = window.Tawk_API || {};
+    window.Tawk_LoadStart = new Date();
+    window.Tawk_API.onLoad = function () {
+      try {
+        if (typeof window.Tawk_API.maximize === "function") {
+          window.Tawk_API.maximize();
+        }
+      } catch (_) {}
+    };
+
+    // 3. Dynamically inject Tawk.to script into document if not already loaded
+    const scriptSelector = `script[src*="tawk.to/${propId}"]`;
+    if (!document.querySelector(scriptSelector)) {
+      const s1 = document.createElement("script");
+      s1.async = true;
+      s1.src = `https://embed.tawk.to/${propId}/${widId}`;
+      s1.charset = "UTF-8";
+      s1.setAttribute("crossorigin", "*");
+      document.head.appendChild(s1);
+    }
+
+    // 4. Also provide a direct 1-click fallback link in the conversation
+    appendMessage(
+      "system-note",
+      activeLang === "ta"
+        ? `💬 நேரடி மனித வாடிக்கையாளர் சேவை இணைக்கப்படுகிறது... தானாகத் திறக்கவில்லை என்றால் <a href="${chatUrl}" target="_blank" style="font-weight:bold;color:#0369a1;text-decoration:underline;">இங்கே கிளிக் செய்து நேரலையாகப் பேசலாம்</a>.`
+        : `💬 Connecting to live support agent on Tawk.to... If the widget doesn't pop up automatically, <a href="${chatUrl}" target="_blank" style="font-weight:bold;color:#0369a1;text-decoration:underline;">Click Here to Open Direct Chat</a>.`
+    );
+  }
+
   // Tawk.to human agent handoff button
   humanAgentBtn.onclick = () => {
-    if (window.Tawk_API) {
-      window.Tawk_API.maximize();
-    } else {
-      userInput.value = activeLang === "ta" ? "வாடிக்கையாளர் சேவை முகவரிடம் பேச வேண்டும்" : "I want to talk to human support";
-      sendMessage();
-    }
+    loadAndOpenTawkTo(widgetConfig.tawk_to_property_id, widgetConfig.tawk_to_widget_id);
+    userInput.value = activeLang === "ta" ? "வாடிக்கையாளர் சேவை முகவரிடம் பேச வேண்டும்" : "I want to talk to human support";
+    sendMessage();
   };
 
   // Expose global controller for host application testing & role switching

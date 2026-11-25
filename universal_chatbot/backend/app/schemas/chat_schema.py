@@ -29,6 +29,8 @@ class ChatMessageResponse(BaseModel):
     citations: List[SourceCitation] = Field(default_factory=list)
     escalate_to_human: bool = False
     tawk_property_id: Optional[str] = None
+    tawk_widget_id: Optional[str] = None
+    tawk_direct_url: Optional[str] = None
     created_at: str
     is_voice: bool = False
     action: Optional[Dict[str, Any]] = Field(None, description="Executable website action triggered by voice/text command")
