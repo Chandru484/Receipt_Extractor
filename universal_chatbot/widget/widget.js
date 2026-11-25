@@ -55,8 +55,9 @@
     .msg.bot code { background: #f3f4f6; padding: 1px 4px; border-radius: 3px; font-size: 12px; }
     .msg.system-note { align-self: center; background: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd; font-size: 12px; border-radius: 8px; max-width: 90%; text-align: center; }
     .msg-actions { display: flex; gap: 8px; margin-top: 6px; font-size: 11px; align-items: center; flex-wrap: wrap; }
-    .speak-btn { background: none; border: none; cursor: pointer; color: #6b7280; display: inline-flex; align-items: center; gap: 4px; font-size: 11px; }
-    .speak-btn:hover { color: ${widgetConfig.primary_color}; }
+    .speak-btn { background: none; border: none; cursor: pointer; color: #6b7280; display: inline-flex; align-items: center; gap: 4px; font-size: 11px; padding: 2px 6px; border-radius: 4px; transition: all 0.15s; }
+    .speak-btn:hover { color: ${widgetConfig.primary_color}; background: #f3f4f6; }
+    .speak-btn.playing { color: #ef4444; background: #fee2e2; font-weight: 600; }
     .citation-tag { background: #f3f4f6; color: #4b5563; padding: 2px 6px; border-radius: 4px; font-size: 10.5px; display: inline-flex; align-items: center; gap: 3px; border: 1px solid #e5e7eb; }
     .chat-input-area { padding: 10px 12px; background: #fff; border-top: 1px solid #e5e7eb; display: flex; align-items: center; gap: 6px; }
     .chat-input { flex: 1; border: 1px solid #d1d5db; border-radius: 20px; padding: 8px 14px; font-size: 13.5px; outline: none; transition: border-color 0.2s; }
@@ -207,7 +208,7 @@
         const speakBtn = document.createElement("button");
         speakBtn.className = "speak-btn";
         speakBtn.innerHTML = "🔊 Listen";
-        speakBtn.onclick = () => speakText(text, activeLang);
+        speakBtn.onclick = () => toggleSpeech(text, activeLang, speakBtn);
         actions.appendChild(speakBtn);
       }
 
@@ -230,13 +231,73 @@
     msgList.scrollTop = msgList.scrollHeight;
   }
 
-  // Text to Speech
-  function speakText(text, lang) {
-    if (!window.speechSynthesis) return;
+  // High-Definition Neural Speech & Audio Controls
+  let currentAudio = null;
+  let currentPlayingBtn = null;
+
+  function stopCurrentAudio() {
+    if (currentAudio) {
+      currentAudio.pause();
+      currentAudio.currentTime = 0;
+      currentAudio = null;
+    }
+    if (window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+    if (currentPlayingBtn) {
+      currentPlayingBtn.innerHTML = "🔊 Listen";
+      currentPlayingBtn.classList.remove("playing");
+      currentPlayingBtn = null;
+    }
+  }
+
+  function toggleSpeech(text, lang, btn) {
+    if (currentPlayingBtn === btn) {
+      stopCurrentAudio();
+      return;
+    }
+
+    stopCurrentAudio();
+    btn.innerHTML = "⏹️ Stop";
+    btn.classList.add("playing");
+    currentPlayingBtn = btn;
+
+    // Call High-Definition Native Neural Audio Stream
+    const ttsUrl = `${apiBase}/api/v1/voice/tts?text=${encodeURIComponent(text)}&language=${lang}`;
+    const audio = new Audio(ttsUrl);
+    currentAudio = audio;
+
+    audio.onended = () => stopCurrentAudio();
+    audio.onerror = () => {
+      // Fallback to browser SpeechSynthesis if server audio is blocked
+      console.warn("Backend neural audio stream unavailable, using browser voice fallback.");
+      playBrowserSpeech(text, lang, btn);
+    };
+
+    audio.play().catch(err => {
+      console.warn("Audio playback error, using browser fallback:", err);
+      playBrowserSpeech(text, lang, btn);
+    });
+  }
+
+  function playBrowserSpeech(text, lang, btn) {
+    if (!window.speechSynthesis) {
+      stopCurrentAudio();
+      return;
+    }
     window.speechSynthesis.cancel();
-    const cleanText = text.replace(/[*#_`]/g, "");
+    const cleanText = text.replace(/[*#_`|]/g, " ").replace(/\s+/g, " ").trim();
     const utterance = new SpeechSynthesisUtterance(cleanText);
     utterance.lang = lang === "ta" ? "ta-IN" : "en-US";
+
+    if (lang === "ta") {
+      const voices = window.speechSynthesis.getVoices();
+      const taVoice = voices.find(v => v.lang.startsWith("ta") || v.name.toLowerCase().includes("tamil"));
+      if (taVoice) utterance.voice = taVoice;
+    }
+
+    utterance.onend = () => stopCurrentAudio();
+    utterance.onerror = () => stopCurrentAudio();
     window.speechSynthesis.speak(utterance);
   }
 
@@ -322,26 +383,56 @@
     filePicker.value = "";
   };
 
-  // Microphone Voice Input
+  // Microphone Voice Input (High-Precision STT)
   let recognition = null;
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (SpeechRecognition) {
     recognition = new SpeechRecognition();
     recognition.continuous = false;
-    recognition.interimResults = false;
+    recognition.interimResults = true;
+    recognition.maxAlternatives = 1;
 
     recognition.onresult = (e) => {
-      const transcript = e.results[0][0].transcript;
-      userInput.value = transcript;
-      micBtn.classList.remove("recording");
-      sendMessage();
+      let interim = "";
+      let final = "";
+      for (let i = e.resultIndex; i < e.results.length; ++i) {
+        if (e.results[i].isFinal) {
+          final += e.results[i][0].transcript;
+        } else {
+          interim += e.results[i][0].transcript;
+        }
+      }
+
+      if (final) {
+        userInput.value = final;
+        micBtn.classList.remove("recording");
+        userInput.placeholder = activeLang === "ta" ? "உங்கள் கேள்வியைக் கேளுங்கள்..." : "Ask a question...";
+        sendMessage();
+      } else if (interim) {
+        userInput.value = interim;
+      }
     };
 
-    recognition.onerror = () => micBtn.classList.remove("recording");
-    recognition.onend = () => micBtn.classList.remove("recording");
+    recognition.onerror = () => {
+      micBtn.classList.remove("recording");
+      userInput.placeholder = activeLang === "ta" ? "உங்கள் கேள்வியைக் கேளுங்கள்..." : "Ask a question...";
+    };
+
+    recognition.onend = () => {
+      micBtn.classList.remove("recording");
+      userInput.placeholder = activeLang === "ta" ? "உங்கள் கேள்வியைக் கேளுங்கள்..." : "Ask a question...";
+    };
 
     micBtn.onclick = () => {
+      if (micBtn.classList.contains("recording")) {
+        recognition.stop();
+        micBtn.classList.remove("recording");
+        return;
+      }
+      stopCurrentAudio();
       recognition.lang = activeLang === "ta" ? "ta-IN" : "en-US";
+      userInput.value = "";
+      userInput.placeholder = activeLang === "ta" ? "🎙️ தமிழில் பேசுங்கள்... கேட்கிறேன்..." : "🎙️ Listening... please speak...";
       micBtn.classList.add("recording");
       recognition.start();
     };
