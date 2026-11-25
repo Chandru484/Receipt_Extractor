@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chatbot Platform — Project Admin Portal</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👑</text></svg>">
+  <style>
+    :root {
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --bg: #f8fafc;
+      --card-bg: #ffffff;
+      --text: #0f172a;
+      --text-muted: #64748b;
+      --border: #e2e8f0;
+      --success: #10b981;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background: var(--bg); color: var(--text); padding-bottom: 60px; }
+
+    /* Navbar */
+    .navbar {
+      background: #ffffff;
+      border-bottom: 1px solid var(--border);
+      padding: 16px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 50;
+    }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; color: #1e3a8a; }
+    .nav-actions { display: flex; align-items: center; gap: 14px; }
+    .badge { background: #fee2e2; color: #b91c1c; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+
+    /* Container */
+    .container { max-width: 1100px; margin: 28px auto; padding: 0 20px; }
+    
+    /* Top Project Selector Card */
+    .project-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: 20px 24px; margin-bottom: 24px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
+    .project-select-group { display: flex; align-items: center; gap: 12px; }
+    .select-label { font-weight: 600; font-size: 14px; color: var(--text); }
+    .project-select { padding: 8px 14px; border: 1px solid var(--border); border-radius: 8px; font-size: 14px; outline: none; background: #fff; min-width: 220px; }
+    .project-select:focus { border-color: var(--primary); }
+
+    /* Metrics Grid */
+    .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 24px; }
+    .metric-box { background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; padding: 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.03); }
+    .metric-label { font-size: 12px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; }
+    .metric-val { font-size: 24px; font-weight: 800; color: #1e293b; margin-top: 4px; }
+
+    /* Tabs Card */
+    .card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.04); overflow: hidden; margin-bottom: 24px; }
+    .tabs-header { display: flex; border-bottom: 1px solid var(--border); background: #f8fafc; }
+    .tab-btn { flex: 1; padding: 14px; font-size: 14px; font-weight: 600; border: none; background: none; cursor: pointer; color: var(--text-muted); transition: all 0.2s; border-bottom: 2px solid transparent; }
+    .tab-btn:hover { color: var(--primary); background: #eff6ff; }
+    .tab-btn.active { color: var(--primary); border-bottom-color: var(--primary); background: #ffffff; }
+
+    /* Tab Content */
+    .tab-body { padding: 24px; }
+    .section-title { font-size: 16px; font-weight: 700; color: #0f172a; margin-bottom: 6px; }
+    .section-sub { font-size: 13px; color: var(--text-muted); margin-bottom: 18px; }
+
+    /* Question Editor */
+    .questions-textarea { width: 100%; min-height: 220px; padding: 14px; border: 1px solid var(--border); border-radius: 8px; font-size: 13.5px; line-height: 1.6; outline: none; font-family: inherit; resize: vertical; margin-bottom: 16px; }
+    .questions-textarea:focus { border-color: var(--primary); }
+
+    .btn-save { background: var(--primary); color: #fff; border: none; border-radius: 8px; padding: 10px 20px; font-size: 14px; font-weight: 600; cursor: pointer; transition: background 0.2s; display: inline-flex; align-items: center; gap: 8px; }
+    .btn-save:hover { background: var(--primary-hover); }
+
+    /* Candidates Activity */
+    .candidates-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 12px; }
+    .candidates-table th, .candidates-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); text-align: left; }
+    .candidates-table th { background: #f8fafc; font-weight: 600; color: #475569; }
+
+    .toast { position: fixed; bottom: 24px; right: 24px; background: #0f172a; color: #fff; padding: 12px 20px; border-radius: 8px; font-size: 13.5px; display: none; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 100; animation: fadeIn 0.3s; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+  </style>
+</head>
+<body>
+
+  <!-- Top Navigation -->
+  <nav class="navbar">
+    <div class="brand">
+      <span>👑</span> Chatbot Project Admin Portal
+    </div>
+    <div class="nav-actions">
+      <span class="badge">Multi-Project Master Access</span>
+      <a href="/" style="font-size: 13px; color: #2563eb; text-decoration: none; font-weight: 500;">View Extractor Dashboard →</a>
+    </div>
+  </nav>
+
+  <div class="container">
+    
+    <!-- Project Selector Card -->
+    <div class="project-card">
+      <div class="project-select-group">
+        <label class="select-label" for="projectSelect">Active Project:</label>
+        <select class="project-select" id="projectSelect"></select>
+      </div>
+      <div style="font-size: 12px; color: #64748b;">
+        Target MongoDB Collections: <code id="colPrefixHint" style="font-weight: 600; color: #1e293b;">proj_demo_*</code>
+      </div>
+    </div>
+
+    <!-- Metrics Cards for Selected Project -->
+    <div class="metrics-grid">
+      <div class="metric-box">
+        <div class="metric-label">👑 Admins</div>
+        <div class="metric-val" id="cntAdmins">0</div>
+      </div>
+      <div class="metric-box">
+        <div class="metric-label">🛠️ Workers</div>
+        <div class="metric-val" id="cntWorkers">0</div>
+      </div>
+      <div class="metric-box">
+        <div class="metric-label">💡 Users / Clients</div>
+        <div class="metric-val" id="cntUsers">0</div>
+      </div>
+      <div class="metric-box">
+        <div class="metric-label">💬 Conversations</div>
+        <div class="metric-val" id="cntConvs">0</div>
+      </div>
+    </div>
+
+    <!-- Question Package Editor Card -->
+    <div class="card">
+      <div class="tabs-header">
+        <button class="tab-btn active" data-role="admin">👑 Admin Package Questions</button>
+        <button class="tab-btn" data-role="worker">🛠️ Worker Package Questions</button>
+        <button class="tab-btn" data-role="user">💡 User Package Questions</button>
+      </div>
+
+      <div class="tab-body">
+        <div class="section-title" id="roleTitle">Admin Questions (Visible ONLY to Admins)</div>
+        <div class="section-sub">
+          One question per line. The chatbot widget will automatically suggest these 1-click prompt chips to candidates logged in with this role.
+        </div>
+
+        <textarea class="questions-textarea" id="questionsBox" placeholder="Enter questions, one per line..."></textarea>
+        
+        <div>
+          <button class="btn-save" id="saveBtn">
+            <span>💾 Save & Update Questions in MongoDB</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Registered Candidates & Profiles Card -->
+    <div class="card">
+      <div style="padding: 20px 24px; border-bottom: 1px solid var(--border);">
+        <h3 style="font-size: 15px; font-weight: 700; color: #0f172a;">👥 Recent Candidates Registered in this Project</h3>
+        <p style="font-size: 12.5px; color: #64748b; margin-top: 4px;">Profiles automatically recorded when your coworker's backend sends login sessions.</p>
+      </div>
+      <div style="padding: 16px 24px; overflow-x: auto;">
+        <table class="candidates-table">
+          <thead>
+            <tr>
+              <th>Role</th>
+              <th>Candidate ID</th>
+              <th>Name</th>
+              <th>Last Active (IST)</th>
+            </tr>
+          </thead>
+          <tbody id="candidatesTableBody">
+            <tr><td colspan="4" style="text-align: center; color: #94a3b8;">No candidate records yet</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <!-- Script Logic -->
+  <script>
+    let activeProjectId = "site_demo";
+    let activeRole = "admin";
+    let cachedPackages = {};
+
+    const projectSelect = document.getElementById("projectSelect");
+    const colPrefixHint = document.getElementById("colPrefixHint");
+    const questionsBox = document.getElementById("questionsBox");
+    const saveBtn = document.getElementById("saveBtn");
+    const toast = document.getElementById("toast");
+    const roleTitle = document.getElementById("roleTitle");
+    const tabBtns = document.querySelectorAll(".tab-btn");
+
+    function showToast(msg) {
+      toast.textContent = msg;
+      toast.style.display = "block";
+      setTimeout(() => { toast.style.display = "none"; }, 3200);
+    }
+
+    // 1. Load All Projects
+    async function loadProjects() {
+      try {
+        const res = await fetch("/api/v1/chatbot-admin/projects");
+        const data = await res.json();
+        projectSelect.innerHTML = "";
+        const list = data.projects || [{ project_id: "site_demo", name: "Default Project" }];
+        list.forEach(p => {
+          const opt = document.createElement("option");
+          opt.value = p.project_id;
+          opt.textContent = `${p.name} (${p.project_id})`;
+          projectSelect.appendChild(opt);
+        });
+        activeProjectId = projectSelect.value || "site_demo";
+        colPrefixHint.textContent = `${activeProjectId}_*`;
+        loadProjectData();
+      } catch (err) {
+        projectSelect.innerHTML = `<option value="site_demo">Default Project (site_demo)</option>`;
+        loadProjectData();
+      }
+    }
+
+    projectSelect.onchange = () => {
+      activeProjectId = projectSelect.value;
+      colPrefixHint.textContent = `${activeProjectId}_*`;
+      loadProjectData();
+    };
+
+    // 2. Load Project Metrics, Questions, and Candidates
+    async function loadProjectData() {
+      // Load Data Overview & Counts
+      try {
+        const resData = await fetch(`/api/v1/chatbot-admin/projects/${activeProjectId}/data`);
+        const info = await resData.json();
+        const counts = info.counts || {};
+        document.getElementById("cntAdmins").textContent = counts.admins || 0;
+        document.getElementById("cntWorkers").textContent = counts.workers || 0;
+        document.getElementById("cntUsers").textContent = counts.users || 0;
+        document.getElementById("cntConvs").textContent = counts.conversations || 0;
+
+        // Render Candidates Table
+        const tbody = document.getElementById("candidatesTableBody");
+        tbody.innerHTML = "";
+        const allCandidates = [
+          ...(info.recent_admins || []).map(c => ({ ...c, role: "👑 Admin" })),
+          ...(info.recent_workers || []).map(c => ({ ...c, role: "🛠️ Worker" })),
+          ...(info.recent_users || []).map(c => ({ ...c, role: "💡 User" }))
+        ];
+
+        if (allCandidates.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: #94a3b8;">No candidate records yet</td></tr>`;
+        } else {
+          allCandidates.forEach(c => {
+            tbody.innerHTML += `
+              <tr>
+                <td><strong>${c.role}</strong></td>
+                <td><code>${c.candidate_id || "N/A"}</code></td>
+                <td>${c.name || "N/A"}</td>
+                <td>${c.last_login || c.created_at || "Recent"}</td>
+              </tr>
+            `;
+          });
+        }
+      } catch (e) {
+        console.log("Could not load data overview:", e);
+      }
+
+      // Load Questions for all 3 roles
+      try {
+        const resQ = await fetch(`/api/v1/chatbot-admin/projects/${activeProjectId}/questions`);
+        const qData = await resQ.json();
+        cachedPackages = qData.packages || {};
+        displayCurrentRoleQuestions();
+      } catch (e) {
+        console.log("Could not load questions:", e);
+      }
+    }
+
+    function displayCurrentRoleQuestions() {
+      const pkg = cachedPackages[activeRole] || {};
+      const qList = pkg.questions || [];
+      questionsBox.value = qList.join("\n");
+      const labels = {
+        admin: "👑 Admin Package Questions (Visible ONLY to Admins)",
+        worker: "🛠️ Worker Package Questions (Visible ONLY to Workers)",
+        user: "💡 User Package Questions (Visible ONLY to End-Users)"
+      };
+      roleTitle.textContent = labels[activeRole];
+    }
+
+    // Role Tab Switching
+    tabBtns.forEach(btn => {
+      btn.onclick = () => {
+        tabBtns.forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        activeRole = btn.getAttribute("data-role");
+        displayCurrentRoleQuestions();
+      };
+    });
+
+    // Save Modified Questions
+    saveBtn.onclick = async () => {
+      const rawText = questionsBox.value.trim();
+      const questions = rawText.split("\n").map(q => q.trim()).filter(q => q.length > 0);
+      if (questions.length === 0) {
+        alert("Please enter at least one question.");
+        return;
+      }
+
+      saveBtn.disabled = true;
+      saveBtn.innerHTML = "<span>⏳ Updating MongoDB...</span>";
+
+      try {
+        const res = await fetch(`/api/v1/chatbot-admin/projects/${activeProjectId}/questions`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            role: activeRole,
+            questions: questions,
+            package_name: `Admin Curated ${activeRole.toUpperCase()} Package`
+          })
+        });
+
+        const data = await res.json();
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = "<span>💾 Save & Update Questions in MongoDB</span>";
+
+        if (res.ok) {
+          showToast(`✅ Successfully updated ${questions.length} questions for ${activeRole} in MongoDB!`);
+          if (!cachedPackages[activeRole]) cachedPackages[activeRole] = {};
+          cachedPackages[activeRole].questions = questions;
+        } else {
+          alert(`Update failed: ${data.detail || "Server error"}`);
+        }
+      } catch (err) {
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = "<span>💾 Save & Update Questions in MongoDB</span>";
+        alert(`Network Error: ${err.message}`);
+      }
+    };
+
+    loadProjects();
+  </script>
+
+</body>
+</html>

@@ -14,6 +14,7 @@ from universal_chatbot.backend.app.api.v1.admin_routes import router as admin_ro
 from universal_chatbot.backend.app.api.v1.document_routes import router as document_router
 from universal_chatbot.backend.app.api.v1.voice_routes import router as voice_router
 from universal_chatbot.backend.app.api.v1.package_routes import router as package_router
+from universal_chatbot.backend.app.api.v1.chatbot_admin_routes import router as chatbot_admin_router
 
 
 @asynccontextmanager
@@ -50,6 +51,7 @@ app.include_router(admin_router, prefix="/api/v1")
 app.include_router(document_router, prefix="/api/v1")
 app.include_router(voice_router, prefix="/api/v1")
 app.include_router(package_router, prefix="/api/v1")
+app.include_router(chatbot_admin_router, prefix="/api/v1")
 
 
 @app.get("/health", summary="Platform Health Check")
@@ -79,6 +81,7 @@ def serve_widget_script():
 
 # Demo page
 DEMO_PATH = Path(__file__).resolve().parent.parent.parent / "widget" / "index.html"
+CHATBOT_ADMIN_PATH = Path(__file__).resolve().parent.parent.parent.parent / "chatbot_admin.html"
 
 
 @app.get("/demo", include_in_schema=False)
@@ -87,3 +90,11 @@ def serve_demo_page():
     if DEMO_PATH.exists():
         return FileResponse(DEMO_PATH, media_type="text/html")
     return JSONResponse(status_code=404, content={"detail": "Demo page not found."})
+
+
+@app.get("/chatbot-admin", include_in_schema=False)
+def serve_chatbot_admin():
+    """Serve the multi-project Chatbot Admin Dashboard."""
+    if CHATBOT_ADMIN_PATH.exists():
+        return FileResponse(CHATBOT_ADMIN_PATH, media_type="text/html")
+    return JSONResponse(status_code=404, content={"detail": "chatbot_admin.html not found."})

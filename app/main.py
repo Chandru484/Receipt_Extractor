@@ -49,12 +49,14 @@ try:
     from universal_chatbot.backend.app.api.v1.admin_routes import router as chatbot_admin_router
     from universal_chatbot.backend.app.api.v1.voice_routes import router as chatbot_voice_router
     from universal_chatbot.backend.app.api.v1.package_routes import router as chatbot_package_router
+    from universal_chatbot.backend.app.api.v1.chatbot_admin_routes import router as chatbot_admin_mgmt_router
 
     app.include_router(chatbot_chat_router, prefix="/api/v1")
     app.include_router(chatbot_doc_router, prefix="/api/v1")
     app.include_router(chatbot_admin_router, prefix="/api/v1")
     app.include_router(chatbot_voice_router, prefix="/api/v1")
     app.include_router(chatbot_package_router, prefix="/api/v1")
+    app.include_router(chatbot_admin_mgmt_router, prefix="/api/v1")
 except Exception as _cb_err:
     print(f"Warning: Universal Chatbot routers could not be loaded into app: {_cb_err}", flush=True)
 
@@ -90,6 +92,15 @@ async def measure_and_display_response_time(request: Request, call_next):
 ROOT_DIR = Path(__file__).resolve().parent.parent
 UI_PATH = ROOT_DIR / "ui.html"
 WIDGET_PATH = ROOT_DIR / "universal_chatbot" / "widget" / "widget.js"
+CHATBOT_ADMIN_PATH = ROOT_DIR / "chatbot_admin.html"
+
+
+@app.get("/chatbot-admin", include_in_schema=False)
+async def serve_chatbot_admin():
+    """Serve the multi-project Chatbot Admin Dashboard."""
+    if CHATBOT_ADMIN_PATH.exists():
+        return FileResponse(CHATBOT_ADMIN_PATH, media_type="text/html")
+    return JSONResponse(status_code=404, content={"detail": "chatbot_admin.html not found."})
 
 
 @app.get("/widget.js", include_in_schema=False)
