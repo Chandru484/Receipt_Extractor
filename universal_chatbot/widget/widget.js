@@ -13,7 +13,7 @@
   let activeSessionId = "sess_" + Math.random().toString(36).substring(2, 10);
   let welcomeSpoken = false;
   let widgetConfig = {
-    bot_name: "Universal Assistant",
+    bot_name: "AI Assistant",
     primary_color: "#2563eb",
     welcome_message_en: "வணக்கம்! சொல்லுங்க, உங்களுக்கு நான் எப்படி உதவலாம்?",
     welcome_message_ta: "வணக்கம்! சொல்லுங்க, உங்களுக்கு நான் எப்படி உதவலாம்?",
