@@ -453,6 +453,8 @@
         session_id: activeSessionId,
         language: activeLang,
         is_voice: isVoice,
+        user_id: candidateId,
+        role: candidateRole,
       }),
     })
       .then(r => r.json())

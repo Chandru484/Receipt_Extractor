@@ -12,7 +12,7 @@ router = APIRouter(prefix="/chat", tags=["Chat"])
 def send_chat_message(request: ChatMessageRequest):
     """Process a user question, orchestrate retrieval and AI response, and persist conversation."""
     try:
-        response = chat_orchestrator.process_message(request)
+        response = chat_orchestrator.process_message(request, verified_user_id=request.user_id)
         return response
     except Exception as exc:
         raise HTTPException(

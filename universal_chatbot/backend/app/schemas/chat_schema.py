@@ -18,6 +18,8 @@ class ChatMessageRequest(BaseModel):
     language: Literal["en", "ta"] = Field(default="en", description="Selected language ('en' for English, 'ta' for Tamil)")
     active_document_id: Optional[str] = Field(None, description="Optional document ID if asking about uploaded file")
     is_voice: bool = Field(default=False, description="Flag indicating input originated from speech/microphone")
+    user_id: Optional[str] = Field(None, description="Logged-in User/Candidate ID (e.g. 'user_123', 'adm_01')")
+    role: Optional[str] = Field(None, description="Role of the logged-in candidate ('admin', 'worker', 'user')")
 
 
 class ChatMessageResponse(BaseModel):

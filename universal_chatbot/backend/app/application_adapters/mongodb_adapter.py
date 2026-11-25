@@ -58,8 +58,14 @@ class ApplicationMongoAdapter:
             collection = db[allowed_col]
 
             filter_query: Dict[str, Any] = {}
-            if user_id and conn.get("user_id_field"):
-                filter_query[conn["user_id_field"]] = user_id
+            if user_id:
+                user_f = conn.get("user_id_field") or "user_id"
+                filter_query["$or"] = [
+                    {user_f: user_id},
+                    {f"data.{user_f}": user_id},
+                    {"user_id": user_id},
+                    {"candidate_id": user_id},
+                ]
 
             # Extract search terms from user query
             tokens = re.findall(r"[\w]+", user_query, re.UNICODE)
