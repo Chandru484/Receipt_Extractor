@@ -46,10 +46,10 @@ def initialize_database():
         {
             "website_id": "site_demo",
             "tenant_id": "ten_default",
-            "name": "Receipt Extractor & Universal Assistant",
+            "name": "Receipt Extractor & AI Assistant",
             "allowed_domains": ["*"],
             "widget_config": {
-                "bot_name": "Universal Assistant",
+                "bot_name": "AI Assistant",
                 "primary_color": "#2563eb",
                 "welcome_message_en": "Hello! How can I assist you with your receipts, documents, or questions today?",
                 "welcome_message_ta": "வணக்கம்! உங்கள் ரசீதுகள், ஆவணங்கள் அல்லது கேள்விகளுக்கு இன்று நான் எவ்வாறு உதவ முடியும்?",

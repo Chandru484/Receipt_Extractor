@@ -168,9 +168,9 @@ class ChatOrchestrator:
             site = {
                 "website_id": request.website_id,
                 "tenant_id": "ten_default",
-                "name": "Universal Assistant",
+                "name": "AI Assistant",
                 "widget_config": {
-                    "bot_name": "Universal Assistant",
+                    "bot_name": "AI Assistant",
                     "enable_tawk_to": True,
                     "tawk_to_property_id": None,
                 },

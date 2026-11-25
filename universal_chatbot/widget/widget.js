@@ -44,6 +44,12 @@
     .chat-title { font-weight: 600; font-size: 15px; }
     .header-btn { background: rgba(255,255,255,0.18); border: 1px solid rgba(255,255,255,0.35); color: #fff; border-radius: 14px; padding: 4px 9px; font-size: 11px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; transition: all 0.15s; font-weight: 500; }
     .header-btn:hover { background: rgba(255,255,255,0.3); }
+    .header-btn.active { background: #16a34a !important; border-color: #22c55e !important; color: #fff !important; font-weight: 700; box-shadow: 0 0 10px rgba(34, 197, 94, 0.5); }
+    .call-banner { background: #0f172a; color: #f8fafc; padding: 8px 14px; font-size: 11.5px; display: flex; align-items: center; justify-content: space-between; gap: 8px; border-bottom: 1px solid #1e293b; transition: all 0.2s; }
+    .call-pulse { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; display: inline-block; animation: pulse 1s infinite; }
+    .call-banner.listening .call-pulse { background: #ef4444; }
+    .end-call-btn { background: #dc2626; color: #fff; border: none; border-radius: 10px; padding: 3px 8px; font-size: 10.5px; cursor: pointer; font-weight: 600; transition: background 0.15s; }
+    .end-call-btn:hover { background: #b91c1c; }
     .lang-select { background: rgba(255,255,255,0.2); color: #fff; border: 1px solid rgba(255,255,255,0.4); border-radius: 6px; padding: 4px 8px; font-size: 12px; cursor: pointer; outline: none; }
     .lang-select option { color: #111; }
     .chat-messages { flex: 1; padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; background: #f9fafb; }
@@ -99,11 +105,22 @@
           </div>
         </div>
         <div style="display: flex; align-items: center; gap: 6px;">
+          <button class="header-btn" id="callModeBtn" title="Start Hands-Free Voice Call (தொடர் குரல் அழைப்பு)">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M20.01 15.38c-1.23 0-2.42-.2-3.53-.56a.977.977 0 00-1.01.24l-1.57 1.97c-2.83-1.44-5.15-3.75-6.59-6.59l1.97-1.57c.28-.28.36-.67.25-1.02A11.36 11.36 0 018.96 4.3c0-.55-.45-1-1-1H4.45c-.55 0-1 .45-1 1 0 9.39 7.61 17 17 17 .55 0 1-.45 1-1v-3.56c0-.55-.45-.96-.44-.96z"/></svg>
+            <span id="callModeLabel">Voice Call</span>
+          </button>
           <button class="header-btn" id="newChatBtn" title="Start New Conversation (புதிய அரட்டை)">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
             <span>New Chat</span>
           </button>
         </div>
+      </div>
+      <div class="call-banner" id="callBanner" style="display: none;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span class="call-pulse"></span>
+          <span id="callBannerText" style="font-weight: 500;">📞 நேரலை குரல் அழைப்பு (Live Call Active)</span>
+        </div>
+        <button id="endCallBtn" class="end-call-btn">End Call</button>
       </div>
       <div class="chat-messages" id="msgList"></div>
       <div class="suggestions-container" id="suggBox">
@@ -151,6 +168,82 @@
   const hideTawkBtn = shadow.getElementById("hideTawkBtn");
   const botHeader = shadow.getElementById("botHeader");
   const newChatBtn = shadow.getElementById("newChatBtn");
+  const callModeBtn = shadow.getElementById("callModeBtn");
+  const callModeLabel = shadow.getElementById("callModeLabel");
+  const callBanner = shadow.getElementById("callBanner");
+  const callBannerText = shadow.getElementById("callBannerText");
+  const endCallBtn = shadow.getElementById("endCallBtn");
+
+  let isCallModeActive = false;
+  let isSpeaking = false;
+  let isProcessingMessage = false;
+
+  function playListeningChime() {
+    try {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextClass) return;
+      const ctx = new AudioContextClass();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = "sine";
+      // Gentle two-tone chime: D5 (587.33Hz) then A5 (880Hz)
+      osc.frequency.setValueAtTime(587.33, ctx.currentTime);
+      osc.frequency.setValueAtTime(880, ctx.currentTime + 0.08);
+      gain.gain.setValueAtTime(0.1, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.25);
+    } catch (_) {}
+  }
+
+  function toggleCallMode() {
+    unlockAudioPlayback();
+    if (isCallModeActive) {
+      endCallMode();
+    } else {
+      startCallMode();
+    }
+  }
+
+  function startCallMode() {
+    isCallModeActive = true;
+    if (callModeBtn) callModeBtn.classList.add("active");
+    if (callBanner) {
+      callBanner.style.display = "flex";
+      callBanner.classList.remove("listening");
+    }
+    if (callBannerText) callBannerText.textContent = "📞 நேரலை குரல் அழைப்பு துவங்கியது...";
+    appendMessage(
+      "system-note",
+      activeLang === "ta"
+        ? "📞 நேரலை தொடர் குரல் அழைப்பு துவங்கப்பட்டுள்ளது. நீங்கள் இனி எதையும் அழுத்தாமல் தொடர்ச்சியாக தமிழில் பேசலாம்!"
+        : "📞 Hands-Free Voice Call active. You can now speak back and forth continuously without clicking any buttons!"
+    );
+
+    const firstSpeakBtn = msgList.querySelector(".speak-btn");
+    const welcomeVoiceText = "வணக்கம்! சொல்லுங்க, உங்களுக்கு நான் எப்படி உதவலாம்?";
+    playSpeech(welcomeVoiceText, "ta", firstSpeakBtn);
+  }
+
+  function endCallMode() {
+    isCallModeActive = false;
+    isSpeaking = false;
+    if (callModeBtn) callModeBtn.classList.remove("active");
+    if (callBanner) {
+      callBanner.style.display = "none";
+      callBanner.classList.remove("listening");
+    }
+    stopCurrentAudio();
+    if (recognition) {
+      try { recognition.stop(); } catch (_) {}
+    }
+    if (micBtn) micBtn.classList.remove("recording");
+  }
+
+  if (callModeBtn) callModeBtn.onclick = toggleCallMode;
+  if (endCallBtn) endCallBtn.onclick = endCallMode;
 
   function removeTawkTo(notify = true) {
     if (window.Tawk_API && typeof window.Tawk_API.hideWidget === "function") {
@@ -184,6 +277,7 @@
 
   function resetConversation(clearMessages = true, welcomeText = null) {
     stopCurrentAudio();
+    endCallMode();
     removeTawkTo(false);
     activeConvId = null;
     activeSessionId = "sess_" + Math.random().toString(36).substring(2, 10);
@@ -441,12 +535,28 @@
     currentAudio = sharedAudio;
 
     sharedAudio.onplay = () => {
+      isSpeaking = true;
       if (btn) btn.innerHTML = "⏹️ Stop";
+      if (isCallModeActive && callBannerText) {
+        if (callBanner) callBanner.classList.remove("listening");
+        callBannerText.textContent = "🔊 AI பேசுகிறது... (AI Speaking...)";
+      }
     };
 
     sharedAudio.onended = () => {
+      isSpeaking = false;
       stopCurrentAudio();
       if (onEndedCallback) onEndedCallback();
+      if (isCallModeActive) {
+        if (callBanner) callBanner.classList.add("listening");
+        if (callBannerText) callBannerText.textContent = "🎙️ உங்களைக் கேட்கிறது... (Listening to you...)";
+        playListeningChime();
+        setTimeout(() => {
+          if (isCallModeActive && !isSpeaking && !isProcessingMessage) {
+            startListening();
+          }
+        }, 380);
+      }
     };
 
     sharedAudio.onerror = (err) => {
@@ -490,11 +600,31 @@
       currentPlayingBtn = btn;
     }
 
+    utterance.onstart = () => {
+      isSpeaking = true;
+      if (isCallModeActive && callBannerText) {
+        if (callBanner) callBanner.classList.remove("listening");
+        callBannerText.textContent = "🔊 AI பேசுகிறது... (AI Speaking...)";
+      }
+    };
+
     utterance.onend = () => {
+      isSpeaking = false;
       stopCurrentAudio();
       if (onEndedCallback) onEndedCallback();
+      if (isCallModeActive) {
+        if (callBanner) callBanner.classList.add("listening");
+        if (callBannerText) callBannerText.textContent = "🎙️ உங்களைக் கேட்கிறது... (Listening to you...)";
+        playListeningChime();
+        setTimeout(() => {
+          if (isCallModeActive && !isSpeaking && !isProcessingMessage) {
+            startListening();
+          }
+        }, 380);
+      }
     };
     utterance.onerror = () => {
+      isSpeaking = false;
       stopCurrentAudio();
       if (onEndedCallback) onEndedCallback();
     };
@@ -545,6 +675,11 @@
     appendMessage("user", text);
     userInput.value = "";
     unlockAudioPlayback();
+    isProcessingMessage = true;
+    if (isCallModeActive && callBannerText) {
+      if (callBanner) callBanner.classList.remove("listening");
+      callBannerText.textContent = "⏳ சிந்திக்கிறது... (Thinking...)";
+    }
 
     const loadingDiv = document.createElement("div");
     loadingDiv.className = "msg bot";
@@ -568,6 +703,7 @@
     })
       .then(r => r.json())
       .then(data => {
+        isProcessingMessage = false;
         loadingDiv.remove();
         activeConvId = data.conversation_id;
 
@@ -588,6 +724,7 @@
         }
       })
       .catch(() => {
+        isProcessingMessage = false;
         loadingDiv.remove();
         appendMessage("bot", "சேவையகப் பிழை ஏற்பட்டது. மீண்டும் முயற்சிக்கவும்.");
       });
@@ -648,6 +785,10 @@
     userInput.value = "";
     userInput.placeholder = "🎙️ தமிழில் பேசவும்... கேட்கிறேன் (Listening... speak)...";
     micBtn.classList.add("recording");
+    if (isCallModeActive) {
+      if (callBanner) callBanner.classList.add("listening");
+      if (callBannerText) callBannerText.textContent = "🎙️ உங்களைக் கேட்கிறது... (Listening to you...)";
+    }
     try {
       recognition.start();
     } catch (err) {
@@ -677,24 +818,42 @@
         userInput.value = final;
         micBtn.classList.remove("recording");
         userInput.placeholder = "உங்கள் கேள்வியைக் கேளுங்கள் (Ask in Tamil or English)...";
+        if (isCallModeActive) {
+          if (callBanner) callBanner.classList.remove("listening");
+          if (callBannerText) callBannerText.textContent = "⏳ சிந்திக்கிறது... (Thinking...)";
+        }
         sendMessage(true);
       } else if (interim) {
         userInput.value = interim;
+        if (isCallModeActive && callBannerText) {
+          callBannerText.textContent = `🎙️ "${interim}"...`;
+        }
       }
     };
 
     recognition.onerror = (e) => {
       micBtn.classList.remove("recording");
       console.warn("Speech recognition error:", e.error);
-      if (e.error === "not-allowed" || e.error === "service-not-allowed") {
-        appendMessage("system-note", "⚠️ Microphone permission denied. Please allow microphone access in your browser settings (look for the lock/tune icon in the address bar).");
-      } else if (e.error === "network") {
-        appendMessage("system-note", "⚠️ Speech recognition service unreachable. Please check internet access or type your question.");
-      } else if (e.error === "no-speech") {
+      if (e.error === "no-speech") {
+        if (isCallModeActive && !isSpeaking && !isProcessingMessage) {
+          if (callBannerText) callBannerText.textContent = "🎙️ மீண்டும் பேசவும்... (Listening...)";
+          setTimeout(() => {
+            if (isCallModeActive && !isSpeaking && !isProcessingMessage && !micBtn.classList.contains("recording")) {
+              startListening();
+            }
+          }, 1200);
+          return;
+        }
         userInput.placeholder = "பேச்சு கேட்கவில்லை, மீண்டும் பேசவும்...";
         setTimeout(() => {
           userInput.placeholder = "உங்கள் கேள்வியைக் கேளுங்கள் (Ask in Tamil or English)...";
         }, 3000);
+      } else if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+        if (isCallModeActive) endCallMode();
+        appendMessage("system-note", "⚠️ Microphone permission denied. Please allow microphone access in your browser settings (look for the lock/tune icon in the address bar).");
+      } else if (e.error === "network") {
+        if (isCallModeActive) endCallMode();
+        appendMessage("system-note", "⚠️ Speech recognition service unreachable. Please check internet access or type your question.");
       } else {
         userInput.placeholder = "உங்கள் கேள்வியைக் கேளுங்கள் (Ask in Tamil or English)...";
       }
@@ -705,10 +864,20 @@
       if (!userInput.value.trim()) {
         userInput.placeholder = "உங்கள் கேள்வியைக் கேளுங்கள் (Ask in Tamil or English)...";
       }
+      if (isCallModeActive && !isSpeaking && !isProcessingMessage) {
+        setTimeout(() => {
+          if (isCallModeActive && !isSpeaking && !isProcessingMessage && !micBtn.classList.contains("recording")) {
+            startListening();
+          }
+        }, 1200);
+      }
     };
 
     micBtn.onclick = () => {
       unlockAudioPlayback();
+      if (isSpeaking) {
+        stopCurrentAudio();
+      }
       if (micBtn.classList.contains("recording")) {
         try { recognition.stop(); } catch (_) {}
         micBtn.classList.remove("recording");
@@ -822,6 +991,15 @@
       unlockAudioPlayback();
       resetConversation(true);
       speakWelcomeGreeting();
+    },
+    startCall: function () {
+      if (!isCallModeActive) toggleCallMode();
+    },
+    endCall: function () {
+      if (isCallModeActive) endCallMode();
+    },
+    isCallActive: function () {
+      return isCallModeActive;
     },
     removeTawkTo: function () {
       removeTawkTo(true);
