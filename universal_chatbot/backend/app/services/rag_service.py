@@ -20,14 +20,9 @@ import string
 
 
 def _tokenize(text: str) -> List[str]:
-    """Tokenize text supporting English words and Unicode / Tamil scripts cleanly."""
-    raw_words = text.lower().split()
-    tokens = []
-    for w in raw_words:
-        cleaned = "".join(c for c in w if c not in string.punctuation and not c.isspace())
-        if len(cleaned) > 1:
-            tokens.append(cleaned)
-    return tokens
+    """Tokenize text supporting English words, filenames (e.g. GST.pdf -> gst, pdf), and Tamil scripts cleanly."""
+    raw_words = re.split(r"[\s\.,;:!?()\[\]{}\"'/\\|+=_-]+", text.lower())
+    return [w for w in raw_words if len(w) > 1]
 
 
 def _compute_relevance_score(query_tokens: List[str], chunk_text: str) -> float:
@@ -143,51 +138,96 @@ class RAGService:
         query: str,
         conversation_id: Optional[str] = None,
         session_id: Optional[str] = None,
-        top_k: int = 4,
+        top_k: int = 5,
     ) -> List[Dict[str, Any]]:
         """Retrieve most relevant knowledge chunks matching user query within tenant & session boundary."""
         chunks_col = get_document_chunks_collection()
         if chunks_col is None:
             return []
 
-        # Scope query: Website general knowledge OR user's session-specific documents
-        query_filter: Dict[str, Any] = {
+        query_tokens = _tokenize(query)
+        scored_chunks: List[Dict[str, Any]] = []
+
+        # 1. Prioritize user-uploaded documents in this conversation/session
+        user_candidates: List[Dict[str, Any]] = []
+        if conversation_id or session_id:
+            session_or = []
+            if conversation_id:
+                session_or.append({"conversation_id": conversation_id})
+            if session_id:
+                session_or.append({"session_id": session_id})
+
+            user_filter: Dict[str, Any] = {
+                "website_id": website_id,
+                "tenant_id": tenant_id,
+                "is_user_document": True,
+                "$or": session_or,
+            }
+            user_candidates = list(chunks_col.find(user_filter).sort("_id", -1).limit(50))
+
+        user_scored: List[Dict[str, Any]] = []
+        for c in user_candidates:
+            searchable_text = f"{c.get('source_name', '')} {c.get('content', '')}"
+            score = _compute_relevance_score(query_tokens, searchable_text)
+            if score > 0.05:
+                user_scored.append({
+                    "chunk_id": c.get("chunk_id"),
+                    "source_id": c.get("source_id"),
+                    "source_name": c.get("source_name", "Document"),
+                    "content": c.get("content", ""),
+                    "chunk_index": c.get("chunk_index", 0),
+                    "score": score + 0.5,  # Boost session-uploaded document relevance
+                    "is_user_document": True,
+                })
+
+        # Fallback: if user uploaded a document in this session/conversation and asked a broad
+        # or summary question (e.g. "tell me about this file", "summarize", etc.),
+        # include the chunks of the most recently uploaded user document in sequential order.
+        if user_candidates and len(user_scored) == 0:
+            latest_source_id = user_candidates[0].get("source_id")
+            latest_doc_chunks = [
+                c for c in user_candidates if c.get("source_id") == latest_source_id
+            ]
+            latest_doc_chunks.sort(key=lambda x: x.get("chunk_index", 0))
+            for c in latest_doc_chunks[:top_k]:
+                user_scored.append({
+                    "chunk_id": c.get("chunk_id"),
+                    "source_id": c.get("source_id"),
+                    "source_name": c.get("source_name", "Document"),
+                    "content": c.get("content", ""),
+                    "chunk_index": c.get("chunk_index", 0),
+                    "score": 1.0,
+                    "is_user_document": True,
+                })
+
+        scored_chunks.extend(user_scored)
+
+        # 2. Fetch general website knowledge chunks
+        kb_filter: Dict[str, Any] = {
             "website_id": website_id,
             "tenant_id": tenant_id,
             "$or": [
                 {"is_user_document": False},
                 {"is_user_document": {"$exists": False}},
-            ]
+            ],
         }
-        if conversation_id or session_id:
-            conditions = []
-            if conversation_id:
-                conditions.append({"conversation_id": conversation_id})
-            if session_id:
-                conditions.append({"session_id": session_id})
-            query_filter["$or"].extend(conditions)
-
-        # Fetch candidate chunks
-        candidates = list(chunks_col.find(query_filter).limit(100))
-        if not candidates:
-            return []
-
-        query_tokens = _tokenize(query)
-        scored_chunks = []
-        for c in candidates:
-            score = _compute_relevance_score(query_tokens, c.get("content", ""))
-            if score > 0.05:  # Minimum relevance threshold
+        kb_candidates = list(chunks_col.find(kb_filter).limit(100))
+        for c in kb_candidates:
+            searchable_text = f"{c.get('source_name', '')} {c.get('content', '')}"
+            score = _compute_relevance_score(query_tokens, searchable_text)
+            if score > 0.05:
                 scored_chunks.append({
                     "chunk_id": c.get("chunk_id"),
-                    "source_name": c.get("source_name", "Document"),
+                    "source_id": c.get("source_id"),
+                    "source_name": c.get("source_name", "Knowledge Base"),
                     "content": c.get("content", ""),
                     "chunk_index": c.get("chunk_index", 0),
                     "score": score,
-                    "is_user_document": c.get("is_user_document", False),
+                    "is_user_document": False,
                 })
 
-        # Sort descending by relevance score
-        scored_chunks.sort(key=lambda x: x["score"], reverse=True)
+        # Sort descending by relevance score (and chunk_index ascending for ties)
+        scored_chunks.sort(key=lambda x: (-x["score"], x["chunk_index"]))
         return scored_chunks[:top_k]
 
 

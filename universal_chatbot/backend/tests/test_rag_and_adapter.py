@@ -35,14 +35,47 @@ def test_chunk_text_algorithm():
 
 
 def test_tokenize_multilingual():
-    """Verify tokenizer supports English and Tamil characters."""
-    en_tokens = _tokenize("Hello world! How are you?")
+    """Verify tokenizer supports English words, filenames, and Tamil characters."""
+    en_tokens = _tokenize("Hello world! Tell me about GST.pdf file?")
     assert "hello" in en_tokens
     assert "world" in en_tokens
+    assert "gst" in en_tokens
+    assert "pdf" in en_tokens
 
     ta_tokens = _tokenize("வணக்கம்! நலமாக இருக்கிறீர்களா?")
     assert "வணக்கம்" in ta_tokens
     assert len(ta_tokens) >= 2
+
+
+def test_rag_session_document_fallback():
+    """Verify RAG retrieves session-uploaded document chunks even for broad summary queries."""
+    mock_chunks_col = MagicMock()
+    mock_cursor = MagicMock()
+    mock_cursor.sort.return_value.limit.return_value = [
+        {
+            "chunk_id": "chk_1",
+            "source_id": "doc_gst",
+            "source_name": "GST.pdf",
+            "content": "MEGA RASI TAPES Tax Invoice Total 27195.00",
+            "chunk_index": 0,
+            "is_user_document": True,
+        }
+    ]
+    mock_kb_cursor = MagicMock()
+    mock_kb_cursor.limit.return_value = []
+    mock_chunks_col.find.side_effect = [mock_cursor, mock_kb_cursor]
+
+    with patch("universal_chatbot.backend.app.services.rag_service.get_document_chunks_collection", return_value=mock_chunks_col):
+        results = rag_service.retrieve_relevant_chunks(
+            tenant_id="ten_default",
+            website_id="site_demo",
+            query="summarize this uploaded document please",
+            session_id="sess_xyz",
+            top_k=5,
+        )
+        assert len(results) == 1
+        assert results[0]["source_name"] == "GST.pdf"
+        assert results[0]["is_user_document"] is True
 
 
 def test_relevance_scoring():

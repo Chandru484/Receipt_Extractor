@@ -126,43 +126,55 @@ class ChatOrchestrator:
             query=request.message,
             conversation_id=active_conv_id,
             session_id=request.session_id,
-            top_k=3,
+            top_k=5,
         )
+        seen_citations = set()
         if relevant_chunks:
             is_user_doc = any(c.get("is_user_document") for c in relevant_chunks)
             response_source = "user_document" if is_user_doc else "website_knowledge"
             rag_texts = []
             for c in relevant_chunks:
-                source_label = f"Uploaded Document: {c['source_name']}" if c.get("is_user_document") else f"Knowledge: {c['source_name']}"
+                source_label = f"Uploaded Document: {c['source_name']} (Chunk {c.get('chunk_index', 0) + 1})" if c.get("is_user_document") else f"Knowledge: {c['source_name']}"
                 rag_texts.append(f"[{source_label}]\n{c['content']}")
-                citations.append(
-                    SourceCitation(
-                        source_type="document" if c.get("is_user_document") else "website",
-                        title=c["source_name"],
-                        snippet=c["content"][:150] + "...",
+                cit_type = "document" if c.get("is_user_document") else "website"
+                cit_key = (cit_type, c["source_name"])
+                if cit_key not in seen_citations:
+                    seen_citations.add(cit_key)
+                    citations.append(
+                        SourceCitation(
+                            source_type=cit_type,
+                            title=c["source_name"],
+                            snippet=c["content"][:150] + "...",
+                        )
                     )
-                )
-            context_blocks.append("--- RELEVANT KNOWLEDGE & DOCUMENT EXCERPTS ---\n" + "\n\n".join(rag_texts))
+            context_blocks.append("--- RELEVANT KNOWLEDGE & UPLOADED DOCUMENT CONTENT ---\n" + "\n\n".join(rag_texts))
 
         # 4b. Application Database Search (e.g. Receipt Extractor DB or App DB)
-        app_data = app_mongo_adapter.query_application_data(
-            website_id=request.website_id,
-            user_query=request.message,
-            user_id=verified_user_id,
-        )
-        if app_data and app_data.get("records"):
-            response_source = "app_database"
-            db_summary = json.dumps(app_data["records"], indent=2, default=str)
-            context_blocks.append(
-                f"--- APPLICATION DATABASE RECORDS ({app_data['collection']}) ---\n{db_summary}"
+        # If the user already uploaded a document and is asking about it, avoid polluting
+        # the prompt with unrelated DB records unless explicitly requested.
+        db_explicit_keywords = ["database", "stored receipt", "my receipts", "all receipts", "db"]
+        should_query_db = (response_source != "user_document") or any(k in user_msg_lower for k in db_explicit_keywords)
+
+        if should_query_db:
+            app_data = app_mongo_adapter.query_application_data(
+                website_id=request.website_id,
+                user_query=request.message,
+                user_id=verified_user_id,
             )
-            citations.append(
-                SourceCitation(
-                    source_type="database",
-                    title=f"Application DB ({app_data['collection']})",
-                    snippet=f"Retrieved {app_data['record_count']} matching records.",
+            if app_data and app_data.get("records"):
+                if response_source == "general":
+                    response_source = "app_database"
+                db_summary = json.dumps(app_data["records"], indent=2, default=str)
+                context_blocks.append(
+                    f"--- APPLICATION DATABASE RECORDS ({app_data['collection']}) ---\n{db_summary}"
                 )
-            )
+                citations.append(
+                    SourceCitation(
+                        source_type="database",
+                        title=f"Application DB ({app_data['collection']})",
+                        snippet=f"Retrieved {app_data['record_count']} matching records.",
+                    )
+                )
 
         # 5. Load past context history (up to last 10 messages)
         history = get_conversation_history(active_conv_id, limit=10)
