@@ -46,8 +46,56 @@
     .header-btn:hover { background: rgba(255,255,255,0.3); }
     .header-btn.active { background: #16a34a !important; border-color: #22c55e !important; color: #fff !important; font-weight: 700; box-shadow: 0 0 10px rgba(34, 197, 94, 0.5); }
     .call-banner { background: #0f172a; color: #f8fafc; padding: 8px 14px; font-size: 11.5px; display: flex; align-items: center; justify-content: space-between; gap: 8px; border-bottom: 1px solid #1e293b; transition: all 0.2s; }
-    .call-pulse { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; display: inline-block; animation: pulse 1s infinite; }
-    .call-banner.listening .call-pulse { background: #ef4444; }
+    .audio-waveform { display: inline-flex; align-items: center; gap: 3.5px; height: 18px; padding: 0 2px; }
+    .wave-bar { width: 3.5px; height: 5px; border-radius: 4px; background: #64748b; transition: height 0.15s ease, background 0.2s ease; }
+    
+    .call-banner.speaking .wave-bar {
+      background: linear-gradient(180deg, #38bdf8, #2563eb);
+      animation: waveJump 0.75s infinite ease-in-out alternate;
+    }
+    .call-banner.listening .wave-bar {
+      background: linear-gradient(180deg, #4ade80, #16a34a);
+      animation: waveJump 0.55s infinite ease-in-out alternate;
+    }
+    .call-banner.thinking .wave-bar {
+      background: linear-gradient(180deg, #c084fc, #7c3aed);
+      animation: wavePulse 0.9s infinite ease-in-out alternate;
+    }
+    .call-banner.speaking .bar-1 { animation-delay: 0.0s; }
+    .call-banner.speaking .bar-2 { animation-delay: 0.18s; }
+    .call-banner.speaking .bar-3 { animation-delay: 0.35s; }
+    .call-banner.speaking .bar-4 { animation-delay: 0.12s; }
+    .call-banner.speaking .bar-5 { animation-delay: 0.26s; }
+
+    .call-banner.listening .bar-1 { animation-delay: 0.05s; }
+    .call-banner.listening .bar-2 { animation-delay: 0.22s; }
+    .call-banner.listening .bar-3 { animation-delay: 0.10s; }
+    .call-banner.listening .bar-4 { animation-delay: 0.32s; }
+    .call-banner.listening .bar-5 { animation-delay: 0.18s; }
+
+    .call-banner.thinking .bar-1 { animation-delay: 0.0s; }
+    .call-banner.thinking .bar-2 { animation-delay: 0.15s; }
+    .call-banner.thinking .bar-3 { animation-delay: 0.3s; }
+    .call-banner.thinking .bar-4 { animation-delay: 0.15s; }
+    .call-banner.thinking .bar-5 { animation-delay: 0.0s; }
+
+    @keyframes waveJump {
+      0% { height: 4px; }
+      50% { height: 18px; }
+      100% { height: 7px; }
+    }
+    @keyframes wavePulse {
+      0% { height: 5px; opacity: 0.5; }
+      100% { height: 13px; opacity: 1; }
+    }
+
+    .mini-waveform { display: inline-flex; align-items: center; gap: 2px; height: 12px; margin-right: 3px; }
+    .mbar { width: 2.5px; height: 4px; background: currentColor; border-radius: 2px; animation: miniWave 0.7s infinite alternate ease-in-out; }
+    .mbar:nth-child(1) { animation-delay: 0.0s; }
+    .mbar:nth-child(2) { animation-delay: 0.2s; }
+    .mbar:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes miniWave { 0% { height: 3px; } 100% { height: 11px; } }
+
     .end-call-btn { background: #dc2626; color: #fff; border: none; border-radius: 10px; padding: 3px 8px; font-size: 10.5px; cursor: pointer; font-weight: 600; transition: background 0.15s; }
     .end-call-btn:hover { background: #b91c1c; }
     .lang-select { background: rgba(255,255,255,0.2); color: #fff; border: 1px solid rgba(255,255,255,0.4); border-radius: 6px; padding: 4px 8px; font-size: 12px; cursor: pointer; outline: none; }
@@ -116,8 +164,14 @@
         </div>
       </div>
       <div class="call-banner" id="callBanner" style="display: none;">
-        <div style="display: flex; align-items: center; gap: 8px;">
-          <span class="call-pulse"></span>
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <div class="audio-waveform" id="callWaveform">
+            <span class="wave-bar bar-1"></span>
+            <span class="wave-bar bar-2"></span>
+            <span class="wave-bar bar-3"></span>
+            <span class="wave-bar bar-4"></span>
+            <span class="wave-bar bar-5"></span>
+          </div>
           <span id="callBannerText" style="font-weight: 500;">📞 நேரலை குரல் அழைப்பு (Live Call Active)</span>
         </div>
         <button id="endCallBtn" class="end-call-btn">End Call</button>
@@ -233,7 +287,7 @@
     if (callModeBtn) callModeBtn.classList.remove("active");
     if (callBanner) {
       callBanner.style.display = "none";
-      callBanner.classList.remove("listening");
+      callBanner.classList.remove("speaking", "listening", "thinking");
     }
     stopCurrentAudio();
     if (recognition) {
@@ -536,10 +590,13 @@
 
     sharedAudio.onplay = () => {
       isSpeaking = true;
-      if (btn) btn.innerHTML = "⏹️ Stop";
-      if (isCallModeActive && callBannerText) {
-        if (callBanner) callBanner.classList.remove("listening");
-        callBannerText.textContent = "🔊 AI பேசுகிறது... (AI Speaking...)";
+      if (btn) btn.innerHTML = '<span class="mini-waveform"><span class="mbar"></span><span class="mbar"></span><span class="mbar"></span></span> ⏹️ Stop';
+      if (isCallModeActive) {
+        if (callBanner) {
+          callBanner.classList.remove("listening", "thinking");
+          callBanner.classList.add("speaking");
+        }
+        if (callBannerText) callBannerText.textContent = "🔊 AI பேசுகிறது... (AI Speaking...)";
       }
     };
 
@@ -548,7 +605,10 @@
       stopCurrentAudio();
       if (onEndedCallback) onEndedCallback();
       if (isCallModeActive) {
-        if (callBanner) callBanner.classList.add("listening");
+        if (callBanner) {
+          callBanner.classList.remove("speaking", "thinking");
+          callBanner.classList.add("listening");
+        }
         if (callBannerText) callBannerText.textContent = "🎙️ உங்களைக் கேட்கிறது... (Listening to you...)";
         playListeningChime();
         setTimeout(() => {
@@ -595,16 +655,19 @@
     }
 
     if (btn) {
-      btn.innerHTML = "⏹️ Stop";
+      btn.innerHTML = '<span class="mini-waveform"><span class="mbar"></span><span class="mbar"></span><span class="mbar"></span></span> ⏹️ Stop';
       btn.classList.add("playing");
       currentPlayingBtn = btn;
     }
 
     utterance.onstart = () => {
       isSpeaking = true;
-      if (isCallModeActive && callBannerText) {
-        if (callBanner) callBanner.classList.remove("listening");
-        callBannerText.textContent = "🔊 AI பேசுகிறது... (AI Speaking...)";
+      if (isCallModeActive) {
+        if (callBanner) {
+          callBanner.classList.remove("listening", "thinking");
+          callBanner.classList.add("speaking");
+        }
+        if (callBannerText) callBannerText.textContent = "🔊 AI பேசுகிறது... (AI Speaking...)";
       }
     };
 
@@ -613,7 +676,10 @@
       stopCurrentAudio();
       if (onEndedCallback) onEndedCallback();
       if (isCallModeActive) {
-        if (callBanner) callBanner.classList.add("listening");
+        if (callBanner) {
+          callBanner.classList.remove("speaking", "thinking");
+          callBanner.classList.add("listening");
+        }
         if (callBannerText) callBannerText.textContent = "🎙️ உங்களைக் கேட்கிறது... (Listening to you...)";
         playListeningChime();
         setTimeout(() => {
@@ -676,9 +742,12 @@
     userInput.value = "";
     unlockAudioPlayback();
     isProcessingMessage = true;
-    if (isCallModeActive && callBannerText) {
-      if (callBanner) callBanner.classList.remove("listening");
-      callBannerText.textContent = "⏳ சிந்திக்கிறது... (Thinking...)";
+    if (isCallModeActive) {
+      if (callBanner) {
+        callBanner.classList.remove("speaking", "listening");
+        callBanner.classList.add("thinking");
+      }
+      if (callBannerText) callBannerText.textContent = "⏳ சிந்திக்கிறது... (Thinking...)";
     }
 
     const loadingDiv = document.createElement("div");
@@ -786,7 +855,10 @@
     userInput.placeholder = "🎙️ தமிழில் பேசவும்... கேட்கிறேன் (Listening... speak)...";
     micBtn.classList.add("recording");
     if (isCallModeActive) {
-      if (callBanner) callBanner.classList.add("listening");
+      if (callBanner) {
+        callBanner.classList.remove("speaking", "thinking");
+        callBanner.classList.add("listening");
+      }
       if (callBannerText) callBannerText.textContent = "🎙️ உங்களைக் கேட்கிறது... (Listening to you...)";
     }
     try {
