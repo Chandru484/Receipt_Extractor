@@ -91,15 +91,10 @@
       <div class="chat-header">
         <div>
           <span class="chat-title" id="botHeader">${widgetConfig.bot_name}</span>
-          <div id="callStatusIndicator" style="font-size: 11px; color: #dbeafe; display: flex; align-items: center; gap: 4px; margin-top: 2px;">
-            <span id="callPulseDot" style="width: 7px; height: 7px; border-radius: 50%; background: #22c55e; display: inline-block;"></span>
-            <span id="callStatusText">🇮🇳 தமிழ் குரல் AI (Tamil Voice AI)</span>
+          <div style="font-size: 11px; color: #dbeafe; display: flex; align-items: center; gap: 4px; margin-top: 2px;">
+            <span style="width: 7px; height: 7px; border-radius: 50%; background: #22c55e; display: inline-block;"></span>
+            <span>🇮🇳 தமிழ் குரல் AI (Tamil Voice AI)</span>
           </div>
-        </div>
-        <div style="display: flex; align-items: center; gap: 6px;">
-          <button id="callToggleBtn" class="call-btn" style="background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.45); color: #fff; border-radius: 14px; padding: 4px 10px; font-size: 11.5px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 4px; transition: all 0.2s;">
-            📞 Voice Call
-          </button>
         </div>
       </div>
       <div class="chat-messages" id="msgList"></div>
@@ -140,9 +135,6 @@
   const filePicker = shadow.getElementById("filePicker");
   const humanAgentBtn = shadow.getElementById("humanAgentBtn");
   const botHeader = shadow.getElementById("botHeader");
-  const callToggleBtn = shadow.getElementById("callToggleBtn");
-  const callStatusText = shadow.getElementById("callStatusText");
-  const callPulseDot = shadow.getElementById("callPulseDot");
 
   // Render initial welcome message immediately so it is available before async fetches
   appendMessage("bot", widgetConfig.welcome_message_ta || "வணக்கம்! நான் உங்களுக்கு எப்படி உதவலாம்?");
@@ -159,7 +151,6 @@
   // Pre-unlocked HTML5 Audio element for seamless auto-speech without browser autoplay blocks
   let sharedAudio = new Audio();
   let audioUnlocked = false;
-  let isCallModeActive = false;
 
   function unlockAudioPlayback() {
     if (audioUnlocked) return;
@@ -179,11 +170,7 @@
     unlockAudioPlayback();
     const welcomeVoiceText = "வணக்கம்! நான் உங்களுக்கு எப்படி உதவலாம்?";
     const firstSpeakBtn = msgList.querySelector(".speak-btn");
-    playSpeech(welcomeVoiceText, "ta", firstSpeakBtn, () => {
-      if (isCallModeActive) {
-        startListening();
-      }
-    });
+    playSpeech(welcomeVoiceText, "ta", firstSpeakBtn);
   }
 
   // Fetch candidate's role-specific package questions (Admin, Worker, User)
@@ -231,44 +218,6 @@
       userInput.focus();
       speakWelcomeGreeting();
     }
-  };
-
-  // Toggle live voice call mode
-  function setCallMode(active) {
-    isCallModeActive = active;
-    unlockAudioPlayback();
-    if (isCallModeActive) {
-      callToggleBtn.innerHTML = "⏹️ End Call";
-      callToggleBtn.style.background = "#ef4444";
-      callToggleBtn.style.borderColor = "#f87171";
-      callStatusText.textContent = "அழைப்பில் உள்ளது (Live Call Active)";
-      callPulseDot.style.background = "#ef4444";
-      callPulseDot.style.animation = "pulse 1s infinite";
-      appendMessage("system-note", "📞 நேரலை குரல் அழைப்பு இணைக்கப்பட்டது. பேசி உரையாடலாம்! (Live Voice Call active. Speak freely!)");
-      
-      if (!welcomeSpoken) {
-        speakWelcomeGreeting();
-      } else {
-        startListening();
-      }
-    } else {
-      callToggleBtn.innerHTML = "📞 Voice Call";
-      callToggleBtn.style.background = "rgba(255,255,255,0.2)";
-      callToggleBtn.style.borderColor = "rgba(255,255,255,0.45)";
-      callStatusText.textContent = "🇮🇳 தமிழ் குரல் AI (Tamil Voice AI)";
-      callPulseDot.style.background = "#22c55e";
-      callPulseDot.style.animation = "none";
-      stopCurrentAudio();
-      if (recognition && micBtn.classList.contains("recording")) {
-        try { recognition.stop(); } catch (_) {}
-        micBtn.classList.remove("recording");
-      }
-      appendMessage("system-note", "⏹️ குரல் அழைப்பு நிறைவுற்றது. (Voice call ended.)");
-    }
-  }
-
-  callToggleBtn.onclick = () => {
-    setCallMode(!isCallModeActive);
   };
 
   // Safe Markdown to HTML formatter (supports bold, italic, headings, lists, and tables)
@@ -572,14 +521,9 @@
           executeWebsiteAction(data.action);
         }
 
-        // ALWAYS auto-speak every reply in authentic Tamil neural voice!
+        // Auto-speak reply in authentic Tamil neural voice
         if (msgRes && msgRes.speakBtn) {
-          playSpeech(data.reply, "ta", msgRes.speakBtn, () => {
-            // In Call Mode, automatically activate the mic for the user's turn
-            if (isCallModeActive) {
-              startListening();
-            }
-          });
+          playSpeech(data.reply, "ta", msgRes.speakBtn);
         }
 
         if (data.escalate_to_human) {
@@ -690,15 +634,10 @@
       } else if (e.error === "network") {
         appendMessage("system-note", "⚠️ Speech recognition service unreachable. Please check internet access or type your question.");
       } else if (e.error === "no-speech") {
-        if (isCallModeActive) {
-          // In Call Mode, if no speech detected after turn, keep listening or prompt gently
-          setTimeout(() => { if (isCallModeActive) startListening(); }, 1500);
-        } else {
-          userInput.placeholder = "பேச்சு கேட்கவில்லை, மீண்டும் பேசவும்...";
-          setTimeout(() => {
-            userInput.placeholder = "உங்கள் கேள்வியைக் கேளுங்கள் (Ask in Tamil or English)...";
-          }, 3000);
-        }
+        userInput.placeholder = "பேச்சு கேட்கவில்லை, மீண்டும் பேசவும்...";
+        setTimeout(() => {
+          userInput.placeholder = "உங்கள் கேள்வியைக் கேளுங்கள் (Ask in Tamil or English)...";
+        }, 3000);
       } else {
         userInput.placeholder = "உங்கள் கேள்வியைக் கேளுங்கள் (Ask in Tamil or English)...";
       }
@@ -804,11 +743,6 @@
       chatWin.classList.add("open");
       userInput.focus();
       speakWelcomeGreeting();
-    },
-    startCall: function () {
-      unlockAudioPlayback();
-      chatWin.classList.add("open");
-      setCallMode(true);
     },
     close: function () {
       chatWin.classList.remove("open");
