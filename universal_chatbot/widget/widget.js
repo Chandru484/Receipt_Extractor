@@ -240,17 +240,25 @@
   }
 
   // Append message to UI
-  function appendMessage(role, text, citations = []) {
+  function appendMessage(role, text, citations = [], action = null) {
     const div = document.createElement("div");
     div.className = `msg ${role}`;
     if (role === "bot") {
       const contentSpan = document.createElement("div");
       contentSpan.innerHTML = formatMarkdown(text);
       div.appendChild(contentSpan);
+
+      if (action) {
+        const actionBadge = document.createElement("div");
+        actionBadge.style.cssText = "margin-top: 6px; padding: 4px 8px; background: #dbeafe; color: #1e40af; border-radius: 6px; font-size: 11.5px; font-weight: 600; display: inline-flex; align-items: center; gap: 4px;";
+        actionBadge.innerHTML = `⚡ Website Action: <span>${action.label || action.action_type}</span>`;
+        div.appendChild(actionBadge);
+      }
     } else {
       div.textContent = text;
     }
 
+    let createdSpeakBtn = null;
     if (role === "bot") {
       const actions = document.createElement("div");
       actions.className = "msg-actions";
@@ -261,6 +269,7 @@
         speakBtn.innerHTML = "🔊 Listen";
         speakBtn.onclick = () => toggleSpeech(text, activeLang, speakBtn);
         actions.appendChild(speakBtn);
+        createdSpeakBtn = speakBtn;
       }
 
       if (citations && citations.length > 0) {
@@ -280,6 +289,7 @@
 
     msgList.appendChild(div);
     msgList.scrollTop = msgList.scrollHeight;
+    return { element: div, speakBtn: createdSpeakBtn };
   }
 
   // High-Definition Neural Speech & Audio Controls
@@ -352,8 +362,45 @@
     window.speechSynthesis.speak(utterance);
   }
 
+  // Execute website actions triggered by voice or text commands
+  function executeWebsiteAction(action) {
+    if (!action || !action.action_type) return;
+
+    // 1. Dispatch custom DOM event for the host website
+    try {
+      window.dispatchEvent(new CustomEvent("chatbot:action", { detail: action }));
+    } catch (_) {}
+
+    // 2. Built-in website actions
+    if (action.action_type === "show_latest_report") {
+      const outCard = document.getElementById("outputCard");
+      if (outCard) {
+        outCard.style.display = "block";
+        outCard.scrollIntoView({ behavior: "smooth", block: "start" });
+        outCard.style.outline = "3px solid #2563eb";
+        outCard.style.transition = "outline 0.4s ease";
+        setTimeout(() => { outCard.style.outline = "none"; }, 3000);
+      }
+      if (typeof window.renderOutput === "function" && action.data) {
+        window.renderOutput({ data: action.data });
+      }
+    } else if (action.action_type === "open_upload") {
+      const fileInput = document.getElementById("fileInput");
+      const dropZone = document.getElementById("dropZone");
+      if (fileInput) fileInput.click();
+      else if (dropZone) dropZone.click();
+    } else if (action.action_type === "navigate") {
+      if (action.target && action.target.startsWith("#")) {
+        const targetEl = document.querySelector(action.target);
+        if (targetEl) targetEl.scrollIntoView({ behavior: "smooth" });
+      } else if (action.url && window.location.pathname !== action.url) {
+        window.location.href = action.url;
+      }
+    }
+  }
+
   // Send message
-  function sendMessage() {
+  function sendMessage(isVoice = false) {
     const text = userInput.value.trim();
     if (!text) return;
     appendMessage("user", text);
@@ -374,13 +421,35 @@
         conversation_id: activeConvId,
         session_id: activeSessionId,
         language: activeLang,
+        is_voice: isVoice,
       }),
     })
       .then(r => r.json())
       .then(data => {
         loadingDiv.remove();
         activeConvId = data.conversation_id;
-        appendMessage("bot", data.reply, data.citations);
+
+        // Auto-synchronize UI language if query was detected in another language (e.g. Tamil voice)
+        if (data.language && data.language !== activeLang) {
+          activeLang = data.language;
+          langSelect.value = activeLang;
+          userInput.placeholder = activeLang === "ta" ? "உங்கள் கேள்வியைக் கேளுங்கள்..." : "Ask a question...";
+        }
+
+        const msgRes = appendMessage("bot", data.reply, data.citations, data.action);
+
+        // Execute website action if command detected
+        if (data.action) {
+          executeWebsiteAction(data.action);
+        }
+
+        // Auto-reply in voice if queried by voice or backend signaled is_voice
+        if (isVoice || data.is_voice) {
+          if (msgRes && msgRes.speakBtn) {
+            toggleSpeech(data.reply, data.language, msgRes.speakBtn);
+          }
+        }
+
         if (data.escalate_to_human && window.Tawk_API) {
           window.Tawk_API.maximize();
         }
@@ -391,8 +460,8 @@
       });
   }
 
-  sendBtn.onclick = sendMessage;
-  userInput.onkeydown = (e) => { if (e.key === "Enter") sendMessage(); };
+  sendBtn.onclick = () => sendMessage(false);
+  userInput.onkeydown = (e) => { if (e.key === "Enter") sendMessage(false); };
 
   // File Upload Handling
   attachBtn.onclick = () => filePicker.click();
@@ -458,7 +527,7 @@
         userInput.value = final;
         micBtn.classList.remove("recording");
         userInput.placeholder = activeLang === "ta" ? "உங்கள் கேள்வியைக் கேளுங்கள்..." : "Ask a question...";
-        sendMessage();
+        sendMessage(true);
       } else if (interim) {
         userInput.value = interim;
       }

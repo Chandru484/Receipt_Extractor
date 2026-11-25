@@ -281,6 +281,7 @@
       formattedDisplay.textContent = result.formatted_display || JSON.stringify(result, null, 2);
       outputCard.scrollIntoView({ behavior: "smooth" });
     }
+    window.renderOutput = renderOutput;
   </script>
 
   <!-- ======================================================== -->

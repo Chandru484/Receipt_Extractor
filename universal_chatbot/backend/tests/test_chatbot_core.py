@@ -148,3 +148,47 @@ def test_chat_message_endpoint():
         assert data["reply"] == "Welcome to our platform! How can I help you?"
         assert data["language"] == "en"
         assert "conversation_id" in data
+
+
+def test_website_action_and_tamil_voice_recognition():
+    """Verify Tamil command auto-detects 'ta' language, triggers website action, and preserves is_voice."""
+    mock_reply = {
+        "reply": "நிச்சயமாக! சமீபத்திய அறிக்கை திரையில் காட்டப்படுகிறது.",
+        "provider": "groq",
+        "model": "llama-3.3-70b-versatile",
+        "latency": 0.15,
+        "tokens_used": 30,
+    }
+
+    mock_site = {
+        "website_id": "site_demo",
+        "tenant_id": "ten_default",
+        "name": "Demo Site",
+        "widget_config": {
+            "bot_name": "Universal Assistant",
+            "enable_tawk_to": False
+        }
+    }
+
+    with patch("universal_chatbot.backend.app.main.ensure_indexes"), \
+         patch("universal_chatbot.backend.app.services.chat_orchestrator.get_website_by_id", return_value=mock_site), \
+         patch("universal_chatbot.backend.app.ai.multi_provider.ai_engine.generate_chat_response", return_value=mock_reply), \
+         patch("universal_chatbot.backend.app.database.collections.get_conversations_collection", return_value=MagicMock()), \
+         patch("universal_chatbot.backend.app.database.collections.get_messages_collection", return_value=MagicMock()):
+
+        client = TestClient(app)
+        # Even if initial language was set to 'en', speaking in Tamil must auto-detect 'ta' and trigger show_latest_report
+        req_payload = {
+            "website_id": "site_demo",
+            "message": "சமீபத்திய அறிக்கையைக் காட்டு",
+            "language": "en",
+            "is_voice": True,
+        }
+        resp = client.post("/api/v1/chat/message", json=req_payload)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["language"] == "ta"
+        assert data["is_voice"] is True
+        assert data["action"] is not None
+        assert data["action"]["action_type"] == "show_latest_report"
+        assert data["action"]["target"] == "#outputCard"

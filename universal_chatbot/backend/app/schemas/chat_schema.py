@@ -17,6 +17,7 @@ class ChatMessageRequest(BaseModel):
     session_id: Optional[str] = Field(None, description="Visitor session token")
     language: Literal["en", "ta"] = Field(default="en", description="Selected language ('en' for English, 'ta' for Tamil)")
     active_document_id: Optional[str] = Field(None, description="Optional document ID if asking about uploaded file")
+    is_voice: bool = Field(default=False, description="Flag indicating input originated from speech/microphone")
 
 
 class ChatMessageResponse(BaseModel):
@@ -29,6 +30,8 @@ class ChatMessageResponse(BaseModel):
     escalate_to_human: bool = False
     tawk_property_id: Optional[str] = None
     created_at: str
+    is_voice: bool = False
+    action: Optional[Dict[str, Any]] = Field(None, description="Executable website action triggered by voice/text command")
 
 
 class ConversationSummary(BaseModel):

@@ -27,6 +27,93 @@ HUMAN_SUPPORT_KEYWORDS = [
 ]
 
 
+def _detect_language(message: str, current_lang: str = "en") -> str:
+    """Detect whether user input is in Tamil, Tanglish, or English."""
+    # 1. Direct Tamil Unicode block (U+0B80 to U+0BFF)
+    if re.search(r"[\u0B80-\u0BFF]", message):
+        return "ta"
+
+    # 2. Tanglish / Phonetic Tamil words
+    tanglish_words = {
+        "kaattu", "kattu", "sol", "solunga", "patri", "padhi", "enna", "epdi", "eppadi",
+        "enakku", "pannu", "kudu", "irukku", "vaanga", "ponga", "nandri", "vanakkam",
+        "arikkai", "raseedhu", "raseedu", "billu", "neram", "vela", "thirava", "thira"
+    }
+    tokens = set(re.findall(r"\w+", message.lower()))
+    if tokens.intersection(tanglish_words):
+        return "ta"
+
+    return current_lang
+
+
+def _detect_action_intent(message: str) -> Optional[Dict[str, Any]]:
+    """
+    Detect actionable website commands (e.g. show report, open upload, navigate)
+    spoken or typed in Tamil, Tanglish, or English.
+    """
+    msg_lower = message.lower().strip()
+
+    # Action 1: Show latest report / receipt extraction
+    report_keywords = [
+        "latest report", "show report", "show me the latest report", "show me report", "view report",
+        "open report", "latest extraction", "show receipt", "last receipt", "show the report",
+        "open the report", "display report", "சமீபத்திய அறிக்கை", "அறிக்கையைக் காட்டு", "அறிக்கை காட்டு",
+        "ரிப்போர்ட் காட்டு", "லேட்டஸ்ட் ரிப்போர்ட்", "கடைசி ரசீது", "சமீபத்திய ரசீது",
+        "report kaattu", "report kattu", "report sol"
+    ]
+    if any(k in msg_lower for k in report_keywords):
+        return {
+            "action_type": "show_latest_report",
+            "target": "#outputCard",
+            "label": "Latest Receipt Report",
+            "message": "Displaying the latest receipt report on the website.",
+        }
+
+    # Action 2: Open file upload dialog
+    upload_keywords = [
+        "upload receipt", "upload bill", "attach document", "upload file", "open upload",
+        "choose file", "select file", "ரசீது பதிவேற்று", "கோப்பை பதிவேற்று",
+        "ரசீது அப்லோட்", "அப்லோட் செய்", "upload pannu", "bill upload"
+    ]
+    if any(k in msg_lower for k in upload_keywords):
+        return {
+            "action_type": "open_upload",
+            "target": "#fileInput",
+            "label": "Upload Document",
+            "message": "Opening file upload dialog.",
+        }
+
+    # Action 3: View all stored receipts
+    history_keywords = [
+        "all receipts", "stored receipts", "receipt history", "all invoices", "list all receipts",
+        "அனைத்து ரசீதுகள்", "ரசீது வரலாறு", "சேமிக்கப்பட்ட ரசீதுகள்", "ellam raseedhu"
+    ]
+    if any(k in msg_lower for k in history_keywords):
+        return {
+            "action_type": "navigate",
+            "target": "/receipts",
+            "url": "/receipts",
+            "label": "All Stored Receipts",
+            "message": "Opening all stored receipts.",
+        }
+
+    # Action 4: Navigate to dashboard / home
+    dashboard_keywords = [
+        "go to dashboard", "open dashboard", "home page", "main page",
+        "டாஷ்போர்டு", "முகப்பு பக்கம்", "முகப்புப் பக்கம் செல்", "dashboard po"
+    ]
+    if any(k in msg_lower for k in dashboard_keywords):
+        return {
+            "action_type": "navigate",
+            "target": "/ui",
+            "url": "/ui",
+            "label": "Dashboard",
+            "message": "Navigating to dashboard.",
+        }
+
+    return None
+
+
 def _build_system_prompt(bot_name: str, language: str, context_blocks: List[str]) -> str:
     context_str = "\n\n".join(context_blocks) if context_blocks else ""
 
@@ -81,6 +168,7 @@ class ChatOrchestrator:
 
         # 2. Check for explicit human support request
         user_msg_lower = request.message.lower().strip()
+        effective_lang = _detect_language(request.message, current_lang=request.language)
         needs_escalation = any(k in user_msg_lower for k in HUMAN_SUPPORT_KEYWORDS)
 
         if needs_escalation and widget_cfg.get("enable_tawk_to"):
@@ -93,36 +181,74 @@ class ChatOrchestrator:
             )
             reply = (
                 "மனித வாடிக்கையாளர் சேவை முகவரிடம் உங்களை இணைக்கிறேன். தயவுசெய்து காத்திருக்கவும்..."
-                if request.language == "ta"
+                if effective_lang == "ta"
                 else "I am transferring you to a human support agent right now. Please hold on..."
             )
             return ChatMessageResponse(
                 conversation_id=request.conversation_id or "conv_support",
                 message_id=handoff_id,
                 reply=reply,
-                language=request.language,
+                language=effective_lang,
                 source="handoff",
                 citations=[],
                 escalate_to_human=True,
                 tawk_property_id=widget_cfg.get("tawk_to_property_id"),
                 created_at=get_ist_now_str(),
+                is_voice=request.is_voice,
             )
 
-        # 3. Get or create conversation in MongoDB
+        # 3. Detect Website Action Intent (e.g. show report, upload receipt, navigate)
+        action = _detect_action_intent(request.message)
+
+        # 4. Get or create conversation in MongoDB
         conv = get_or_create_conversation(
             website_id=request.website_id,
             tenant_id=tenant_id,
             conversation_id=request.conversation_id,
             session_id=request.session_id,
             user_id=verified_user_id,
-            language=request.language,
+            language=effective_lang,
         )
         active_conv_id = conv["conversation_id"]
 
-        # 4. Context Retrieval (RAG + Application Database)
+        # 5. Context Retrieval (RAG + Application Database + Action Data)
         context_blocks: List[str] = []
         citations: List[SourceCitation] = []
         response_source = "general"
+
+        # Handle Action-Specific Data Enrichment
+        if action:
+            response_source = "app_database"
+            if action["action_type"] == "show_latest_report":
+                latest_app_data = app_mongo_adapter.query_application_data(
+                    website_id=request.website_id,
+                    user_query="",
+                    user_id=verified_user_id,
+                    max_results=1,
+                )
+                if latest_app_data and latest_app_data.get("records"):
+                    first_record = latest_app_data["records"][0]
+                    action["data"] = first_record
+                    context_blocks.append(
+                        f"--- LATEST RECORD FOR WEBSITE ACTION ---\n{json.dumps(first_record, indent=2, default=str)}"
+                    )
+                    citations.append(
+                        SourceCitation(
+                            source_type="database",
+                            title="Latest Extracted Receipt",
+                            snippet=f"Vendor: {first_record.get('vendor_name', 'N/A')}, Total: {first_record.get('grand_total', 'N/A')}",
+                        )
+                    )
+
+                instruction = (
+                    "ACTION COMMAND EXECUTED: The user asked to show/open the latest report. "
+                    "You MUST directly confirm in 1-2 sentences that the report is being opened and shown on the screen right now, "
+                    "mentioning the vendor name and total amount if available. Do not dump tables."
+                    if effective_lang == "en"
+                    else "செயல் ஆணை நிறைவேற்றப்படுகிறது: பயனர் சமீபத்திய அறிக்கையைக் காட்டுமாறு பணித்துள்ளார். "
+                         "அறிக்கை திரையில் காட்டப்படுவதை 1-2 எளிய தமிழ் வரிகளில் உடனடியாக உறுதிப்படுத்தவும். விற்பனையாளர் மற்றும் தொகையைக் குறிப்பிடவும்."
+                )
+                context_blocks.append(instruction)
 
         # 4a. RAG Chunks (Website knowledge + User uploaded docs)
         relevant_chunks = rag_service.retrieve_relevant_chunks(
@@ -186,11 +312,11 @@ class ChatOrchestrator:
         history.append({"role": "user", "content": request.message})
 
         # 6. Build prompt & call MultiProvider AI Engine
-        system_prompt = _build_system_prompt(bot_name, request.language, context_blocks)
+        system_prompt = _build_system_prompt(bot_name, effective_lang, context_blocks)
         ai_res = ai_engine.generate_chat_response(
             messages=history,
             system_prompt=system_prompt,
-            language=request.language,
+            language=effective_lang,
         )
 
         bot_reply = ai_res.get("reply", "")
@@ -202,7 +328,7 @@ class ChatOrchestrator:
             tenant_id=tenant_id,
             user_message=request.message,
             bot_reply=bot_reply,
-            language=request.language,
+            language=effective_lang,
             source=response_source,
             meta={
                 "provider": ai_res.get("provider"),
@@ -210,6 +336,8 @@ class ChatOrchestrator:
                 "latency": ai_res.get("latency"),
                 "tokens": ai_res.get("tokens_used"),
                 "citation_count": len(citations),
+                "action": action,
+                "is_voice": request.is_voice,
             },
         )
 
@@ -217,11 +345,13 @@ class ChatOrchestrator:
             conversation_id=active_conv_id,
             message_id=msg_id,
             reply=bot_reply,
-            language=request.language,
+            language=effective_lang,
             source=response_source,
             citations=citations,
             escalate_to_human=False,
             created_at=get_ist_now_str(),
+            is_voice=request.is_voice,
+            action=action,
         )
 
 
