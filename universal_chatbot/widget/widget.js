@@ -15,8 +15,8 @@
   let widgetConfig = {
     bot_name: "Universal Assistant",
     primary_color: "#2563eb",
-    welcome_message_en: "வணக்கம்! நான் உங்களுக்கு எப்படி உதவலாம்?",
-    welcome_message_ta: "வணக்கம்! நான் உங்களுக்கு எப்படி உதவலாம்?",
+    welcome_message_en: "வணக்கம்! சொல்லுங்க, உங்களுக்கு நான் எப்படி உதவலாம்?",
+    welcome_message_ta: "வணக்கம்! சொல்லுங்க, உங்களுக்கு நான் எப்படி உதவலாம்?",
     available_languages: ["ta"],
     allow_file_uploads: true,
     allow_voice_input: true,
@@ -153,7 +153,7 @@
     if (filePicker) filePicker.value = "";
     if (clearMessages) {
       msgList.innerHTML = "";
-      const greeting = welcomeText || widgetConfig.welcome_message_ta || "வணக்கம்! நான் உங்களுக்கு எப்படி உதவலாம்?";
+      const greeting = welcomeText || widgetConfig.welcome_message_ta || "வணக்கம்! சொல்லுங்க, உங்களுக்கு நான் எப்படி உதவலாம்?";
       appendMessage("bot", greeting);
     }
   }
@@ -167,7 +167,7 @@
   }
 
   // Render initial welcome message immediately so it is available before async fetches
-  appendMessage("bot", widgetConfig.welcome_message_ta || "வணக்கம்! நான் உங்களுக்கு எப்படி உதவலாம்?");
+  appendMessage("bot", widgetConfig.welcome_message_ta || "வணக்கம்! சொல்லுங்க, உங்களுக்கு நான் எப்படி உதவலாம்?");
 
   // Fetch website config
   fetch(`${apiBase}/api/v1/chat/widget-config/${websiteId}`)
@@ -198,7 +198,7 @@
     if (welcomeSpoken) return;
     welcomeSpoken = true;
     unlockAudioPlayback();
-    const welcomeVoiceText = "வணக்கம்! நான் உங்களுக்கு எப்படி உதவலாம்?";
+    const welcomeVoiceText = "வணக்கம்! சொல்லுங்க, உங்களுக்கு நான் எப்படி உதவலாம்?";
     const firstSpeakBtn = msgList.querySelector(".speak-btn");
     playSpeech(welcomeVoiceText, "ta", firstSpeakBtn);
   }

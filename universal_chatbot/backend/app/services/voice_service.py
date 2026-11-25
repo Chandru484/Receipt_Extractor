@@ -55,9 +55,15 @@ def sanitize_text_for_speech(text: str, language: str = "en") -> str:
         # Strip .00 from numbers so TTS does not pronounce "புள்ளி பூஜ்ஜியம் பூஜ்ஜியம்"
         cleaned = re.sub(r"(\d+)\.00\b", r"\1", cleaned)
 
-        # Smooth out bookish suffixes into natural spoken Tamil
+        # Smooth out bookish/formal words into natural everyday conversational spoken Tamil
         cleaned = re.sub(r"\bஆகும்\b", "", cleaned)
         cleaned = re.sub(r"\bஆவார்\b", "", cleaned)
+        cleaned = re.sub(r"\bஉள்ளது\b", "இருக்கு", cleaned)
+        cleaned = re.sub(r"\bஉள்ளன\b", "இருக்கு", cleaned)
+        cleaned = re.sub(r"\bகாணப்படவில்லை\b", "இல்லை", cleaned)
+        cleaned = re.sub(r"\bதேவைப்படுகிறதா\b", "வேணுமா", cleaned)
+        cleaned = re.sub(r"\bதெரிவிக்கவும்\b", "சொல்லுங்க", cleaned)
+        cleaned = re.sub(r"\bபட்டியலிடப்பட்டுள்ளன\b", "இதோ இருக்கு", cleaned)
 
         # Expand common symbols to spoken conversational Tamil
         cleaned = cleaned.replace("₹", " ரூபாய் ")

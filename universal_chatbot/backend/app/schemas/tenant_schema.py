@@ -20,7 +20,7 @@ class WidgetConfig(BaseModel):
     bot_name: str = "Assistant"
     primary_color: str = "#2563eb"
     welcome_message_en: str = "Hello! How can I help you today?"
-    welcome_message_ta: str = "வணக்கம்! இன்று நான் உங்களுக்கு எவ்வாறு உதவ முடியும்?"
+    welcome_message_ta: str = "வணக்கம்! சொல்லுங்க, உங்களுக்கு நான் எப்படி உதவலாம்?"
     default_language: str = "en"
     available_languages: List[str] = ["en", "ta"]
     allow_file_uploads: bool = True
