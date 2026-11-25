@@ -199,9 +199,9 @@
       .then(data => {
         if (data.suggested_questions && data.suggested_questions.length > 0) {
           const roleLabels = {
-            admin: "👑 Admin Questions",
-            worker: "🛠️ Worker Questions",
-            user: "💡 Suggested Questions"
+            admin: "👑 நிர்வாகக் கேள்விகள் / Admin Questions",
+            worker: "🛠️ பணியாளர் கேள்விகள் / Worker Questions",
+            user: "💡 பரிந்துரைக்கப்பட்ட கேள்விகள் / Suggested Questions"
           };
           suggTitle.textContent = roleLabels[data.role] || (data.package_name || "💡 Suggested Questions");
           suggList.innerHTML = "";

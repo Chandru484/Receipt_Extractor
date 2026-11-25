@@ -16,51 +16,51 @@ from universal_chatbot.backend.app.schemas.package_schema import (
 
 logger = logging.getLogger(__name__)
 
-# Default standard packages if the coworker backend has not yet pushed custom ones
+# Default standard packages in both Tamil and English (Bilingual)
 DEFAULT_ROLE_PACKAGES: Dict[str, Dict[str, Any]] = {
     "admin": {
-        "package_name": "Executive & Financial Overview",
+        "package_name": "நிர்வாக & நிதி அறிக்கை / Executive & Financial Overview",
         "questions": [
-            "What is the total revenue generated this month?",
-            "Show recent high-value invoices and pending payments",
-            "Which vendors have the highest spend this quarter?",
-            "List workers who had overtime or shift changes",
-            "Show active system alerts or pending approvals",
-            "What is the total tax (GST) paid across recent invoices?",
-            "Compare monthly expenses between this month and last month",
-            "Show the top 5 product categories by purchase volume",
-            "List newly added vendor accounts and bank details",
-            "Give me an executive summary of current business health",
+            "இந்த மாத மொத்த வருவாய் என்ன? / What is the total revenue generated this month?",
+            "சமீபத்திய இன்வாய்ஸ்கள் மற்றும் நிலுவைத் தொகை / Show recent invoices and pending payments",
+            "அதிக செலவு செய்த விற்பனையாளர்கள் யார்? / Which vendors have the highest spend this quarter?",
+            "அனைத்து ரசீதுகளையும் பட்டியலிடு / List all receipts across projects",
+            "செலுத்தப்பட்ட மொத்த ஜிஎஸ்டி (GST) வரி எவ்வளவு? / What is the total GST tax paid?",
+            "கூடுதல் பணி செய்த தொழிலாளர்கள் பட்டியல் / List workers with overtime or shifts",
+            "நடப்பு மற்றும் முந்தைய மாத செலவு ஒப்பீடு / Compare monthly expenses vs last month",
+            "அதிகம் வாங்கிய டாப் 5 தயாரிப்பு வகைகள் / Top 5 product categories by purchase volume",
+            "புதிய விற்பனையாளர் வங்கி கணக்கு விவரங்கள் / New vendor bank account details",
+            "நிறுவனத்தின் நிதி நிலை குறித்த சுருக்கம் / Executive business health summary",
         ]
     },
     "worker": {
-        "package_name": "Daily Operations & Tasks",
+        "package_name": "தினசரி பணிகள் & மேலாண்மை / Daily Operations & Tasks",
         "questions": [
-            "What are my assigned tasks or dispatches for today?",
-            "Show pending receipt scans waiting for verification",
-            "What is my shift schedule for this week?",
-            "Check current inventory status for low-stock items",
-            "How do I submit an overtime or leave request?",
-            "Show recent errors flagged during document processing",
-            "What are the safety guidelines for warehouse handling?",
-            "Who is the supervisor on duty for today's shift?",
-            "How many invoices did our team process yesterday?",
-            "Where do I report an equipment or scanner issue?",
+            "இன்றைய எனது பணிகள் மற்றும் டிஸ்பாட்ச் என்ன? / What are my assigned tasks today?",
+            "சரிபார்க்கப்பட வேண்டிய நிலுவை ரசீதுகள் / Show pending receipts waiting for verification",
+            "குறைந்த கையிருப்பு உள்ள பொருட்கள் விவரம் / Check low-stock inventory items",
+            "இந்த வாரத்திற்கான எனது ஷிப்ட் நேரம் / What is my shift schedule for this week?",
+            "ஆவண செயலாக்கத்தில் ஏற்பட்ட பிழைகள் / Show recent document processing errors",
+            "கூடுதல் பணி அல்லது விடுப்பு விண்ணப்பம் / How do I submit overtime or leave request?",
+            "கிடங்கு பாதுகாப்பு மற்றும் வழிகாட்டுதல்கள் / Safety guidelines for warehouse handling",
+            "இன்றைய ஷிப்ட் மேற்பார்வையாளர் யார்? / Who is the supervisor on duty today?",
+            "நேற்று செயலாக்கப்பட்ட மொத்த இன்வாய்ஸ்கள் / Total invoices processed yesterday",
+            "ஸ்கேனர் அல்லது கருவி குறைபாட்டைப் புகாரளிப்பது எப்படி? / How to report equipment or scanner issue?",
         ]
     },
     "user": {
-        "package_name": "Customer Self-Service & Billing",
+        "package_name": "வாடிக்கையாளர் சேவை & பில்லிங் / Customer Self-Service & Billing",
         "questions": [
-            "What is the status of my latest order or invoice?",
-            "How can I download a PDF copy of my recent receipt?",
-            "What payment methods and bank transfers are supported?",
-            "How do I update my billing address or GSTIN?",
-            "Can you explain the tax breakdown on my bill?",
-            "What is the refund and cancellation policy?",
-            "How can I contact customer support or request a call?",
-            "Show my purchase history for the last 30 days",
-            "Are there any active discounts or loyalty credits on my account?",
-            "How do I report a billing discrepancy or wrong item?",
+            "எனது சமீபத்திய ஆர்டர் அல்லது இன்வாய்ஸ் நிலை என்ன? / What is the status of my latest invoice?",
+            "எனது ரசீதுகளைக் காட்டு / Show my receipts",
+            "ரசீது நகலை PDF ஆக பதிவிறக்குவது எப்படி? / How can I download a PDF copy of my recent receipt?",
+            "எனது பில்லில் உள்ள வரிகள் மற்றும் ஜிஎஸ்டி விளக்கம் / Explain tax breakdown on my bill",
+            "ஆதரவு பெற்ற கட்டண மற்றும் வங்கி முறைகள் / What payment methods are supported?",
+            "பில்லிங் முகவரி அல்லது ஜிஎஸ்டி எண்ணை மாற்றுவது எப்படி? / How do I update billing address or GSTIN?",
+            "கடந்த 30 நாட்களின் எனது கொள்முதல் வரலாறு / Show my purchase history for last 30 days",
+            "பணம் திரும்பப்பெறுதல் மற்றும் ரத்து செய்யும் கொள்கை / What is refund and cancellation policy?",
+            "வாடிக்கையாளர் சேவை முகவரிடம் பேச வேண்டும் / Talk to a human support agent",
+            "பில்லில் உள்ள தவறான கட்டணத்தைப் புகாரளிப்பது எப்படி? / How to report a billing discrepancy?",
         ]
     }
 }
