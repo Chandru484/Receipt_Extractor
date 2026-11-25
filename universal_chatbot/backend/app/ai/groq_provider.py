@@ -38,7 +38,7 @@ class GroqChatbotProvider(BaseLLMProvider):
         messages: List[Dict[str, str]],
         system_prompt: Optional[str] = None,
         temperature: float = 0.2,
-        max_tokens: int = 2000,
+        max_tokens: int = 4096,
     ) -> Dict[str, Any]:
         if not self._keys:
             raise RuntimeError("No CHATBOT_GROQ_API_KEYS configured.")

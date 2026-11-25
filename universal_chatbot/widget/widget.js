@@ -45,6 +45,14 @@
     .msg { max-width: 84%; padding: 10px 14px; border-radius: 14px; font-size: 13.5px; line-height: 1.45; word-wrap: break-word; }
     .msg.user { align-self: flex-end; background: ${widgetConfig.primary_color}; color: #fff; border-bottom-right-radius: 4px; }
     .msg.bot { align-self: flex-start; background: #ffffff; color: #1f2937; border: 1px solid #e5e7eb; border-bottom-left-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+    .msg.bot h3, .msg.bot h4 { font-size: 13.5px; font-weight: 700; margin: 8px 0 4px 0; color: #111827; }
+    .msg.bot ul { margin: 4px 0 6px 18px; }
+    .msg.bot li { margin-bottom: 2px; }
+    .msg-table-wrap { overflow-x: auto; margin: 6px 0; border: 1px solid #e5e7eb; border-radius: 6px; }
+    .msg.bot table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+    .msg.bot th, .msg.bot td { padding: 5px 7px; border-bottom: 1px solid #e5e7eb; text-align: left; white-space: nowrap; }
+    .msg.bot th { background: #f3f4f6; font-weight: 600; color: #374151; }
+    .msg.bot code { background: #f3f4f6; padding: 1px 4px; border-radius: 3px; font-size: 12px; }
     .msg.system-note { align-self: center; background: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd; font-size: 12px; border-radius: 8px; max-width: 90%; text-align: center; }
     .msg-actions { display: flex; gap: 8px; margin-top: 6px; font-size: 11px; align-items: center; flex-wrap: wrap; }
     .speak-btn { background: none; border: none; cursor: pointer; color: #6b7280; display: inline-flex; align-items: center; gap: 4px; font-size: 11px; }
@@ -135,11 +143,61 @@
     appendMessage("bot", activeLang === "ta" ? "மொழி தமிழுக்கு மாற்றப்பட்டது." : "Language changed to English.");
   };
 
+  // Safe Markdown to HTML formatter (supports bold, italic, headings, lists, and tables)
+  function formatMarkdown(text) {
+    let escaped = text
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+
+    // Parse markdown tables line-by-line
+    const lines = escaped.split("\n");
+    const out = [];
+    let i = 0;
+    while (i < lines.length) {
+      if (lines[i].trim().startsWith("|") && i + 1 < lines.length && /^\s*\|[\s\-:|]+\|\s*$/.test(lines[i + 1])) {
+        const headerCells = lines[i].trim().slice(1, -1).split("|").map(c => c.trim());
+        let tbl = '<div class="msg-table-wrap"><table><thead><tr>' +
+          headerCells.map(c => `<th>${c}</th>`).join("") +
+          '</tr></thead><tbody>';
+        i += 2;
+        while (i < lines.length && lines[i].trim().startsWith("|")) {
+          const rowCells = lines[i].trim().slice(1, -1).split("|").map(c => c.trim());
+          tbl += '<tr>' + rowCells.map(c => `<td>${c}</td>`).join("") + '</tr>';
+          i++;
+        }
+        tbl += '</tbody></table></div>';
+        out.push(tbl);
+      } else {
+        out.push(lines[i]);
+        i++;
+      }
+    }
+
+    let html = out.join("\n");
+    html = html.replace(/^###\s+(.*)$/gm, "<h3>$1</h3>");
+    html = html.replace(/^####\s+(.*)$/gm, "<h4>$1</h4>");
+    html = html.replace(/^---$/gm, "<hr style='border:none;border-top:1px solid #e5e7eb;margin:6px 0;'>");
+    html = html.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
+    html = html.replace(/\*(.*?)\*/g, "<em>$1</em>");
+    html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
+    html = html.replace(/^\s*[-*]\s+(.*)$/gm, "<li>$1</li>");
+    html = html.replace(/(<li>.*<\/li>\n?)+/g, m => `<ul>${m.replace(/\n/g, "")}</ul>`);
+    html = html.replace(/\n/g, "<br>");
+    return html;
+  }
+
   // Append message to UI
   function appendMessage(role, text, citations = []) {
     const div = document.createElement("div");
     div.className = `msg ${role}`;
-    div.textContent = text;
+    if (role === "bot") {
+      const contentSpan = document.createElement("div");
+      contentSpan.innerHTML = formatMarkdown(text);
+      div.appendChild(contentSpan);
+    } else {
+      div.textContent = text;
+    }
 
     if (role === "bot") {
       const actions = document.createElement("div");

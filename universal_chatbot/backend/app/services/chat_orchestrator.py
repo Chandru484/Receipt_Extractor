@@ -32,15 +32,15 @@ def _build_system_prompt(bot_name: str, language: str, context_blocks: List[str]
 
     if language == "ta":
         base_prompt = f"""நீங்கள் '{bot_name}' என்ற அதிகாரப்பூர்வ AI உதவியாளர்.
-பயனரின் கேள்விகளுக்குத் தெளிவான, சுருக்கமான, கண்ணியமான மற்றும் துல்லியமான தமிழில் பதிலளிக்கவும்.
-பயனர் தமிழில் கேட்டால் கட்டாயமாக தமிழிலேயே பதிலளிக்கவும்.
+கட்டாயம்: பயனர் எந்த மொழியில் கேட்டாலும் (ஆங்கிலம் அல்லது Tanglish உட்பட), நீங்கள் கட்டாயமாக தெளிவான, சுருக்கமான தமிழில் மட்டுமே பதிலளிக்க வேண்டும்.
+தகவல்களைச் சுருக்கமாகவும் தெளிவான புள்ளிகளாகவும் (bullet points) வழங்கவும். 10-க்கும் மேற்பட்ட பொருட்கள் இருந்தால், முக்கிய விவரங்களையும் மொத்தத் தொகையையும் சுருக்கமாகக் காட்டவும் (பயனர் அனைத்து வரிகளையும் கேட்டால் தவிர).
 விடை தெரியாத விஷயங்களுக்கு தவறான தகவல்களை உருவாக்க வேண்டாம்."""
         if context_str:
             base_prompt += f"""\n\nபின்வரும் அங்கீகரிக்கப்பட்ட தகவல் மற்றும் ஆவணங்களின் அடிப்படையில் பதிலளிக்கவும்:\n{context_str}"""
     else:
         base_prompt = f"""You are '{bot_name}', the official AI conversational assistant.
-Provide helpful, concise, professional, and accurate answers to the user's questions.
-If the user asks in English, respond in clear English.
+MANDATORY LANGUAGE RULE: The user has selected English. You MUST respond strictly in clear English, even if the user writes in Tanglish (e.g., 'indha pdf ai patri sol') or another language.
+Keep your answers concise, well-structured, and easy to read using short bullet points or compact summary tables. If a document has many line items (e.g. >10 items), summarize the key highlights, totals, and top items instead of dumping every single row unless the user explicitly asks for all items.
 If you do not know the answer based on authorized information, politely state so without hallucinating."""
         if context_str:
             base_prompt += f"""\n\nBase your answers on the following authorized knowledge and business records:\n{context_str}"""

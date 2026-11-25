@@ -133,9 +133,23 @@ def _extract_xlsx(file_bytes: bytes) -> str:
         return "\n\n".join(all_sheets)
 
 
+def _normalize_legacy_tamil(text: str) -> str:
+    """Convert legacy 8-bit Tamil font encoding (TSCII/Bamini) to standard Unicode Tamil if detected."""
+    if not text:
+        return text
+    if not any(128 <= ord(c) <= 255 for c in text):
+        return text
+    try:
+        import tamil.txt2unicode as t2u
+        return t2u.tscii2unicode(text)
+    except Exception:
+        return text
+
+
 def extract_text_from_bytes(file_bytes: bytes, filename: str) -> str:
     """Extract clean text content from any uploaded file (PDF, DOCX, XLSX, PPTX, images, text/CSV/JSON)."""
     ext = os.path.splitext(filename)[1].lower()
+    extracted = ""
 
     if ext == ".pdf":
         if not HAS_PDFIUM:
@@ -160,37 +174,38 @@ def extract_text_from_bytes(file_bytes: bytes, filename: str) -> str:
                 if ocr_text.strip():
                     ocr_parts.append(f"--- [Page {page_idx + 1} (OCR)] ---\n" + ocr_text.strip())
             if ocr_parts:
-                return "\n\n".join(ocr_parts)
-        return combined
+                combined = "\n\n".join(ocr_parts)
+        extracted = combined
 
     elif ext in IMAGE_EXTENSIONS:
         from PIL import Image
         import numpy as np
         pil_img = Image.open(io.BytesIO(file_bytes)).convert("RGB")
-        return _ocr_np_image(np.array(pil_img))
+        extracted = _ocr_np_image(np.array(pil_img))
 
     elif ext == ".docx":
-        return _extract_docx(file_bytes)
+        extracted = _extract_docx(file_bytes)
 
     elif ext == ".xlsx":
-        return _extract_xlsx(file_bytes)
+        extracted = _extract_xlsx(file_bytes)
 
     elif ext == ".pptx":
-        return _extract_pptx(file_bytes)
+        extracted = _extract_pptx(file_bytes)
 
     elif ext in TEXT_EXTENSIONS:
         try:
-            return file_bytes.decode("utf-8")
+            extracted = file_bytes.decode("utf-8")
         except UnicodeDecodeError:
-            return file_bytes.decode("latin-1", errors="replace")
+            extracted = file_bytes.decode("latin-1", errors="replace")
 
     else:
         # Generic fallback: decode readable UTF-8/Latin-1 text
         try:
-            decoded = file_bytes.decode("utf-8")
-            return decoded
+            extracted = file_bytes.decode("utf-8")
         except UnicodeDecodeError:
-            return file_bytes.decode("latin-1", errors="ignore")
+            extracted = file_bytes.decode("latin-1", errors="ignore")
+
+    return _normalize_legacy_tamil(extracted)
 
 
 def chunk_text(
