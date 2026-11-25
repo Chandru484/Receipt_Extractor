@@ -4,8 +4,8 @@
   // Find host script tag and extract parameters (supports website-id, project-id, role, user-id)
   const currentScript = document.currentScript || document.querySelector("script[data-website-id], script[data-project-id]");
   const websiteId = currentScript ? (currentScript.getAttribute("data-project-id") || currentScript.getAttribute("data-website-id") || "site_demo") : "site_demo";
-  const candidateRole = (currentScript ? (currentScript.getAttribute("data-role") || "user") : "user").toLowerCase();
-  const candidateId = currentScript ? (currentScript.getAttribute("data-user-id") || currentScript.getAttribute("data-candidate-id")) : null;
+  let candidateRole = (currentScript ? (currentScript.getAttribute("data-role") || "user") : "user").toLowerCase();
+  let candidateId = currentScript ? (currentScript.getAttribute("data-user-id") || currentScript.getAttribute("data-candidate-id")) : null;
   const apiBase = currentScript ? (new URL(currentScript.src)).origin : window.location.origin;
 
   let activeLang = "en";
@@ -499,5 +499,23 @@
       userInput.value = activeLang === "ta" ? "வாடிக்கையாளர் சேவை முகவரிடம் பேச வேண்டும்" : "I want to talk to human support";
       sendMessage();
     }
+  };
+
+  // Expose global controller for host application testing & role switching
+  window.UniversalChatbot = {
+    setRole: function (role, id = null) {
+      candidateRole = (role || "user").toLowerCase();
+      candidateId = id;
+      loadRoleSuggestions();
+    },
+    getRole: function () {
+      return candidateRole;
+    },
+    open: function () {
+      chatWin.classList.add("open");
+    },
+    close: function () {
+      chatWin.classList.remove("open");
+    },
   };
 })();
