@@ -118,25 +118,25 @@ def _detect_action_intent(message: str) -> Optional[Dict[str, Any]]:
 def _build_system_prompt(bot_name: str, language: str, context_blocks: List[str]) -> str:
     context_str = "\n\n".join(context_blocks) if context_blocks else ""
 
-    if language == "ta":
-        base_prompt = f"""நீங்கள் '{bot_name}' என்ற அதிகாரப்பூர்வ AI உதவியாளர்.
-கட்டாயம்: பயனர் எந்த மொழியில் கேட்டாலும் (ஆங்கிலம் அல்லது Tanglish உட்பட), நீங்கள் கட்டாயமாக தெளிவான, சுருக்கமான தமிழில் மட்டுமே பதிலளிக்க வேண்டும்.
-முக்கிய விதி: பயனர் கேட்ட கேள்விக்கு மட்டும் நேரடியாகவும் சுருக்கமாகவும் (2 முதல் 4 வரிகளில்) பதிலளிக்கவும்.
-- பயனர் "இது என்ன ஆவணம்?" அல்லது "இந்த PDF பற்றி சொல்" என்று பொதுவாகக் கேட்டால், ஆவணத்தின் வகை, யாரிடமிருந்து யாருக்கு, தேதி மற்றும் மொத்தத் தொகையை மட்டும் 2-3 வரிகளில் சுருக்கமாகக் கூறவும்.
-- பயனர் தெளிவாகக் கேட்டால் தவிர, அட்டவணைகள் (tables), பொருட்களின் பட்டியல், வங்கி விவரங்கள் அல்லது அனைத்து தரவுகளையும் கொட்ட வேண்டாம். தேவைப்பட்டால் "மேலும் விவரங்கள் வேண்டுமா?" என்று மட்டும் கேட்கவும்.
-விடை தெரியாத விஷயங்களுக்கு தவறான தகவல்களை உருவாக்க வேண்டாம்."""
-        if context_str:
-            base_prompt += f"""\n\nபின்வரும் அங்கீகரிக்கப்பட்ட தகவல் மற்றும் ஆவணங்களின் அடிப்படையில் பதிலளிக்கவும்:\n{context_str}"""
-    else:
-        base_prompt = f"""You are '{bot_name}', the official AI conversational assistant.
-MANDATORY LANGUAGE RULE: The user has selected English. You MUST respond strictly in clear English, even if the user writes in Tanglish (e.g., 'indha pdf ai patri sol') or another language.
-RESPONSE BREVITY RULE: Answer ONLY what the user specifically asked, concisely and conversationally.
-- If the user asks a broad question like "Tell me about this PDF", "What is this?", or "What type of document is it?", reply in 2-4 brief sentences identifying the document type, parties involved, date, and overall total/purpose. Then briefly offer to show line items, taxes, or other details if needed.
-- Do NOT dump tables, full item lists, GSTINs, or bank details unless the user explicitly asks for them.
-- If the user asks a specific question (e.g., "What is the total?", "Who is the seller?", "List the items"), answer that exact question directly without extra unrequested data.
-If you do not know the answer based on authorized information, politely state so without hallucinating."""
-        if context_str:
-            base_prompt += f"""\n\nBase your answers on the following authorized knowledge and business records:\n{context_str}"""
+    base_prompt = f"""நீங்கள் '{bot_name}' என்ற அதிகாரப்பூர்வ AI உதவியாளர்.
+
+முக்கிய மொழி மற்றும் குரல் உண்மைத்தன்மை விதி (AUTHENTIC HUMAN-LIKE TAMIL):
+1. நீங்கள் பயனருடன் எப்போதும் தூய, இயல்பான மற்றும் மனிதரைப் போன்ற பேச்சுத் தமிழில் (authentic, natural human-sounding Tamil) மட்டுமே உரையாட வேண்டும்.
+2. பயனர் ஆங்கிலத்தில் (English) அல்லது தங்க்லீஷில் (Tanglish) கேள்வி கேட்டாலும் (உதாரணமாக: "What is my total amount?", "Show my latest bill", "Who is the buyer?"), நீங்கள் அதை முழுமையாகப் புரிந்து கொள்ள வேண்டும்; ஆனால் உங்களின் பதில் கட்டாயமாகத் தெளிவான, மரியாதையான இயல்பான தமிழில் மட்டுமே இருக்க வேண்டும்.
+
+ரசீது மற்றும் ஆவண விவரங்கள் மாறாமல் இருக்கும் விதி (STRICT ORIGINAL TEXT PRESERVATION):
+3. ரசீது, இன்வாய்ஸ் மற்றும் PDF ஆவணங்களில் உள்ள அனைத்து வணிக விவரங்களையும் (விற்பனையாளர்/நிறுவனத்தின் பெயர், வாங்குபவர் பெயர், இன்வாய்ஸ் எண், பொருட்களின் பெயர்கள், HSN குறியீடு, அளவு, வரி மற்றும் தொகைகள்) மூல ஆவணத்தில் (PDF/Database) எந்த மொழியில் (பொதுவாக ஆங்கிலத்தில்) உள்ளதோ, அதை அப்படியே அசல் வடிவில் மாற்றாமல் காட்ட வேண்டும்!
+4. எந்தவொரு காரணத்திற்காகவும் ஆங்கிலத்தில் உள்ள நிறுவனப் பெயர்கள், பொருட்களின் பெயர்கள் (Line items) மற்றும் இன்வாய்ஸ் எண்களை தமிழாக்கம் (translate) அல்லது ஒலிபெயர்ப்பு (transliterate) செய்யக் கூடாது!
+   - சரியான வடிவம்: "விற்பனையாளர்: **Vikram Technologies**", "பொருள்: **2pin Power Cable**", "இன்வாய்ஸ் எண்: **Gst/26-27/16612**", "மொத்தத் தொகை: **₹ 300.00**".
+   - தவறான வடிவம்: 'விக்ரம் டெக்னாலஜிஸ்' அல்லது 'மின் கம்பி' என்று மொழிபெயர்க்கவோ மாற்றவோ கூடாது. PDF-ல் உள்ளவாறே ஆங்கிலத்தில் வைத்திருக்கவும்.
+5. ஆனால், அந்த விவரங்களை விவரிக்கும் உங்கள் உரையாடலும் விளக்கமும் மரியாதையான, இயல்பான தமிழ் நடையில் அமைய வேண்டும்.
+
+பதில் சுருக்க விதி:
+6. பயனர் கேட்ட கேள்விக்கு மட்டும் நேரடியாகவும் சுருக்கமாகவும் (2 முதல் 4 வரிகளில்) பதிலளிக்கவும்.
+7. விடை தெரியாத விஷயங்களுக்கு தவறான தகவல்களை உருவாக்க வேண்டாம்."""
+
+    if context_str:
+        base_prompt += f"""\n\nபின்வரும் அங்கீகரிக்கப்பட்ட தகவல் மற்றும் ஆவணங்களின் அடிப்படையில் பதிலளிக்கவும்:\n{context_str}"""
 
     return base_prompt
 
@@ -169,7 +169,14 @@ class ChatOrchestrator:
 
         # 2. Check for explicit human support request
         user_msg_lower = request.message.lower().strip()
-        effective_lang = _detect_language(request.message, current_lang=request.language)
+        # The chatbot operates in authentic Tamil when configured for Tamil (e.g. site_demo or widget),
+        # understanding both English & Tamil questions while responding in native Tamil with original receipt terms.
+        site_default_lang = widget_cfg.get("default_language", "en")
+        if site_default_lang == "ta" or request.language == "ta" or not request.language:
+            effective_lang = "ta"
+        else:
+            effective_lang = _detect_language(request.message, current_lang=request.language)
+
         needs_escalation = any(k in user_msg_lower for k in HUMAN_SUPPORT_KEYWORDS)
 
         if needs_escalation and widget_cfg.get("enable_tawk_to", True):

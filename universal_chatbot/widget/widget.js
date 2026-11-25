@@ -8,15 +8,16 @@
   let candidateId = currentScript ? (currentScript.getAttribute("data-user-id") || currentScript.getAttribute("data-candidate-id")) : null;
   const apiBase = currentScript ? (new URL(currentScript.src)).origin : window.location.origin;
 
-  let activeLang = "en";
+  let activeLang = "ta";
   let activeConvId = null;
   let activeSessionId = "sess_" + Math.random().toString(36).substring(2, 10);
+  let welcomeSpoken = false;
   let widgetConfig = {
     bot_name: "Universal Assistant",
     primary_color: "#2563eb",
-    welcome_message_en: "Hello! How can I help you today? You can ask questions, query records, or attach a document.",
-    welcome_message_ta: "வணக்கம்! இன்று நான் உங்களுக்கு எவ்வாறு உதவ முடியும்? நீங்கள் கேள்விகள் கேட்கலாம், பதிவுகளைப் பார்க்கலாம் அல்லது ஆவணங்களை இணைக்கலாம்.",
-    available_languages: ["en", "ta"],
+    welcome_message_en: "வணக்கம்! இன்று நான் உங்களுக்கு என்ன உதவ வேண்டும்?",
+    welcome_message_ta: "வணக்கம்! இன்று நான் உங்களுக்கு என்ன உதவ வேண்டும்?",
+    available_languages: ["ta"],
     allow_file_uploads: true,
     allow_voice_input: true,
     allow_speech_output: true,
@@ -89,10 +90,9 @@
     <div class="chat-window" id="chatWin">
       <div class="chat-header">
         <span class="chat-title" id="botHeader">${widgetConfig.bot_name}</span>
-        <select class="lang-select" id="langSelect">
-          <option value="en">English</option>
-          <option value="ta">தமிழ்</option>
-        </select>
+        <div style="font-size: 12px; color: #fff; opacity: 0.95; font-weight: 500; display: flex; align-items: center; gap: 4px;">
+          <span>🇮🇳 தமிழ் (Tamil Voice AI)</span>
+        </div>
       </div>
       <div class="chat-messages" id="msgList"></div>
       <div class="suggestions-container" id="suggBox">
@@ -109,7 +109,7 @@
         <button class="action-btn" id="micBtn" title="Speak in Tamil or English">
           <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/><path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>
         </button>
-        <input type="text" class="chat-input" id="userInput" placeholder="Ask a question or request records..." />
+        <input type="text" class="chat-input" id="userInput" placeholder="உங்கள் கேள்வியைக் கேளுங்கள் (Ask in Tamil or English)..." />
         <button class="send-btn" id="sendBtn">
           <svg width="15" height="15" fill="currentColor" viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
         </button>
@@ -130,7 +130,6 @@
   const micBtn = shadow.getElementById("micBtn");
   const attachBtn = shadow.getElementById("attachBtn");
   const filePicker = shadow.getElementById("filePicker");
-  const langSelect = shadow.getElementById("langSelect");
   const humanAgentBtn = shadow.getElementById("humanAgentBtn");
   const botHeader = shadow.getElementById("botHeader");
 
@@ -140,11 +139,20 @@
     .then(cfg => {
       Object.assign(widgetConfig, cfg);
       botHeader.textContent = widgetConfig.bot_name;
-      appendMessage("bot", activeLang === "ta" ? widgetConfig.welcome_message_ta : widgetConfig.welcome_message_en);
+      appendMessage("bot", widgetConfig.welcome_message_ta || "வணக்கம்! இன்று நான் உங்களுக்கு என்ன உதவ வேண்டும்?");
     })
     .catch(() => {
-      appendMessage("bot", widgetConfig.welcome_message_en);
+      appendMessage("bot", "வணக்கம்! இன்று நான் உங்களுக்கு என்ன உதவ வேண்டும்?");
     });
+
+  // Welcome voice greeting trigger
+  function speakWelcomeGreeting() {
+    if (welcomeSpoken) return;
+    welcomeSpoken = true;
+    const welcomeVoiceText = "வணக்கம்! இன்று நான் உங்களுக்கு என்ன உதவ வேண்டும்?";
+    const firstSpeakBtn = msgList.querySelector(".speak-btn");
+    toggleSpeech(welcomeVoiceText, "ta", firstSpeakBtn);
+  }
 
   // Fetch candidate's role-specific package questions (Admin, Worker, User)
   const suggBox = shadow.getElementById("suggBox");
@@ -185,14 +193,10 @@
   // Toggle open/close
   toggleBtn.onclick = () => {
     chatWin.classList.toggle("open");
-    if (chatWin.classList.contains("open")) userInput.focus();
-  };
-
-  // Language switch
-  langSelect.onchange = (e) => {
-    activeLang = e.target.value;
-    userInput.placeholder = activeLang === "ta" ? "உங்கள் கேள்வியைக் கேளுங்கள்..." : "Ask a question...";
-    appendMessage("bot", activeLang === "ta" ? "மொழி தமிழுக்கு மாற்றப்பட்டது." : "Language changed to English.");
+    if (chatWin.classList.contains("open")) {
+      userInput.focus();
+      speakWelcomeGreeting();
+    }
   };
 
   // Safe Markdown to HTML formatter (supports bold, italic, headings, lists, and tables)
@@ -689,6 +693,8 @@
     },
     open: function () {
       chatWin.classList.add("open");
+      userInput.focus();
+      speakWelcomeGreeting();
     },
     close: function () {
       chatWin.classList.remove("open");
