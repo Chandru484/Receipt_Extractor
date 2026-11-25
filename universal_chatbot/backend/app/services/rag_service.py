@@ -152,18 +152,19 @@ class RAGService:
         user_candidates: List[Dict[str, Any]] = []
         if conversation_id or session_id:
             session_or = []
-            if conversation_id:
+            if conversation_id and not conversation_id.startswith("conv_support"):
                 session_or.append({"conversation_id": conversation_id})
             if session_id:
                 session_or.append({"session_id": session_id})
 
-            user_filter: Dict[str, Any] = {
-                "website_id": website_id,
-                "tenant_id": tenant_id,
-                "is_user_document": True,
-                "$or": session_or,
-            }
-            user_candidates = list(chunks_col.find(user_filter).sort("_id", -1).limit(50))
+            if session_or:
+                user_filter: Dict[str, Any] = {
+                    "website_id": website_id,
+                    "tenant_id": tenant_id,
+                    "is_user_document": True,
+                    "$or": session_or,
+                }
+                user_candidates = list(chunks_col.find(user_filter).sort("_id", -1).limit(50))
 
         user_scored: List[Dict[str, Any]] = []
         for c in user_candidates:
@@ -180,10 +181,25 @@ class RAGService:
                     "is_user_document": True,
                 })
 
-        # Fallback: if user uploaded a document in this session/conversation and asked a broad
-        # or summary question (e.g. "tell me about this file", "summarize", etc.),
-        # include the chunks of the most recently uploaded user document in sequential order.
-        if user_candidates and len(user_scored) == 0:
+        # Fallback ONLY when:
+        # 1. The user has uploaded documents in this active session
+        # 2. No direct term match occurred (user_scored == 0)
+        # 3. The query is NOT a simple greeting ("வணக்கம்", "hello", "hi")
+        # 4. The user query demonstrates intent to ask about their document or its content
+        DOC_QUERY_INTENT_KEYWORDS = {
+            "document", "file", "pdf", "attachment", "doc", "invoice", "receipt",
+            "summarize", "summary", "this", "it", "details", "explain", "about",
+            "read", "content", "tell", "show", "what", "how",
+            "ஆவணம்", "கோப்பு", "இணைப்பு", "ரசீது", "விவரம்", "சுருக்கம்", "பற்றி",
+            "இது", "என்ன", "எதை", "சொல்", "காட்டு"
+        }
+        GREETING_WORDS = {"hello", "hi", "hey", "vanakkam", "வணக்கம்", "ஹலோ", "வணக்கங்கள்", "good morning", "good evening"}
+        
+        query_words = set(re.findall(r"\w+", query.lower()))
+        is_greeting = bool(query_words.intersection(GREETING_WORDS)) and len(query_words) <= 3
+        has_doc_intent = bool(query_words.intersection(DOC_QUERY_INTENT_KEYWORDS))
+
+        if user_candidates and len(user_scored) == 0 and has_doc_intent and not is_greeting:
             latest_source_id = user_candidates[0].get("source_id")
             latest_doc_chunks = [
                 c for c in user_candidates if c.get("source_id") == latest_source_id

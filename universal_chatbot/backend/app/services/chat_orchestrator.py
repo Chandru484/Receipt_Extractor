@@ -1,6 +1,7 @@
 import json
 import logging
 import re
+import uuid
 from typing import Any, Dict, List, Optional
 from universal_chatbot.backend.app.ai.multi_provider import ai_engine
 from universal_chatbot.backend.app.schemas.chat_schema import (
@@ -189,7 +190,7 @@ class ChatOrchestrator:
                 else f"I am transferring you to a live human support agent on Tawk.to right now. If the chat window does not open automatically, [Click Here to Open Direct Chat]({direct_url})."
             )
             return ChatMessageResponse(
-                conversation_id=request.conversation_id or "conv_support",
+                conversation_id=request.conversation_id or f"conv_{uuid.uuid4().hex[:12]}",
                 message_id=handoff_id,
                 reply=reply,
                 language=effective_lang,
