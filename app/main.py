@@ -93,6 +93,15 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 UI_PATH = ROOT_DIR / "ui.html"
 WIDGET_PATH = ROOT_DIR / "universal_chatbot" / "widget" / "widget.js"
 CHATBOT_ADMIN_PATH = ROOT_DIR / "chatbot_admin.html"
+DEMO_PATH = ROOT_DIR / "universal_chatbot" / "widget" / "index.html"
+
+
+@app.get("/demo", include_in_schema=False)
+async def serve_demo_page():
+    """Serve demo page with live role switcher and embedded Chatbot."""
+    if DEMO_PATH.exists():
+        return FileResponse(DEMO_PATH, media_type="text/html")
+    return JSONResponse(status_code=404, content={"detail": "Demo page not found."})
 
 
 @app.get("/chatbot-admin", include_in_schema=False)
