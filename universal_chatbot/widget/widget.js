@@ -312,33 +312,63 @@
     }
   }
 
-  function toggleSpeech(text, lang, btn) {
-    if (currentPlayingBtn === btn) {
+  function toggleSpeech(text, lang, btn = null) {
+    if (btn && currentPlayingBtn === btn) {
       stopCurrentAudio();
       return;
     }
 
     stopCurrentAudio();
-    btn.innerHTML = "⏹️ Stop";
-    btn.classList.add("playing");
-    currentPlayingBtn = btn;
+    if (btn) {
+      btn.innerHTML = "⏳ Loading...";
+      btn.classList.add("playing");
+      currentPlayingBtn = btn;
+    }
 
-    // Call High-Definition Native Neural Audio Stream
-    const ttsUrl = `${apiBase}/api/v1/voice/tts?text=${encodeURIComponent(text)}&language=${lang}`;
-    const audio = new Audio(ttsUrl);
-    currentAudio = audio;
+    // Clean text before sending to avoid URL issues
+    const cleanText = text
+      .replace(/[*#_`|]/g, " ")
+      .replace(/https?:\/\/\S+/g, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .substring(0, 800);
 
-    audio.onended = () => stopCurrentAudio();
-    audio.onerror = () => {
-      // Fallback to browser SpeechSynthesis if server audio is blocked
-      console.warn("Backend neural audio stream unavailable, using browser voice fallback.");
-      playBrowserSpeech(text, lang, btn);
-    };
+    const targetLang = lang || activeLang;
+    const ttsUrl = `${apiBase}/api/v1/voice/tts?text=${encodeURIComponent(cleanText)}&language=${targetLang}`;
 
-    audio.play().catch(err => {
-      console.warn("Audio playback error, using browser fallback:", err);
-      playBrowserSpeech(text, lang, btn);
-    });
+    fetch(ttsUrl)
+      .then(res => {
+        if (!res.ok) throw new Error(`TTS server error (${res.status})`);
+        return res.blob();
+      })
+      .then(blob => {
+        if (btn && currentPlayingBtn !== btn) return; // cancelled while loading
+        const blobUrl = URL.createObjectURL(blob);
+        const audio = new Audio(blobUrl);
+        currentAudio = audio;
+
+        if (btn) btn.innerHTML = "⏹️ Stop";
+
+        audio.onended = () => {
+          URL.revokeObjectURL(blobUrl);
+          stopCurrentAudio();
+        };
+        audio.onerror = (err) => {
+          console.warn("Audio element error, trying browser synthesis:", err);
+          URL.revokeObjectURL(blobUrl);
+          playBrowserSpeech(cleanText, targetLang, btn);
+        };
+
+        return audio.play().catch(playErr => {
+          console.warn("Audio.play rejected (e.g. autoplay restriction):", playErr);
+          if (btn) btn.innerHTML = "🔊 Listen";
+          if (btn) btn.classList.remove("playing");
+        });
+      })
+      .catch(err => {
+        console.warn("TTS fetch error, using browser fallback:", err);
+        playBrowserSpeech(cleanText, targetLang, btn);
+      });
   }
 
   function playBrowserSpeech(text, lang, btn) {
@@ -349,7 +379,7 @@
     window.speechSynthesis.cancel();
     const cleanText = text.replace(/[*#_`|]/g, " ").replace(/\s+/g, " ").trim();
     const utterance = new SpeechSynthesisUtterance(cleanText);
-    utterance.lang = lang === "ta" ? "ta-IN" : "en-US";
+    utterance.lang = lang === "ta" ? "ta-IN" : "en-IN";
 
     if (lang === "ta") {
       const voices = window.speechSynthesis.getVoices();
@@ -533,31 +563,52 @@
       }
     };
 
-    recognition.onerror = () => {
+    recognition.onerror = (e) => {
       micBtn.classList.remove("recording");
-      userInput.placeholder = activeLang === "ta" ? "உங்கள் கேள்வியைக் கேளுங்கள்..." : "Ask a question...";
+      console.warn("Speech recognition error:", e.error);
+      if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+        appendMessage("system-note", "⚠️ Microphone permission denied. Please allow microphone access in your browser settings (look for the lock/tune icon in the address bar).");
+      } else if (e.error === "network") {
+        appendMessage("system-note", "⚠️ Speech recognition service unreachable. Please check internet access or type your question.");
+      } else if (e.error === "no-speech") {
+        userInput.placeholder = activeLang === "ta" ? "பேச்சு கேட்கவில்லை, மீண்டும் பேசவும்..." : "No speech detected. Please speak closer to the mic...";
+        setTimeout(() => {
+          userInput.placeholder = activeLang === "ta" ? "உங்கள் கேள்வியைக் கேளுங்கள்..." : "Ask a question...";
+        }, 3000);
+      } else {
+        userInput.placeholder = activeLang === "ta" ? "உங்கள் கேள்வியைக் கேளுங்கள்..." : "Ask a question...";
+      }
     };
 
     recognition.onend = () => {
       micBtn.classList.remove("recording");
-      userInput.placeholder = activeLang === "ta" ? "உங்கள் கேள்வியைக் கேளுங்கள்..." : "Ask a question...";
+      if (!userInput.value.trim()) {
+        userInput.placeholder = activeLang === "ta" ? "உங்கள் கேள்வியைக் கேளுங்கள்..." : "Ask a question...";
+      }
     };
 
     micBtn.onclick = () => {
       if (micBtn.classList.contains("recording")) {
-        recognition.stop();
+        try { recognition.stop(); } catch (_) {}
         micBtn.classList.remove("recording");
         return;
       }
       stopCurrentAudio();
-      recognition.lang = activeLang === "ta" ? "ta-IN" : "en-US";
+      recognition.lang = activeLang === "ta" ? "ta-IN" : "en-IN";
       userInput.value = "";
-      userInput.placeholder = activeLang === "ta" ? "🎙️ தமிழில் பேசுங்கள்... கேட்கிறேன்..." : "🎙️ Listening... please speak...";
+      userInput.placeholder = activeLang === "ta" ? "🎙️ தமிழில் பேசவும்... கேட்கிறேன்..." : "🎙️ Listening... please speak...";
       micBtn.classList.add("recording");
-      recognition.start();
+      try {
+        recognition.start();
+      } catch (err) {
+        console.warn("Recognition start error:", err);
+        micBtn.classList.remove("recording");
+      }
     };
   } else {
-    micBtn.style.display = "none";
+    micBtn.onclick = () => {
+      appendMessage("system-note", "⚠️ Voice recognition requires Google Chrome, Microsoft Edge, or Safari over localhost or HTTPS.");
+    };
   }
 
   // Tawk.to human agent handoff button

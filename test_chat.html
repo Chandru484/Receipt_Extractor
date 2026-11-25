@@ -443,7 +443,7 @@
         <div class="chat-input-area">
             <div class="input-tools">
                 <button class="tool-btn" title="Upload Image to Human Agent on Tawk.to" onclick="triggerTawkLiveSupport('Visitor clicked Upload Image button')">📎</button>
-                <button class="tool-btn" title="Send Voice Message to Human Agent on Tawk.to" onclick="triggerTawkLiveSupport('Visitor clicked Voice Message button')">🎙️</button>
+                <button class="tool-btn" title="Speak to AI Voice Assistant" onclick="startVoiceInput()">🎙️</button>
             </div>
             <input type="text" id="user-input" placeholder="Ask about the Receipt Extractor API or request human support..." autocomplete="off">
             <button class="send-btn" id="send-btn" onclick="sendMessage()">➤</button>
@@ -477,6 +477,37 @@
                 sendMessage();
             }
         });
+
+        function startVoiceInput() {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SpeechRecognition) {
+                alert("Speech recognition is supported in Google Chrome and Microsoft Edge.");
+                return;
+            }
+            const recog = new SpeechRecognition();
+            recog.lang = "ta-IN";
+            userInput.value = "";
+            userInput.placeholder = "🎙️ Listening... speak in Tamil or English...";
+            recog.onresult = function(e) {
+                let text = "";
+                for (let i = e.resultIndex; i < e.results.length; ++i) {
+                    if (e.results[i].isFinal) text += e.results[i][0].transcript;
+                }
+                if (text) {
+                    userInput.value = text;
+                    userInput.placeholder = "Ask about the Receipt Extractor API...";
+                    sendMessage();
+                }
+            };
+            recog.onerror = function(e) {
+                userInput.placeholder = "Ask about the Receipt Extractor API...";
+                console.warn("Speech error:", e.error);
+                if (e.error === 'not-allowed') {
+                    alert("Microphone permission was denied. Please allow microphone in browser address bar.");
+                }
+            };
+            recog.start();
+        }
 
         function askQuickQuestion(text) {
             userInput.value = text;
