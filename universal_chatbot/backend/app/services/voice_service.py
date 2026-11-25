@@ -1,7 +1,7 @@
 import io
 import re
 import logging
-from typing import Optional, AsyncIterator
+from typing import Optional, AsyncIterator, Dict, Tuple
 import edge_tts
 
 logger = logging.getLogger(__name__)
@@ -102,6 +102,11 @@ def sanitize_text_for_speech(text: str, language: str = "en") -> str:
     return cleaned
 
 
+# In-memory LRU cache for ultra-fast instantaneous voice playback (<10ms)
+_TTS_CACHE: Dict[Tuple[str, str, str], bytes] = {}
+_MAX_CACHE_ENTRIES = 128
+
+
 async def generate_speech_stream(
     text: str,
     language: str = "en",
@@ -109,6 +114,8 @@ async def generate_speech_stream(
 ) -> AsyncIterator[bytes]:
     """
     Generate native neural audio stream (MP3) for Tamil or English.
+    Utilizes an in-memory memory cache for repeated greetings and common phrases
+    to eliminate round-trip latency.
     """
     clean_text = sanitize_text_for_speech(text, language=language)
     if not clean_text:
@@ -119,9 +126,27 @@ async def generate_speech_stream(
     if not selected_voice:
         selected_voice = DEFAULT_VOICES.get(language, DEFAULT_VOICES["en"])
 
+    cache_key = (clean_text, language, selected_voice)
+    if cache_key in _TTS_CACHE:
+        # Cache hit: instantaneous response directly from RAM
+        yield _TTS_CACHE[cache_key]
+        return
+
     # Natural conversational pacing (+4% rate removes robotic drag for Tamil neural voice)
     rate_param = "+4%" if language == "ta" else "+0%"
     communicate = edge_tts.Communicate(clean_text, selected_voice, rate=rate_param)
+    
+    collected_chunks = bytearray()
     async for chunk in communicate.stream():
         if chunk["type"] == "audio":
-            yield chunk["data"]
+            chunk_data = chunk["data"]
+            collected_chunks.extend(chunk_data)
+            yield chunk_data
+
+    # Store in memory cache if within reasonable entry size (< 1MB)
+    if len(collected_chunks) > 0 and len(collected_chunks) < 1_000_000:
+        if len(_TTS_CACHE) >= _MAX_CACHE_ENTRIES:
+            # Pop oldest entry (FIFO)
+            first_key = next(iter(_TTS_CACHE))
+            _TTS_CACHE.pop(first_key, None)
+        _TTS_CACHE[cache_key] = bytes(collected_chunks)

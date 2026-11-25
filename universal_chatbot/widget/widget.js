@@ -40,8 +40,10 @@
     .chat-btn svg { width: 30px; height: 30px; fill: currentColor; }
     .chat-window { position: fixed; bottom: 96px; right: 24px; width: 390px; height: 580px; max-width: calc(100vw - 32px); max-height: calc(100vh - 120px); background: #ffffff; border-radius: 16px; box-shadow: 0 10px 40px rgba(0,0,0,0.18); display: none; flex-direction: column; overflow: hidden; z-index: 999999; border: 1px solid #e5e7eb; }
     .chat-window.open { display: flex; }
-    .chat-header { background: ${widgetConfig.primary_color}; color: #fff; padding: 14px 16px; display: flex; align-items: center; justify-content: space-between; }
+    .chat-header { background: ${widgetConfig.primary_color}; color: #fff; padding: 14px 16px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
     .chat-title { font-weight: 600; font-size: 15px; }
+    .header-btn { background: rgba(255,255,255,0.18); border: 1px solid rgba(255,255,255,0.35); color: #fff; border-radius: 14px; padding: 4px 9px; font-size: 11px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; transition: all 0.15s; font-weight: 500; }
+    .header-btn:hover { background: rgba(255,255,255,0.3); }
     .lang-select { background: rgba(255,255,255,0.2); color: #fff; border: 1px solid rgba(255,255,255,0.4); border-radius: 6px; padding: 4px 8px; font-size: 12px; cursor: pointer; outline: none; }
     .lang-select option { color: #111; }
     .chat-messages { flex: 1; padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; background: #f9fafb; }
@@ -96,6 +98,12 @@
             <span>🇮🇳 தமிழ் குரல் AI (Tamil Voice AI)</span>
           </div>
         </div>
+        <div style="display: flex; align-items: center; gap: 6px;">
+          <button class="header-btn" id="newChatBtn" title="Start New Conversation (புதிய அரட்டை)">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+            <span>New Chat</span>
+          </button>
+        </div>
       </div>
       <div class="chat-messages" id="msgList"></div>
       <div class="suggestions-container" id="suggBox">
@@ -135,6 +143,28 @@
   const filePicker = shadow.getElementById("filePicker");
   const humanAgentBtn = shadow.getElementById("humanAgentBtn");
   const botHeader = shadow.getElementById("botHeader");
+  const newChatBtn = shadow.getElementById("newChatBtn");
+
+  function resetConversation(clearMessages = true, welcomeText = null) {
+    stopCurrentAudio();
+    activeConvId = null;
+    activeSessionId = "sess_" + Math.random().toString(36).substring(2, 10);
+    welcomeSpoken = false;
+    if (filePicker) filePicker.value = "";
+    if (clearMessages) {
+      msgList.innerHTML = "";
+      const greeting = welcomeText || widgetConfig.welcome_message_ta || "வணக்கம்! நான் உங்களுக்கு எப்படி உதவலாம்?";
+      appendMessage("bot", greeting);
+    }
+  }
+
+  if (newChatBtn) {
+    newChatBtn.onclick = () => {
+      unlockAudioPlayback();
+      resetConversation(true);
+      speakWelcomeGreeting();
+    };
+  }
 
   // Render initial welcome message immediately so it is available before async fetches
   appendMessage("bot", widgetConfig.welcome_message_ta || "வணக்கம்! நான் உங்களுக்கு எப்படி உதவலாம்?");
@@ -350,7 +380,7 @@
 
     stopCurrentAudio();
     if (btn) {
-      btn.innerHTML = "⏳ Loading...";
+      btn.innerHTML = "⏳ Speaking...";
       btn.classList.add("playing");
       currentPlayingBtn = btn;
     }
@@ -366,44 +396,33 @@
     const targetLang = lang || activeLang;
     const ttsUrl = `${apiBase}/api/v1/voice/tts?text=${encodeURIComponent(cleanText)}&language=${targetLang}`;
 
-    fetch(ttsUrl)
-      .then(res => {
-        if (!res.ok) throw new Error(`TTS server error (${res.status})`);
-        return res.blob();
-      })
-      .then(blob => {
-        if (btn && currentPlayingBtn !== btn) return;
-        const blobUrl = URL.createObjectURL(blob);
-        
-        sharedAudio.src = blobUrl;
-        currentAudio = sharedAudio;
+    // Progressive low-latency streaming: assign URL directly to HTML5 Audio element.
+    // The browser native media pipeline starts playback within ~100ms on first audio packet arrival
+    // without awaiting the entire audio file download.
+    sharedAudio.src = ttsUrl;
+    currentAudio = sharedAudio;
 
-        if (btn) btn.innerHTML = "⏹️ Stop";
+    sharedAudio.onplay = () => {
+      if (btn) btn.innerHTML = "⏹️ Stop";
+    };
 
-        sharedAudio.onended = () => {
-          URL.revokeObjectURL(blobUrl);
-          stopCurrentAudio();
-          if (onEndedCallback) onEndedCallback();
-        };
+    sharedAudio.onended = () => {
+      stopCurrentAudio();
+      if (onEndedCallback) onEndedCallback();
+    };
 
-        sharedAudio.onerror = (err) => {
-          console.warn("sharedAudio error, falling back to browser speech:", err);
-          URL.revokeObjectURL(blobUrl);
-          playBrowserSpeech(cleanText, targetLang, btn, onEndedCallback);
-        };
+    sharedAudio.onerror = (err) => {
+      console.warn("sharedAudio stream error, falling back to browser speech:", err);
+      playBrowserSpeech(cleanText, targetLang, btn, onEndedCallback);
+    };
 
-        const playPromise = sharedAudio.play();
-        if (playPromise !== undefined) {
-          playPromise.catch(playErr => {
-            console.warn("sharedAudio play blocked, using browser fallback:", playErr);
-            playBrowserSpeech(cleanText, targetLang, btn, onEndedCallback);
-          });
-        }
-      })
-      .catch(err => {
-        console.warn("TTS fetch error, using browser fallback:", err);
+    const playPromise = sharedAudio.play();
+    if (playPromise !== undefined) {
+      playPromise.catch(playErr => {
+        console.warn("sharedAudio play blocked, using browser fallback:", playErr);
         playBrowserSpeech(cleanText, targetLang, btn, onEndedCallback);
       });
+    }
   }
 
   function toggleSpeech(text, lang, btn = null) {
@@ -723,14 +742,19 @@
       unlockAudioPlayback();
       candidateRole = (role || "user").toLowerCase();
       candidateId = id;
-      activeConvId = null; // Start a clean conversation context for the new candidate profile
-      welcomeSpoken = false; // Reset so next open can greet
-      loadRoleSuggestions();
       const displayName = name || (id ? `${role} (${id})` : role);
+      // Clean previous messages and session context for strict candidate data isolation
+      resetConversation(true);
+      loadRoleSuggestions();
       appendMessage(
         "system-note",
         `🔄 பயனர் கணக்கு மாற்றப்பட்டது: ${displayName}. Strict user isolation active.`
       );
+    },
+    newChat: function () {
+      unlockAudioPlayback();
+      resetConversation(true);
+      speakWelcomeGreeting();
     },
     getRole: function () {
       return candidateRole;

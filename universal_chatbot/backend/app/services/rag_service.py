@@ -195,13 +195,11 @@ class RAGService:
         # Fallback ONLY when:
         # 1. The user has uploaded documents in this active session
         # 2. No direct term match occurred (user_scored == 0)
-        # 3. The query demonstrates intent to ask about their document
+        # 3. The query demonstrates clear document intent (referring to a file, upload, or summary)
         DOC_QUERY_INTENT_KEYWORDS = {
-            "document", "file", "pdf", "attachment", "doc", "invoice", "receipt",
-            "summarize", "summary", "this", "it", "details", "explain", "about",
-            "read", "content", "tell", "show", "what", "how",
-            "ஆவணம்", "கோப்பு", "இணைப்பு", "ரசீது", "விவரம்", "சுருக்கம்", "பற்றி",
-            "இது", "என்ன", "எதை", "சொல்", "காட்டு"
+            "document", "file", "pdf", "attachment", "doc", "uploaded", "invoice", "receipt",
+            "summarize", "summary",
+            "ஆவணம்", "கோப்பு", "இணைப்பு", "ரசீது", "சுருக்கம்"
         }
         has_doc_intent = bool(query_words.intersection(DOC_QUERY_INTENT_KEYWORDS))
 
