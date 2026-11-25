@@ -668,13 +668,24 @@
 
   // Expose global controller for host application testing & role switching
   window.UniversalChatbot = {
-    setRole: function (role, id = null) {
+    setRole: function (role, id = null, name = null) {
       candidateRole = (role || "user").toLowerCase();
       candidateId = id;
+      activeConvId = null; // Start a clean conversation context for the new candidate profile
       loadRoleSuggestions();
+      const displayName = name || (id ? `${role} (${id})` : role);
+      appendMessage(
+        "system-note",
+        activeLang === "ta"
+          ? `🔄 பயனர் கணக்கு மாற்றப்பட்டது: ${displayName}`
+          : `🔄 Switched active profile to: ${displayName}. Strict user isolation active.`
+      );
     },
     getRole: function () {
       return candidateRole;
+    },
+    getUserId: function () {
+      return candidateId;
     },
     open: function () {
       chatWin.classList.add("open");

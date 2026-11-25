@@ -62,15 +62,47 @@
       Look at the <strong>bottom-right corner</strong> to interact with the floating chatbot widget.
     </p>
 
-    <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 10px; padding: 16px; margin: 20px 0;">
-      <h3 style="margin-top: 0; color: #1e40af; font-size: 15px;">🎭 Live Role Switcher (Test Candidate Packages)</h3>
-      <p style="font-size: 13px; color: #3b82f6; margin-bottom: 12px;">Click a button below to simulate candidate login and watch the widget update its 1-click question chips:</p>
-      <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-        <button onclick="switchRole('admin', 'adm_demo_01')" style="background: #1e40af; color: #fff; border: none; padding: 8px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600;">👑 Switch to Admin</button>
-        <button onclick="switchRole('worker', 'wrk_demo_99')" style="background: #0d9488; color: #fff; border: none; padding: 8px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600;">🛠️ Switch to Worker</button>
-        <button onclick="switchRole('user', 'usr_demo_123')" style="background: #64748b; color: #fff; border: none; padding: 8px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600;">💡 Switch to User</button>
+    <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 18px; margin: 20px 0;">
+      <h3 style="margin-top: 0; color: #166534; font-size: 16px;">👥 Live Candidate Profile Switcher & User Data Isolation Testing</h3>
+      <p style="font-size: 13.5px; color: #15803d; margin-bottom: 14px;">
+        Click any candidate below to simulate their login session. The chatbot widget automatically switches candidate questions, applies <strong>strict user database boundaries</strong>, and prevents cross-user receipt leakage:
+      </p>
+      
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-bottom: 14px;">
+        <button onclick="switchRole('admin', 'adm_demo_01', 'Rajesh Kumar (Admin)')" style="background: #1e40af; color: #fff; border: none; padding: 10px 14px; border-radius: 8px; cursor: pointer; text-align: left; transition: all 0.2s;">
+          <div style="font-weight: 700; font-size: 13px;">👑 Admin: Rajesh Kumar</div>
+          <div style="font-size: 11px; opacity: 0.9; margin-top: 2px;">ID: adm_demo_01 • Full Project Access</div>
+        </button>
+
+        <button onclick="switchRole('user', 'usr_demo_123', 'Priya Sharma (User 1)')" style="background: #0284c7; color: #fff; border: none; padding: 10px 14px; border-radius: 8px; cursor: pointer; text-align: left; transition: all 0.2s;">
+          <div style="font-weight: 700; font-size: 13px;">👤 User 1: Priya Sharma</div>
+          <div style="font-size: 11px; opacity: 0.9; margin-top: 2px;">ID: usr_demo_123 • Owns: Vikram Tech (₹300)</div>
+        </button>
+
+        <button onclick="switchRole('user', 'usr_demo_456', 'Arun Vijay (User 2)')" style="background: #7c3aed; color: #fff; border: none; padding: 10px 14px; border-radius: 8px; cursor: pointer; text-align: left; transition: all 0.2s;">
+          <div style="font-weight: 700; font-size: 13px;">👤 User 2: Arun Vijay</div>
+          <div style="font-size: 11px; opacity: 0.9; margin-top: 2px;">ID: usr_demo_456 • Owns: LIMRAS Elec (₹1,850)</div>
+        </button>
+
+        <button onclick="switchRole('worker', 'wrk_demo_99', 'Murugan (Worker)')" style="background: #0d9488; color: #fff; border: none; padding: 10px 14px; border-radius: 8px; cursor: pointer; text-align: left; transition: all 0.2s;">
+          <div style="font-weight: 700; font-size: 13px;">🛠️ Worker: Murugan</div>
+          <div style="font-size: 11px; opacity: 0.9; margin-top: 2px;">ID: wrk_demo_99 • Warehouse Ops</div>
+        </button>
       </div>
-      <div id="roleStatus" style="margin-top: 8px; font-size: 12px; color: #1e3a8a; font-weight: 500;">Active Role: <strong>User (Default)</strong></div>
+
+      <div id="roleStatus" style="padding: 8px 12px; background: #ffffff; border: 1px solid #dcfce7; border-radius: 6px; font-size: 12.5px; color: #166534; font-weight: 500;">
+        Active Session: <strong>User 1 (Priya Sharma - usr_demo_123)</strong> • Owned: Vikram Technologies & S.K. Stationery
+      </div>
+
+      <div style="margin-top: 14px; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; font-size: 12.5px;">
+        <strong style="color: #0f172a;">🧪 How to verify User Isolation right now:</strong>
+        <ol style="margin: 6px 0 0 20px; line-height: 1.6; color: #334155;">
+          <li>Switch to <strong>User 1 (Priya)</strong> ➡️ Ask: <em>"Show my receipts"</em> ➡️ Bot shows <strong>Vikram Technologies (₹300)</strong>.</li>
+          <li>Still as <strong>User 1 (Priya)</strong> ➡️ Ask: <em>"Show me LIMRAS electricals"</em> ➡️ Bot returns <strong>0 records</strong> (strictly blocked because LIMRAS belongs to Arun).</li>
+          <li>Switch to <strong>User 2 (Arun)</strong> ➡️ Ask: <em>"Show my receipts"</em> ➡️ Bot shows <strong>LIMRAS ELECTRICAL AGENCY (₹1,850)</strong>.</li>
+          <li>Switch to <strong>Admin (Rajesh)</strong> ➡️ Ask: <em>"Show all receipts"</em> ➡️ Bot accesses all receipts across both users.</li>
+        </ol>
+      </div>
     </div>
 
     <h3>Embed Code Snippet</h3>
@@ -104,11 +136,14 @@
   <!-- Embed the Chatbot Widget from the local server -->
   <script src="/widget.js" data-website-id="site_demo"></script>
   <script>
-    function switchRole(role, id) {
+    function switchRole(role, id, label) {
       if (window.UniversalChatbot) {
-        window.UniversalChatbot.setRole(role, id);
+        window.UniversalChatbot.setRole(role, id, label);
         window.UniversalChatbot.open();
-        document.getElementById("roleStatus").innerHTML = `Active Role: <strong style="text-transform: capitalize;">${role}</strong> (ID: ${id || 'None'})`;
+        const roleStatusEl = document.getElementById("roleStatus");
+        if (roleStatusEl) {
+          roleStatusEl.innerHTML = `Active Session: <strong>${label || role}</strong> (ID: <code>${id || 'None'}</code>) • Role: <span style="text-transform: capitalize;">${role}</span>`;
+        }
       }
     }
   </script>

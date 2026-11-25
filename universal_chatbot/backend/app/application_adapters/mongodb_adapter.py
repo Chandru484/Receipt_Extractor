@@ -57,17 +57,21 @@ class ApplicationMongoAdapter:
             db = client[target_db]
             collection = db[allowed_col]
 
-            filter_query: Dict[str, Any] = {}
+            conditions: List[Dict[str, Any]] = []
+
+            # 1. Strict User Boundary Condition
             if user_id:
                 user_f = conn.get("user_id_field") or "user_id"
-                filter_query["$or"] = [
-                    {user_f: user_id},
-                    {f"data.{user_f}": user_id},
-                    {"user_id": user_id},
-                    {"candidate_id": user_id},
-                ]
+                conditions.append({
+                    "$or": [
+                        {user_f: user_id},
+                        {f"data.{user_f}": user_id},
+                        {"user_id": user_id},
+                        {"candidate_id": user_id},
+                    ]
+                })
 
-            # Extract search terms from user query
+            # 2. Extract search terms from user query
             tokens = re.findall(r"[\w]+", user_query, re.UNICODE)
             stop_words = {
                 "show", "me", "all", "the", "my", "receipts", "receipt", "invoices",
@@ -80,21 +84,29 @@ class ApplicationMongoAdapter:
 
             if search_terms:
                 regex_pattern = "|".join([re.escape(t) for t in search_terms])
-                filter_query["$or"] = [
-                    {"data.vendor_name": {"$regex": regex_pattern, "$options": "i"}},
-                    {"data.seller": {"$regex": regex_pattern, "$options": "i"}},
-                    {"data.buyer": {"$regex": regex_pattern, "$options": "i"}},
-                    {"data.invoice_number": {"$regex": regex_pattern, "$options": "i"}},
-                    {"data.category": {"$regex": regex_pattern, "$options": "i"}},
-                    {"formatted_display": {"$regex": regex_pattern, "$options": "i"}},
-                    {"vendor_name": {"$regex": regex_pattern, "$options": "i"}},
-                ]
+                conditions.append({
+                    "$or": [
+                        {"data.vendor_name": {"$regex": regex_pattern, "$options": "i"}},
+                        {"data.seller": {"$regex": regex_pattern, "$options": "i"}},
+                        {"data.buyer": {"$regex": regex_pattern, "$options": "i"}},
+                        {"data.invoice_number": {"$regex": regex_pattern, "$options": "i"}},
+                        {"data.category": {"$regex": regex_pattern, "$options": "i"}},
+                        {"formatted_display": {"$regex": regex_pattern, "$options": "i"}},
+                        {"vendor_name": {"$regex": regex_pattern, "$options": "i"}},
+                    ]
+                })
+
+            filter_query: Dict[str, Any] = {}
+            if len(conditions) == 1:
+                filter_query = conditions[0]
+            elif len(conditions) > 1:
+                filter_query = {"$and": conditions}
 
             cursor = collection.find(filter_query).sort("_id", -1).limit(max_results)
             raw_records = list(cursor)
 
-            if not raw_records and not search_terms:
-                # If broad inquiry without specific keyword, fetch the latest recent records
+            if not raw_records and not search_terms and not user_id:
+                # If broad inquiry without specific keyword or user, fetch the latest recent records
                 cursor = collection.find({}).sort("_id", -1).limit(max_results)
                 raw_records = list(cursor)
 

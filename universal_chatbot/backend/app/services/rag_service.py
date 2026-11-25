@@ -141,6 +141,16 @@ class RAGService:
         top_k: int = 5,
     ) -> List[Dict[str, Any]]:
         """Retrieve most relevant knowledge chunks matching user query within tenant & session boundary."""
+        # 0. Greetings must never pull document citations
+        GREETING_WORDS = {
+            "hello", "hi", "hey", "vanakkam", "வணக்கம்", "ஹலோ", "வணக்கங்கள்",
+            "good morning", "good evening", "good afternoon", "welcome", "thanks", "நன்றி"
+        }
+        query_words = set(re.findall(r"\w+", query.lower()))
+        is_greeting = bool(query_words.intersection(GREETING_WORDS)) and len(query_words) <= 3
+        if is_greeting:
+            return []
+
         chunks_col = get_document_chunks_collection()
         if chunks_col is None:
             return []
@@ -148,23 +158,24 @@ class RAGService:
         query_tokens = _tokenize(query)
         scored_chunks: List[Dict[str, Any]] = []
 
-        # 1. Prioritize user-uploaded documents in this conversation/session
+        # 1. Prioritize user-uploaded documents scoped strictly to this conversation
         user_candidates: List[Dict[str, Any]] = []
-        if conversation_id or session_id:
-            session_or = []
-            if conversation_id and not conversation_id.startswith("conv_support"):
-                session_or.append({"conversation_id": conversation_id})
-            if session_id:
-                session_or.append({"session_id": session_id})
-
-            if session_or:
-                user_filter: Dict[str, Any] = {
-                    "website_id": website_id,
-                    "tenant_id": tenant_id,
-                    "is_user_document": True,
-                    "$or": session_or,
-                }
-                user_candidates = list(chunks_col.find(user_filter).sort("_id", -1).limit(50))
+        if conversation_id and not conversation_id.startswith("conv_support"):
+            user_filter: Dict[str, Any] = {
+                "website_id": website_id,
+                "tenant_id": tenant_id,
+                "is_user_document": True,
+                "conversation_id": conversation_id,
+            }
+            user_candidates = list(chunks_col.find(user_filter).sort("_id", -1).limit(50))
+        elif session_id and not conversation_id:
+            user_filter = {
+                "website_id": website_id,
+                "tenant_id": tenant_id,
+                "is_user_document": True,
+                "session_id": session_id,
+            }
+            user_candidates = list(chunks_col.find(user_filter).sort("_id", -1).limit(50))
 
         user_scored: List[Dict[str, Any]] = []
         for c in user_candidates:
@@ -184,8 +195,7 @@ class RAGService:
         # Fallback ONLY when:
         # 1. The user has uploaded documents in this active session
         # 2. No direct term match occurred (user_scored == 0)
-        # 3. The query is NOT a simple greeting ("வணக்கம்", "hello", "hi")
-        # 4. The user query demonstrates intent to ask about their document or its content
+        # 3. The query demonstrates intent to ask about their document
         DOC_QUERY_INTENT_KEYWORDS = {
             "document", "file", "pdf", "attachment", "doc", "invoice", "receipt",
             "summarize", "summary", "this", "it", "details", "explain", "about",
@@ -193,13 +203,9 @@ class RAGService:
             "ஆவணம்", "கோப்பு", "இணைப்பு", "ரசீது", "விவரம்", "சுருக்கம்", "பற்றி",
             "இது", "என்ன", "எதை", "சொல்", "காட்டு"
         }
-        GREETING_WORDS = {"hello", "hi", "hey", "vanakkam", "வணக்கம்", "ஹலோ", "வணக்கங்கள்", "good morning", "good evening"}
-        
-        query_words = set(re.findall(r"\w+", query.lower()))
-        is_greeting = bool(query_words.intersection(GREETING_WORDS)) and len(query_words) <= 3
         has_doc_intent = bool(query_words.intersection(DOC_QUERY_INTENT_KEYWORDS))
 
-        if user_candidates and len(user_scored) == 0 and has_doc_intent and not is_greeting:
+        if user_candidates and len(user_scored) == 0 and has_doc_intent:
             latest_source_id = user_candidates[0].get("source_id")
             latest_doc_chunks = [
                 c for c in user_candidates if c.get("source_id") == latest_source_id
