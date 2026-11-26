@@ -9,6 +9,7 @@
       scriptUrlParams = new URL(currentScript.src, window.location.href).searchParams;
     }
   } catch (_) {}
+  const urlParams = new URLSearchParams(window.location.search);
 
   const websiteId = (
     (scriptUrlParams && (scriptUrlParams.get("project_id") || scriptUrlParams.get("website_id") || scriptUrlParams.get("id"))) ||
@@ -408,6 +409,11 @@
       osc.start(ctx.currentTime);
       osc.stop(ctx.currentTime + 0.25);
     } catch (_) {}
+  }
+
+  function endCallMode() {
+    isCallModeActive = false;
+    isSpeaking = false;
   }
 
   function removeTawkTo(notify = true) {
