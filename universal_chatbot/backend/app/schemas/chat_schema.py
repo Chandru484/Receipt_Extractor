@@ -37,6 +37,7 @@ class ChatMessageResponse(BaseModel):
     tawk_direct_url: Optional[str] = None
     created_at: str
     is_voice: bool = False
+    sql_query: Optional[str] = Field(None, description="Generated SQL / database query executed to retrieve data")
     action: Optional[Dict[str, Any]] = Field(None, description="Executable website action triggered by voice/text command")
 
 

@@ -248,6 +248,11 @@ class ApplicationMongoAdapter:
                 lines.append(f"   - {vn}: ₹ {vi['total']:,.2f} ({vi['count']} receipts)")
 
             summary_text = "\n".join(lines)
+            if user_id:
+                gen_sql = f"SELECT COUNT(*) AS receipt_count, SUM(grand_total) AS total_spent, vendor_name, invoice_date FROM {allowed_col} WHERE user_id = '{user_id}' GROUP BY vendor_name, invoice_date;"
+            else:
+                gen_sql = f"SELECT COUNT(*) AS receipt_count, SUM(grand_total) AS total_spent, vendor_name, invoice_date FROM {allowed_col} GROUP BY vendor_name, invoice_date;"
+
             return {
                 "total_spent": total_spent,
                 "receipt_count": receipt_count,
@@ -255,6 +260,7 @@ class ApplicationMongoAdapter:
                 "specific_month": specific_month_match,
                 "specific_vendor": specific_vendor_match,
                 "highest_receipt": highest_receipt,
+                "generated_sql": gen_sql,
             }
 
         except Exception as exc:
@@ -385,11 +391,24 @@ class ApplicationMongoAdapter:
                     ] if isinstance(data_sub.get("items"), list) else [],
                 })
 
+            if search_terms:
+                where_terms = " OR ".join([f"vendor_name ILIKE '%{t}%'" for t in search_terms])
+                if user_id:
+                    gen_sql = f"SELECT vendor_name, invoice_number, invoice_date, grand_total, seller_address FROM {allowed_col} WHERE user_id = '{user_id}' AND ({where_terms}) ORDER BY id DESC LIMIT {max_results};"
+                else:
+                    gen_sql = f"SELECT vendor_name, invoice_number, invoice_date, grand_total, seller_address FROM {allowed_col} WHERE ({where_terms}) ORDER BY id DESC LIMIT {max_results};"
+            else:
+                if user_id:
+                    gen_sql = f"SELECT vendor_name, invoice_number, invoice_date, grand_total, seller_address FROM {allowed_col} WHERE user_id = '{user_id}' ORDER BY id DESC LIMIT {max_results};"
+                else:
+                    gen_sql = f"SELECT vendor_name, invoice_number, invoice_date, grand_total, seller_address FROM {allowed_col} ORDER BY id DESC LIMIT {max_results};"
+
             return {
                 "source_app": conn.get("app_name", target_db),
                 "collection": allowed_col,
                 "record_count": len(sanitized_records),
                 "records": sanitized_records,
+                "generated_sql": gen_sql,
             }
 
         except Exception as exc:

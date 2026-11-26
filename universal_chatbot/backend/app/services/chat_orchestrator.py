@@ -318,6 +318,7 @@ class ChatOrchestrator:
         context_blocks: List[str] = []
         citations: List[SourceCitation] = []
         response_source = "general"
+        executed_sql: Optional[str] = None
 
         # Inject dynamic package questions if supplied in request
         if request.package_questions:
@@ -434,6 +435,7 @@ class ChatOrchestrator:
                 if expense_analytics:
                     if response_source == "general":
                         response_source = "app_database"
+                    executed_sql = expense_analytics.get("generated_sql")
                     context_blocks.append(expense_analytics["summary_text"])
                     citations.append(
                         SourceCitation(
@@ -451,6 +453,8 @@ class ChatOrchestrator:
             if app_data and app_data.get("records"):
                 if response_source == "general":
                     response_source = "app_database"
+                if not executed_sql:
+                    executed_sql = app_data.get("generated_sql")
                 db_summary = json.dumps(app_data["records"], indent=2, default=str)
                 context_blocks.append(
                     f"--- APPLICATION DATABASE RECORDS ({app_data['collection']}) ---\n{db_summary}"
@@ -536,6 +540,7 @@ class ChatOrchestrator:
                 "citation_count": len(citations),
                 "action": action,
                 "is_voice": request.is_voice,
+                "sql_query": executed_sql,
             },
         )
 
@@ -549,6 +554,7 @@ class ChatOrchestrator:
             escalate_to_human=False,
             created_at=get_ist_now_str(),
             is_voice=request.is_voice,
+            sql_query=executed_sql,
             action=action,
         )
 
