@@ -1,18 +1,22 @@
 from typing import Any, Dict
-from fastapi import APIRouter, HTTPException, Header, status
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Header, status
 from universal_chatbot.backend.app.schemas.chat_schema import ChatMessageRequest, ChatMessageResponse
 from universal_chatbot.backend.app.services.chat_orchestrator import chat_orchestrator
 from universal_chatbot.backend.app.services.conversation_service import get_conversation_history
 from universal_chatbot.backend.app.services.tenant_service import get_website_by_id
+from universal_chatbot.backend.app.services.voice_service import prewarm_tts_cache
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
 
 
 @router.post("/message", response_model=ChatMessageResponse, summary="Send message to AI Chatbot")
-def send_chat_message(request: ChatMessageRequest):
+def send_chat_message(request: ChatMessageRequest, background_tasks: BackgroundTasks):
     """Process a user question, orchestrate retrieval and AI response, and persist conversation."""
     try:
         response = chat_orchestrator.process_message(request, verified_user_id=request.user_id)
+        # Pre-synthesize and warm audio cache in background immediately
+        if response and response.reply:
+            background_tasks.add_task(prewarm_tts_cache, response.reply, response.language)
         return response
     except Exception as exc:
         raise HTTPException(

@@ -158,6 +158,41 @@ _TTS_CACHE: Dict[Tuple[str, str, str], bytes] = {}
 _MAX_CACHE_ENTRIES = 128
 
 
+async def prewarm_tts_cache(
+    text: str,
+    language: str = "en",
+    voice: Optional[str] = None
+) -> None:
+    """
+    Pre-synthesize speech in background immediately after chat response generation.
+    Populates in-memory LRU cache so when browser requests /api/v1/voice/tts,
+    the audio is served from RAM with zero synthesis delay.
+    """
+    clean_text = sanitize_text_for_speech(text, language=language)
+    if not clean_text:
+        return
+
+    selected_voice = voice or DEFAULT_VOICES.get(language, DEFAULT_VOICES["en"])
+    cache_key = (clean_text, language, selected_voice)
+    if cache_key in _TTS_CACHE:
+        return
+
+    try:
+        communicate = edge_tts.Communicate(clean_text, selected_voice, rate="+0%")
+        collected = bytearray()
+        async for chunk in communicate.stream():
+            if chunk["type"] == "audio":
+                collected.extend(chunk["data"])
+
+        if len(collected) > 0 and len(collected) < 1_500_000:
+            if len(_TTS_CACHE) >= _MAX_CACHE_ENTRIES:
+                first_key = next(iter(_TTS_CACHE))
+                _TTS_CACHE.pop(first_key, None)
+            _TTS_CACHE[cache_key] = bytes(collected)
+    except Exception as exc:
+        logger.debug(f"prewarm_tts_cache notice: {exc}")
+
+
 async def generate_speech_stream(
     text: str,
     language: str = "en",

@@ -153,6 +153,10 @@
           </div>
         </div>
         <div style="display: flex; align-items: center; gap: 6px;">
+          <button class="header-btn" id="voiceEngineBtn" title="Switch Voice Engine: ⚡ Instant (0s Delay) vs 🎧 HD Cloud Voice">
+            <span id="voiceEngineIcon">⚡</span>
+            <span id="voiceEngineLabel">Instant</span>
+          </button>
           <button class="header-btn" id="callModeBtn" title="Start Hands-Free Voice Call (தொடர் குரல் அழைப்பு)">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M20.01 15.38c-1.23 0-2.42-.2-3.53-.56a.977.977 0 00-1.01.24l-1.57 1.97c-2.83-1.44-5.15-3.75-6.59-6.59l1.97-1.57c.28-.28.36-.67.25-1.02A11.36 11.36 0 018.96 4.3c0-.55-.45-1-1-1H4.45c-.55 0-1 .45-1 1 0 9.39 7.61 17 17 17 .55 0 1-.45 1-1v-3.56c0-.55-.45-.96-.44-.96z"/></svg>
             <span id="callModeLabel">Voice Call</span>
@@ -227,6 +231,33 @@
   const callBanner = shadow.getElementById("callBanner");
   const callBannerText = shadow.getElementById("callBannerText");
   const endCallBtn = shadow.getElementById("endCallBtn");
+  const voiceEngineBtn = shadow.getElementById("voiceEngineBtn");
+  const voiceEngineIcon = shadow.getElementById("voiceEngineIcon");
+  const voiceEngineLabel = shadow.getElementById("voiceEngineLabel");
+
+  let voiceEngine = localStorage.getItem("chat_voice_engine") || "instant"; // default to instant for zero latency
+
+  function updateVoiceEngineUI() {
+    if (!voiceEngineBtn) return;
+    if (voiceEngine === "instant") {
+      if (voiceEngineIcon) voiceEngineIcon.textContent = "⚡";
+      if (voiceEngineLabel) voiceEngineLabel.textContent = "Instant";
+      voiceEngineBtn.title = "Current: ⚡ Instant Device Voice (Zero Delay). Click to switch to 🎧 HD Cloud Voice.";
+    } else {
+      if (voiceEngineIcon) voiceEngineIcon.textContent = "🎧";
+      if (voiceEngineLabel) voiceEngineLabel.textContent = "HD Voice";
+      voiceEngineBtn.title = "Current: 🎧 HD Cloud Voice (Edge Neural). Click to switch to ⚡ Instant Device Voice.";
+    }
+  }
+  updateVoiceEngineUI();
+
+  if (voiceEngineBtn) {
+    voiceEngineBtn.onclick = () => {
+      voiceEngine = voiceEngine === "instant" ? "hd" : "instant";
+      localStorage.setItem("chat_voice_engine", voiceEngine);
+      updateVoiceEngineUI();
+    };
+  }
 
   let isCallModeActive = false;
   let isSpeaking = false;
@@ -558,6 +589,43 @@
     }
   }
 
+  function sanitizeTamilTextForSpeech(text) {
+    if (!text) return "";
+    let cleaned = text
+      .replace(/[*#_`|]/g, " ")
+      .replace(/https?:\/\/\S+/g, "")
+      .replace(/(?<=\d),(?=\d)/g, "")
+      .replace(/₹\s*([\d,]+)\.\d+/g, "₹ $1")
+      .replace(/Rs\.?\s*([\d,]+)\.\d+/g, "Rs $1")
+      .replace(/([\d,]+)\.00\b/g, "$1")
+      .replace(/₹/g, " ரூபாய் ")
+      .replace(/Rs\.?/g, " ரூபாய் ")
+      .replace(/%/g, " சதவீதம் ")
+      .replace(/\bபண்ணியிருக்கீங்க\b/g, "பண்ணி இருக்கீங்க")
+      .replace(/\bபண்ணியிருக்கேன்\b/g, "பண்ணி இருக்கேன்")
+      .replace(/\bசெலவாகியிருக்குங்க\b/g, "செலவாகி இருக்குங்க")
+      .replace(/\bசெலவாகியிருக்கு\b/g, "செலவாகி இருக்கு")
+      .replace(/\bபில்கள்ல\b/g, "பில்களில்")
+      .replace(/\bNo\s*[:.]?\s*(\d+)/gi, "எண் $1")
+      .replace(/\bBus\s*Stand\b/gi, "பஸ் ஸ்டாண்ட்")
+      .replace(/\bComplex\b/gi, "காம்ப்ளக்ஸ்")
+      .replace(/\bRoad\b/gi, "ரோடு")
+      .replace(/\bStreet\b/gi, "தெரு")
+      .replace(/\bTechnologies\b/gi, "டெக்னாலஜிஸ்")
+      .replace(/\bAgency\b/gi, "ஏஜென்சி")
+      .replace(/\bElectricals\b/gi, "எலக்ட்ரிக்கல்ஸ்")
+      .replace(/\bAI\b/g, "ஏ.ஐ")
+      .replace(/\bPDF\b/g, "பி.டி.எஃப்")
+      .replace(/\bG\s*Pay\b/gi, "ஜி பே")
+      .replace(/-\s*(\d{6})\b/g, " பின்கோடு $1")
+      .replace(/[:;]/g, " ")
+      .replace(/\//g, " அல்லது ")
+      .replace(/[()]/g, ", ")
+      .replace(/\s+/g, " ")
+      .trim();
+    return cleaned.substring(0, 800);
+  }
+
   function playSpeech(text, lang, btn = null, onEndedCallback = null) {
     if (btn && currentPlayingBtn === btn) {
       stopCurrentAudio();
@@ -565,30 +633,35 @@
     }
 
     stopCurrentAudio();
+    const cleanText = sanitizeTamilTextForSpeech(text);
+    const targetLang = lang || activeLang;
+
+    // Instant Mode: Start speaking immediately in 20ms with local native device engine
+    if (voiceEngine === "instant") {
+      playBrowserSpeech(cleanText, targetLang, btn, onEndedCallback);
+      return;
+    }
+
+    // HD Cloud Mode: Microsoft Edge Neural TTS with pre-warmed streaming & 1.1s watchdog
     if (btn) {
-      btn.innerHTML = "⏳ Speaking...";
+      btn.innerHTML = '<span class="mini-waveform"><span class="mbar"></span><span class="mbar"></span><span class="mbar"></span></span> ⏳ Loading...';
       btn.classList.add("playing");
       currentPlayingBtn = btn;
     }
 
-    // Clean text before sending to avoid URL/markdown issues
-    const cleanText = text
-      .replace(/[*#_`|]/g, " ")
-      .replace(/https?:\/\/\S+/g, "")
-      .replace(/\s+/g, " ")
-      .trim()
-      .substring(0, 800);
-
-    const targetLang = lang || activeLang;
     const ttsUrl = `${apiBase}/api/v1/voice/tts?text=${encodeURIComponent(cleanText)}&language=${targetLang}`;
-
-    // Progressive low-latency streaming: assign URL directly to HTML5 Audio element.
-    // The browser native media pipeline starts playback within ~100ms on first audio packet arrival
-    // without awaiting the entire audio file download.
     sharedAudio.src = ttsUrl;
     currentAudio = sharedAudio;
 
+    let watchdogTimer = setTimeout(() => {
+      if (!isSpeaking) {
+        console.warn("HD Cloud voice buffering, switching to instant voice to avoid delay");
+        playBrowserSpeech(cleanText, targetLang, btn, onEndedCallback);
+      }
+    }, 1100);
+
     sharedAudio.onplay = () => {
+      clearTimeout(watchdogTimer);
       isSpeaking = true;
       if (btn) btn.innerHTML = '<span class="mini-waveform"><span class="mbar"></span><span class="mbar"></span><span class="mbar"></span></span> ⏹️ Stop';
       if (isCallModeActive) {
@@ -601,6 +674,7 @@
     };
 
     sharedAudio.onended = () => {
+      clearTimeout(watchdogTimer);
       isSpeaking = false;
       stopCurrentAudio();
       if (onEndedCallback) onEndedCallback();
@@ -620,6 +694,7 @@
     };
 
     sharedAudio.onerror = (err) => {
+      clearTimeout(watchdogTimer);
       console.warn("sharedAudio stream error, falling back to browser speech:", err);
       playBrowserSpeech(cleanText, targetLang, btn, onEndedCallback);
     };
@@ -627,6 +702,7 @@
     const playPromise = sharedAudio.play();
     if (playPromise !== undefined) {
       playPromise.catch(playErr => {
+        clearTimeout(watchdogTimer);
         console.warn("sharedAudio play blocked, using browser fallback:", playErr);
         playBrowserSpeech(cleanText, targetLang, btn, onEndedCallback);
       });
@@ -644,13 +720,14 @@
       return;
     }
     window.speechSynthesis.cancel();
-    const cleanText = text.replace(/[*#_`|]/g, " ").replace(/\s+/g, " ").trim();
+    const cleanText = sanitizeTamilTextForSpeech(text);
     const utterance = new SpeechSynthesisUtterance(cleanText);
     utterance.lang = lang === "ta" ? "ta-IN" : "en-IN";
+    utterance.rate = 1.0;
 
     if (lang === "ta") {
       const voices = window.speechSynthesis.getVoices();
-      const taVoice = voices.find(v => v.lang.startsWith("ta") || v.name.toLowerCase().includes("tamil"));
+      const taVoice = voices.find(v => (v.lang && v.lang.replace("_", "-").startsWith("ta")) || (v.name && (v.name.toLowerCase().includes("tamil") || v.name.toLowerCase().includes("heera") || v.name.toLowerCase().includes("valluvar"))));
       if (taVoice) utterance.voice = taVoice;
     }
 
