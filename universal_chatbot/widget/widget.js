@@ -297,11 +297,11 @@
           <span class="chat-title" id="botHeader">${widgetConfig.bot_name || "AI Assistant"}</span>
         </div>
         <div style="display: flex; align-items: center; gap: 6px;">
-          <button class="header-btn" id="historyBtn" title="View Past Chat History (முந்தைய உரையாடல்கள்)">
+          <button class="header-btn" id="historyBtn" title="View Past Chat History">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
             <span id="historyBtnLabel">History</span>
           </button>
-          <button class="header-btn" id="newChatBtn" title="Start New Conversation (புதிய அரட்டை)">
+          <button class="header-btn" id="newChatBtn" title="Start New Conversation">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
             <span>New Chat</span>
           </button>
@@ -339,7 +339,7 @@
         <button class="action-btn" id="micBtn" title="Speak in Tamil or English">
           <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/><path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>
         </button>
-        <input type="text" class="chat-input" id="userInput" placeholder="உங்கள் கேள்வியைக் கேளுங்கள் (Ask in Tamil or English)..." />
+        <input type="text" class="chat-input" id="userInput" placeholder="Type your message or question..." />
         <button class="send-btn" id="sendBtn">
           <svg width="15" height="15" fill="currentColor" viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
         </button>
@@ -456,7 +456,7 @@
     if (filePicker) filePicker.value = "";
     if (clearMessages) {
       msgList.innerHTML = "";
-      const greeting = welcomeText || widgetConfig.welcome_message_ta || "வணக்கம்! சொல்லுங்க, உங்களுக்கு நான் எப்படி உதவலாம்?";
+      const greeting = welcomeText || (activeLang === "ta" ? (widgetConfig.welcome_message_ta || "வணக்கம்! சொல்லுங்க, உங்களுக்கு நான் எப்படி உதவலாம்?") : (widgetConfig.welcome_message_en || "Hello! How can I help you today?"));
       appendMessage("bot", greeting);
     }
   }
@@ -652,6 +652,9 @@
     .then(r => r.json())
     .then(cfg => {
       Object.assign(widgetConfig, cfg);
+      if (cfg.default_language) {
+        activeLang = cfg.default_language;
+      }
       botHeader.textContent = (widgetConfig.bot_name === "Universal Assistant" || !widgetConfig.bot_name) ? "AI Assistant" : widgetConfig.bot_name;
     })
     .catch(() => {});
@@ -691,9 +694,9 @@
       .then(data => {
         if (data.suggested_questions && data.suggested_questions.length > 0) {
           const roleLabels = {
-            admin: "👑 நிர்வாகக் கேள்விகள் / Admin Questions",
-            worker: "🛠️ பணியாளர் கேள்விகள் / Worker Questions",
-            user: "💡 பரிந்துரைக்கப்பட்ட கேள்விகள் / Suggested Questions"
+            admin: activeLang === "ta" ? "👑 நிர்வாகக் கேள்விகள்" : "👑 Admin Questions",
+            worker: activeLang === "ta" ? "🛠️ பணியாளர் கேள்விகள்" : "🛠️ Worker Questions",
+            user: activeLang === "ta" ? "💡 பரிந்துரைக்கப்பட்ட கேள்விகள்" : "💡 Suggested Questions"
           };
           suggTitle.textContent = roleLabels[data.role] || (data.package_name || "💡 Suggested Questions");
           suggList.innerHTML = "";
@@ -1774,7 +1777,9 @@
       loadRoleSuggestions();
       appendMessage(
         "system-note",
-        `🔄 பயனர் கணக்கு மாற்றப்பட்டது: ${displayName}. Strict user isolation active.`
+        activeLang === "ta"
+          ? `🔄 பயனர் கணக்கு மாற்றப்பட்டது: ${displayName}. Strict user isolation active.`
+          : `🔄 Switched user session to: ${displayName}. Strict user data isolation active.`
       );
     },
     newChat: function () {

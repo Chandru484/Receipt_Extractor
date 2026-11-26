@@ -153,7 +153,7 @@ def get_widget_configuration(website_id: str):
             "website_id": website_id,
             "bot_name": "Assistant",
             "primary_color": "#2563eb",
-            "welcome_message_en": "வணக்கம்! சொல்லுங்க, உங்களுக்கு நான் எப்படி உதவலாம்?",
+            "welcome_message_en": "Hello! How can I help you today?",
             "welcome_message_ta": "வணக்கம்! சொல்லுங்க, உங்களுக்கு நான் எப்படி உதவலாம்?",
             "default_language": "en",
             "available_languages": ["en", "ta"],
