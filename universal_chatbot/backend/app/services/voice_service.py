@@ -79,6 +79,96 @@ TAMIL_PRONUNCIATION_MAP = {
     r"\bTamil\s*Nadu\b": "தமிழ்நாடு",
 }
 
+# Mapping of numeric months (01-12) to full Tamil speech
+MONTH_NUM_TO_TAMIL = {
+    "01": "ஜனவரி", "1": "ஜனவரி",
+    "02": "பிப்ரவரி", "2": "பிப்ரவரி",
+    "03": "மார்ச்", "3": "மார்ச்",
+    "04": "ஏப்ரல்", "4": "ஏப்ரல்",
+    "05": "மே", "5": "மே",
+    "06": "ஜூன்", "6": "ஜூன்",
+    "07": "ஜூலை", "7": "ஜூலை",
+    "08": "ஆகஸ்ட்", "8": "ஆகஸ்ட்",
+    "09": "செப்டம்பர்", "9": "செப்டம்பர்",
+    "10": "அக்டோபர்",
+    "11": "நவம்பர்",
+    "12": "டிசம்பர்",
+}
+
+# Comprehensive Month replacements for Tamil speech
+# Handles attached suffixes like -ல, -ல், -இல், full month names, 3-letter abbreviations, and dates
+MONTH_SPEECH_REPLACEMENTS = [
+    # Attached colloquial Tamil locative suffixes: e.g. November-ல, Nov-ல, Novemberல, Novல -> நவம்பர்ல
+    (r"\bJan(?:uary)?[- ]?(?:ல|ல்|இல்)\b", "ஜனவரில"),
+    (r"\bFeb(?:ruary)?[- ]?(?:ல|ல்|இல்)\b", "பிப்ரவரில"),
+    (r"\bMar(?:ch)?[- ]?(?:ல|ல்|இல்)\b", "மார்ச்ல"),
+    (r"\bApr(?:il)?[- ]?(?:ல|ல்|இல்)\b", "ஏப்ரல்ல"),
+    (r"\bMay[- ]?(?:ல|ல்|இல்)\b", "மே மாசத்துல"),
+    (r"\bJun(?:e)?[- ]?(?:ல|ல்|இல்)\b", "ஜூன்ல"),
+    (r"\bJul(?:y)?[- ]?(?:ல|ல்|இல்)\b", "ஜூலைல"),
+    (r"\bAug(?:ust)?[- ]?(?:ல|ல்|இல்)\b", "ஆகஸ்ட்ல"),
+    (r"\bSep(?:t(?:ember)?)?[- ]?(?:ல|ல்|இல்)\b", "செப்டம்பர்ல"),
+    (r"\bOct(?:ober)?[- ]?(?:ல|ல்|இல்)\b", "அக்டோபர்ல"),
+    (r"\bNov(?:ember)?[- ]?(?:ல|ல்|இல்)\b", "நவம்பர்ல"),
+    (r"\bDec(?:ember)?[- ]?(?:ல|ல்|இல்)\b", "டிசம்பர்ல"),
+
+    # Attached Tamil dative suffixes: e.g. November-க்கு, Nov-க்கு -> நவம்பருக்கு
+    (r"\bJan(?:uary)?[- ]?க்கு\b", "ஜனவரிக்கு"),
+    (r"\bFeb(?:ruary)?[- ]?க்கு\b", "பிப்ரவரிக்கு"),
+    (r"\bMar(?:ch)?[- ]?க்கு\b", "மார்ச்சுக்கு"),
+    (r"\bApr(?:il)?[- ]?க்கு\b", "ஏப்ரலுக்கு"),
+    (r"\bMay[- ]?க்கு\b", "மே மாதத்துக்கு"),
+    (r"\bJun(?:e)?[- ]?க்கு\b", "ஜூனுக்கு"),
+    (r"\bJul(?:y)?[- ]?க்கு\b", "ஜூலைக்கு"),
+    (r"\bAug(?:ust)?[- ]?க்கு\b", "ஆகஸ்ட்டுக்கு"),
+    (r"\bSep(?:t(?:ember)?)?[- ]?க்கு\b", "செப்டம்பருக்கு"),
+    (r"\bOct(?:ober)?[- ]?க்கு\b", "அக்டோபருக்கு"),
+    (r"\bNov(?:ember)?[- ]?க்கு\b", "நவம்பருக்கு"),
+    (r"\bDec(?:ember)?[- ]?க்கு\b", "டிசம்பருக்கு"),
+
+    # Dates with day + month + year: e.g. 15-Nov-2024, 15/Nov/2024, 15 Nov 2024, 15th November 2024
+    (r"\b(\d{1,2})(?:st|nd|rd|th)?[-\s/]+Jan(?:uary)?[-\s/]+(\d{2,4})\b", r"\1 ஜனவரி \2"),
+    (r"\b(\d{1,2})(?:st|nd|rd|th)?[-\s/]+Feb(?:ruary)?[-\s/]+(\d{2,4})\b", r"\1 பிப்ரவரி \2"),
+    (r"\b(\d{1,2})(?:st|nd|rd|th)?[-\s/]+Mar(?:ch)?[-\s/]+(\d{2,4})\b", r"\1 மார்ச் \2"),
+    (r"\b(\d{1,2})(?:st|nd|rd|th)?[-\s/]+Apr(?:il)?[-\s/]+(\d{2,4})\b", r"\1 ஏப்ரல் \2"),
+    (r"\b(\d{1,2})(?:st|nd|rd|th)?[-\s/]+May[-\s/]+(\d{2,4})\b", r"\1 மே \2"),
+    (r"\b(\d{1,2})(?:st|nd|rd|th)?[-\s/]+Jun(?:e)?[-\s/]+(\d{2,4})\b", r"\1 ஜூன் \2"),
+    (r"\b(\d{1,2})(?:st|nd|rd|th)?[-\s/]+Jul(?:y)?[-\s/]+(\d{2,4})\b", r"\1 ஜூலை \2"),
+    (r"\b(\d{1,2})(?:st|nd|rd|th)?[-\s/]+Aug(?:ust)?[-\s/]+(\d{2,4})\b", r"\1 ஆகஸ்ட் \2"),
+    (r"\b(\d{1,2})(?:st|nd|rd|th)?[-\s/]+Sep(?:t(?:ember)?)?[-\s/]+(\d{2,4})\b", r"\1 செப்டம்பர் \2"),
+    (r"\b(\d{1,2})(?:st|nd|rd|th)?[-\s/]+Oct(?:ober)?[-\s/]+(\d{2,4})\b", r"\1 அக்டோபர் \2"),
+    (r"\b(\d{1,2})(?:st|nd|rd|th)?[-\s/]+Nov(?:ember)?[-\s/]+(\d{2,4})\b", r"\1 நவம்பர் \2"),
+    (r"\b(\d{1,2})(?:st|nd|rd|th)?[-\s/]+Dec(?:ember)?[-\s/]+(\d{2,4})\b", r"\1 டிசம்பர் \2"),
+
+    # Month + Day format: e.g. Nov 15, 2024 or November 15
+    (r"\bJan(?:uary)?\s+(\d{1,2})(?:st|nd|rd|th)?\b", r"\1 ஜனவரி"),
+    (r"\bFeb(?:ruary)?\s+(\d{1,2})(?:st|nd|rd|th)?\b", r"\1 பிப்ரவரி"),
+    (r"\bMar(?:ch)?\s+(\d{1,2})(?:st|nd|rd|th)?\b", r"\1 மார்ச்"),
+    (r"\bApr(?:il)?\s+(\d{1,2})(?:st|nd|rd|th)?\b", r"\1 ஏப்ரல்"),
+    (r"\bMay\s+(\d{1,2})(?:st|nd|rd|th)?\b", r"\1 மே"),
+    (r"\bJun(?:e)?\s+(\d{1,2})(?:st|nd|rd|th)?\b", r"\1 ஜூன்"),
+    (r"\bJul(?:y)?\s+(\d{1,2})(?:st|nd|rd|th)?\b", r"\1 ஜூலை"),
+    (r"\bAug(?:ust)?\s+(\d{1,2})(?:st|nd|rd|th)?\b", r"\1 ஆகஸ்ட்"),
+    (r"\bSep(?:t(?:ember)?)?\s+(\d{1,2})(?:st|nd|rd|th)?\b", r"\1 செப்டம்பர்"),
+    (r"\bOct(?:ober)?\s+(\d{1,2})(?:st|nd|rd|th)?\b", r"\1 அக்டோபர்"),
+    (r"\bNov(?:ember)?\s+(\d{1,2})(?:st|nd|rd|th)?\b", r"\1 நவம்பர்"),
+    (r"\bDec(?:ember)?\s+(\d{1,2})(?:st|nd|rd|th)?\b", r"\1 டிசம்பர்"),
+
+    # Standalone full month names and abbreviations
+    (r"\bJan(?:uary)?\.?\b", "ஜனவரி"),
+    (r"\bFeb(?:ruary)?\.?\b", "பிப்ரவரி"),
+    (r"\bMar(?:ch)?\.?\b", "மார்ச்"),
+    (r"\bApr(?:il)?\.?\b", "ஏப்ரல்"),
+    (r"\bMay\.?\b", "மே"),
+    (r"\bJun(?:e)?\.?\b", "ஜூன்"),
+    (r"\bJul(?:y)?\.?\b", "ஜூலை"),
+    (r"\bAug(?:ust)?\.?\b", "ஆகஸ்ட்"),
+    (r"\bSep(?:t(?:ember)?)?\.?\b", "செப்டம்பர்"),
+    (r"\bOct(?:ober)?\.?\b", "அக்டோபர்"),
+    (r"\bNov(?:ember)?\.?\b", "நவம்பர்"),
+    (r"\bDec(?:ember)?\.?\b", "டிசம்பர்"),
+]
+
 
 def sanitize_text_for_speech(text: str, language: str = "en") -> str:
     """
@@ -149,7 +239,23 @@ def sanitize_text_for_speech(text: str, language: str = "en") -> str:
         # 4. Remove repetitive closing questions
         cleaned = re.sub(r"உங்களுக்கு\s*வேற\s*ஏதாச்சும்\s*உதவி\s*வேணுமா[?.]?", "", cleaned, flags=re.IGNORECASE)
 
-        # 5. Section headings (Buyer, Bill to, Seller, Company, Address)
+        # 5. Convert numeric dates to full Tamil month speech: e.g. 15/11/2024 or 2024-11-15 -> 15 நவம்பர் 2024
+        cleaned = re.sub(
+            r"\b([0-3]?\d)[-/](0[1-9]|1[0-2])[-/](20\d\d|19\d\d)\b",
+            lambda m: f"{m.group(1)} {MONTH_NUM_TO_TAMIL[m.group(2)]} {m.group(3)}",
+            cleaned
+        )
+        cleaned = re.sub(
+            r"\b(20\d\d|19\d\d)[-/](0[1-9]|1[0-2])[-/]([0-3]?\d)\b",
+            lambda m: f"{m.group(3)} {MONTH_NUM_TO_TAMIL[m.group(2)]} {m.group(1)}",
+            cleaned
+        )
+
+        # 6. Apply comprehensive month speech replacements (Nov, November, Nov-ல, Nov 2024, etc.)
+        for pat, repl in MONTH_SPEECH_REPLACEMENTS:
+            cleaned = re.sub(pat, repl, cleaned, flags=re.IGNORECASE)
+
+        # 7. Section headings (Buyer, Bill to, Seller, Company, Address)
         cleaned = re.sub(r"\bBuyer\s*\(\s*Bill\s*to\s*\)\s*details\b", "வாங்குபவர் விவரங்கள்:", cleaned, flags=re.IGNORECASE)
         cleaned = re.sub(r"\bBuyer\s*details\b", "வாங்குபவர் விவரங்கள்:", cleaned, flags=re.IGNORECASE)
         cleaned = re.sub(r"\bSeller\s*details\b", "விற்பனையாளர் விவரங்கள்:", cleaned, flags=re.IGNORECASE)

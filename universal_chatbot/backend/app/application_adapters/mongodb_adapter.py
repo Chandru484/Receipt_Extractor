@@ -24,6 +24,7 @@ TAMIL_MONTH_MAP = {
 }
 
 MONTH_NAMES = ["", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
+TAMIL_MONTH_NAMES = ["", "ஜனவரி", "பிப்ரவரி", "மார்ச்", "ஏப்ரல்", "மே", "ஜூன்", "ஜூலை", "ஆகஸ்ட்", "செப்டம்பர்", "அக்டோபர்", "நவம்பர்", "டிசம்பர்"]
 
 EXPENSE_KEYWORDS = [
     "செலவு", "செலவுகள்", "செலவழித்த", "செலவாச்சு", "செலவாயிருக்கு", "செலவு பண்ணியிருக்கேன்",
@@ -158,7 +159,7 @@ class ApplicationMongoAdapter:
                     yr, mo, raw_d = p_date
                     all_dates.append((yr, mo))
                     m_key = f"{yr}-{mo:02d}"
-                    m_name = f"{MONTH_NAMES[mo]} {yr}"
+                    m_name = f"{TAMIL_MONTH_NAMES[mo]} {yr} ({MONTH_NAMES[mo]} {yr})"
                     month_spends[m_key]["total"] += amt
                     month_spends[m_key]["count"] += 1
                     month_spends[m_key]["year"] = yr
