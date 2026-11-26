@@ -318,7 +318,10 @@ class ApplicationMongoAdapter:
                 "selavu", "motha", "motham", "evvalavu", "paniruken", "panniyiruken",
                 "ரசீது", "ரசீதுகள்", "காட்டு", "எனது", "விவரங்கள்", "சுருக்கமாக",
                 "தகவல்கள்", "உள்ள", "பற்றி", "சொல்", "முகவரி", "எங்கே", "கடை",
-                "செலவு", "செலவுகள்", "மொத்தம்", "எவ்வளவு", "பண்ணியிருக்கேன்", "மாசம்", "மாதம்", "இந்த"
+                "செலவு", "செலவுகள்", "மொத்தம்", "எவ்வளவு", "பண்ணியிருக்கேன்", "மாசம்", "மாதம்", "இந்த",
+                "hi", "hello", "hey", "how", "are", "you", "your", "who", "what", "is", "was",
+                "am", "can", "tell", "please", "help", "good", "morning", "afternoon", "evening",
+                "night", "thanks", "thank", "வணக்கம்", "நன்றி", "ஹலோ", "ஹாய்"
             }
             search_terms = [t for t in tokens if t.lower() not in stop_words and len(t) > 2]
 
@@ -347,7 +350,7 @@ class ApplicationMongoAdapter:
 
             # Fallback: if search by term yielded no matches, but candidate user_id is provided,
             # retrieve that user's owned records so broad questions (e.g. "kadayin address ai sollu") can answer from their receipt
-            if not raw_records and user_id:
+            if not raw_records and user_id and search_terms:
                 user_filter = {
                     "$or": [
                         {"user_id": user_id},
@@ -355,11 +358,9 @@ class ApplicationMongoAdapter:
                     ]
                 }
                 raw_records = list(collection.find(user_filter).sort("_id", -1).limit(max_results))
-            elif not raw_records and not search_terms and not user_id:
-                cursor = collection.find({}).sort("_id", -1).limit(max_results)
-                raw_records = list(cursor)
 
             if not raw_records:
+                return None
                 return None
 
             # Sanitize and flatten records

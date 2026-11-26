@@ -27,6 +27,26 @@ HUMAN_SUPPORT_KEYWORDS = [
     "உதவியாளர்", "மனிதர்", "தொடர்பு", "வாடிக்கையாளர் சேவை"
 ]
 
+GREETING_TOKENS = {
+    "hi", "hello", "hey", "hola", "hai", "vanakkam", "வணக்கம்", "வணக்கங்க",
+    "good", "morning", "afternoon", "evening", "day", "night",
+    "how", "are", "you", "who", "what", "is", "your", "name", "can", "do",
+    "epdi", "irukinga", "irukkeenga", "yar", "neenga", "yaaru", "unakku",
+    "theriyum", "panra", "nandri", "thanks", "thank", "bye", "goodbye",
+    "see", "welcome", "ok", "okay", "சரி", "சரிங்க", "ஹலோ", "ஹாய்"
+}
+
+
+def _is_pure_greeting_or_smalltalk(msg: str) -> bool:
+    """Check if message is simply a greeting, small talk, or polite acknowledgement."""
+    cleaned = re.sub(r"[^\w\s]", "", msg.strip().lower())
+    if not cleaned:
+        return True
+    tokens = [t for t in cleaned.split() if t]
+    if tokens and all(t in GREETING_TOKENS for t in tokens):
+        return True
+    return False
+
 
 def _detect_language(message: str, current_lang: str = "en") -> str:
     """Detect whether user input is in Tamil, Tanglish, or English."""
@@ -418,10 +438,13 @@ class ChatOrchestrator:
                 context_blocks.insert(0, user_doc_instruction)
 
         # 4b. Application Database Search (e.g. Receipt Extractor DB or App DB)
-        # If the user already uploaded a document and is asking about it, avoid polluting
-        # the prompt with unrelated DB records unless explicitly requested.
+        # If the user is just saying hi/hello or smalltalk, do NOT trigger unnecessary database queries.
+        # Also avoid polluting prompt with DB records if an uploaded document is the main topic.
         db_explicit_keywords = ["database", "stored receipt", "my receipts", "all receipts", "db"]
-        should_query_db = (response_source != "user_document") or any(k in user_msg_lower for k in db_explicit_keywords)
+        is_smalltalk = _is_pure_greeting_or_smalltalk(request.message)
+        should_query_db = (not is_smalltalk) and (
+            (response_source != "user_document") or any(k in user_msg_lower for k in db_explicit_keywords)
+        )
 
         if should_query_db:
             # Check for expense and spending analytics query
