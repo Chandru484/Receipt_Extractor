@@ -52,12 +52,16 @@ def sanitize_text_for_speech(text: str, language: str = "en") -> str:
     cleaned = re.sub(r"^\s*\d+\.\s+", "", cleaned, flags=re.MULTILINE)
 
     if language == "ta":
-        # Strip decimal cents/paise from currency amounts so TTS speaks clean numbers (e.g. ₹ 254 instead of robotic 'புள்ளி இருபத்து நான்கு')
+        # 1. Remove commas inside numbers so Edge TTS speaks continuous Tamil numerals ("ஆறு லட்சத்து இருபதாயிரம்")
+        # instead of saying "கமா" or pausing awkwardly
+        cleaned = re.sub(r"(?<=\d),(?=\d)", "", cleaned)
+
+        # 2. Strip decimal cents/paise from currency amounts so TTS speaks clean numbers (e.g. ₹ 254 instead of robotic 'புள்ளி இருபத்து நான்கு')
         cleaned = re.sub(r"₹\s*([\d,]+)\.\d+", r"₹ \1", cleaned)
         cleaned = re.sub(r"Rs\.?\s*([\d,]+)\.\d+", r"Rs \1", cleaned)
         cleaned = re.sub(r"([\d,]+)\.00\b", r"\1", cleaned)
 
-        # Remove rude/disrespectful singular slang if LLM ever outputs it
+        # 3. Remove rude/disrespectful singular slang if LLM ever outputs it
         cleaned = re.sub(r"\bஇப்போடா\b", "இப்போதைக்கு", cleaned)
         cleaned = re.sub(r"\bஇப்பொடா\b", "இப்போதைக்கு", cleaned)
         cleaned = re.sub(r"\bசொல்லுடா\b", "சொல்லுங்க", cleaned)
@@ -65,7 +69,7 @@ def sanitize_text_for_speech(text: str, language: str = "en") -> str:
         cleaned = re.sub(r"\bபாருடா\b", "பாருங்க", cleaned)
         cleaned = re.sub(r"\bடா\b", "", cleaned)
 
-        # Smooth out bookish/formal words into natural polite conversational spoken Tamil
+        # 4. Smooth out bookish/formal words into natural polite conversational spoken Tamil
         cleaned = re.sub(r"\bஆகும்\b", "", cleaned)
         cleaned = re.sub(r"\bஆவார்\b", "", cleaned)
         cleaned = re.sub(r"\bஉள்ளது\b", "இருக்கு", cleaned)
@@ -75,7 +79,31 @@ def sanitize_text_for_speech(text: str, language: str = "en") -> str:
         cleaned = re.sub(r"\bதெரிவிக்கவும்\b", "சொல்லுங்க", cleaned)
         cleaned = re.sub(r"\bபட்டியலிடப்பட்டுள்ளன\b", "இதோ இருக்கு", cleaned)
 
-        # Expand common symbols to spoken conversational Tamil
+        # 5. Separate compound/agglutinated spoken Tamil verbs for crisp neural enunciation
+        cleaned = re.sub(r"\bபண்ணியிருக்கீங்க\b", "பண்ணி இருக்கீங்க", cleaned)
+        cleaned = re.sub(r"\bபண்ணியிருக்கேன்\b", "பண்ணி இருக்கேன்", cleaned)
+        cleaned = re.sub(r"\bபண்ணியிருக்காங்க\b", "பண்ணி இருக்காங்க", cleaned)
+        cleaned = re.sub(r"\bசெலவாகியிருக்குங்க\b", "செலவாகி இருக்குங்க", cleaned)
+        cleaned = re.sub(r"\bசெலவாகியிருக்கு\b", "செலவாகி இருக்கு", cleaned)
+        cleaned = re.sub(r"\bபில்கள்ல\b", "பில்களில்", cleaned)
+        cleaned = re.sub(r"\bஇப்போதைக்கு\b", "தற்போது", cleaned)
+
+        # 6. Expand business, tech, and address terms into clear phonetic Tamil
+        cleaned = re.sub(r"\bNo\s*[:.]?\s*(\d+)", r"எண் \1", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\bBus\s*Stand\b", "பஸ் ஸ்டாண்ட்", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\bComplex\b", "காம்ப்ளக்ஸ்", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\bRoad\b", "ரோடு", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\bStreet\b", "தெரு", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\bTechnologies\b", "டெக்னாலஜிஸ்", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\bAgency\b", "ஏஜென்சி", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\bElectricals\b", "எலக்ட்ரிக்கல்ஸ்", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\bAI\b", "ஏ.ஐ", cleaned)
+        cleaned = re.sub(r"\bPDF\b", "பி.டி.எஃப்", cleaned)
+        cleaned = re.sub(r"\bG\s*Pay\b", "ஜி பே", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\bPhonePe\b", "போன்பே", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"-\s*(\d{6})\b", r" பின்கோடு \1", cleaned)
+
+        # 7. Expand common symbols to spoken conversational Tamil
         cleaned = cleaned.replace("₹", " ரூபாய் ")
         cleaned = cleaned.replace("Rs.", " ரூபாய் ")
         cleaned = cleaned.replace("Rs", " ரூபாய் ")
@@ -93,6 +121,13 @@ def sanitize_text_for_speech(text: str, language: str = "en") -> str:
         cleaned = cleaned.replace("kg", " கிலோ ")
         cleaned = cleaned.replace("KG", " கிலோ ")
         cleaned = cleaned.replace("g ", " கிராம் ")
+
+        # 8. Punctuation smoothing for natural speech cadence
+        cleaned = cleaned.replace(":", " ")
+        cleaned = cleaned.replace(";", " ")
+        cleaned = cleaned.replace("/", " அல்லது ")
+        cleaned = cleaned.replace("(", ", ")
+        cleaned = cleaned.replace(")", ", ")
     else:
         # Expand for English
         cleaned = cleaned.replace("₹", " Rupees ")
@@ -148,8 +183,8 @@ async def generate_speech_stream(
         yield _TTS_CACHE[cache_key]
         return
 
-    # Natural conversational pacing (+4% rate removes robotic drag for Tamil neural voice)
-    rate_param = "+4%" if language == "ta" else "+0%"
+    # Natural conversational pacing (standard rate delivers clear, unhurried Tamil consonant articulation)
+    rate_param = "+0%"
     communicate = edge_tts.Communicate(clean_text, selected_voice, rate=rate_param)
     
     collected_chunks = bytearray()

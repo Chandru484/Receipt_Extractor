@@ -277,8 +277,8 @@
     );
 
     const firstSpeakBtn = msgList.querySelector(".speak-btn");
-    const welcomeVoiceText = "வணக்கம்! சொல்லுங்க, உங்களுக்கு நான் எப்படி உதவலாம்?";
-    playSpeech(welcomeVoiceText, "ta", firstSpeakBtn);
+    const welcomeVoiceText = activeLang === "ta" ? "சொல்லுங்க, கேட்கிறேன்..." : "I'm listening, please go ahead...";
+    playSpeech(welcomeVoiceText, activeLang, firstSpeakBtn);
   }
 
   function endCallMode() {
@@ -379,14 +379,14 @@
     } catch (_) {}
   }
 
-  // Welcome voice greeting trigger on open
+  // Welcome voice greeting trigger on initial widget open
   function speakWelcomeGreeting() {
-    if (welcomeSpoken) return;
+    if (welcomeSpoken || msgList.children.length > 2) return;
     welcomeSpoken = true;
     unlockAudioPlayback();
-    const welcomeVoiceText = "வணக்கம்! சொல்லுங்க, உங்களுக்கு நான் எப்படி உதவலாம்?";
+    const welcomeVoiceText = activeLang === "ta" ? "வணக்கம்! சொல்லுங்க, என்ன உதவி வேணும்?" : "Hello! How can I help you today?";
     const firstSpeakBtn = msgList.querySelector(".speak-btn");
-    playSpeech(welcomeVoiceText, "ta", firstSpeakBtn);
+    playSpeech(welcomeVoiceText, activeLang, firstSpeakBtn);
   }
 
   // Fetch candidate's role-specific package questions (Admin, Worker, User)

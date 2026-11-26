@@ -140,12 +140,16 @@ def _build_system_prompt(bot_name: str, language: str, context_blocks: List[str]
      * 'பட்டியலிடப்பட்டுள்ளன' ➡️ 'இதோ உங்க விவரங்கள்:'
      * 'சரிபார்க்கப்பட்டது' ➡️ 'செக் பண்ணிட்டேன்'
 
-3. உரையாடல் உதாரணங்கள் (CONVERSATIONAL EXAMPLES):
-   - வாழ்த்து சொல்லும்போது: "வணக்கம்! சொல்லுங்க, உங்களுக்கு நான் எப்படி உதவலாம்?"
-   - பில் / ரசீது சொல்லும்போது: "கண்டிப்பா, இதோ உங்க பில் விவரங்கள். கடை பெயர் Vikram Technologies, பில் தொகை ₹ 300."
-   - கடை முகவரி / விவரம் சொல்லும்போது: "கடை பெயர் Vikram Technologies, முகவரி: No:5, Bus Stand Complex, Mettur Road, Erode."
-   - தகவல் இல்லாதபோது: "மன்னிச்சுக்கோங்க, இப்போதைக்கு உங்க கணக்குல அந்த விவரம் இல்லைங்க."
-   - முடிக்கும்போது: "உங்களுக்கு வேற ஏதாச்சும் உதவி வேணுமா?"
+3. நேரடிப் பதில் மற்றும் வாழ்த்து தவிர்த்தல் (NO REPETITIVE GREETINGS - ANSWER DIRECTLY):
+   - ❌ ஒவ்வொரு பதிலும் தொடங்கும் போது 'வணக்கம்! சொல்லுங்க, உங்களுக்கு நான் எப்படி உதவலாம்:', 'வணக்கம்! சொல்லுங்க...' போன்ற தேவையற்ற வாழ்த்துகளையோ முன்னுரையையோ மீண்டும் மீண்டும் சொல்லவே கூடாது!
+   - ✅ வாடிக்கையாளர் நேரடியாக ஒரு கேள்வி கேட்டால் (செலவு, பில், முகவரி, ரசீது போன்றவை), நேரடியாக பதிலை மட்டுமே உடனடியாக சொல்ல வேண்டும்.
+   - வாடிக்கையாளர் முதலில் "வணக்கம்" அல்லது "hello" என்று வாழ்த்துக் கூறினால் மட்டுமே, "வணக்கம்! சொல்லுங்க, என்ன உதவி வேணும்?" என்று வாழ்த்துக் கூற வேண்டும்.
+   - உரையாடல் உதாரணங்கள்:
+     * பில் / ரசீது கேட்கும்போது: "கண்டிப்பா, இதோ உங்க பில் விவரங்கள். கடை பெயர் Vikram Technologies, பில் தொகை ₹ 300."
+     * செலவு கேட்கும்போது: "இந்த மாசத்துல நீங்க மொத்தம் ₹ 218 செலவு பண்ணி இருக்கீங்க (2 ரசீதுகள்)."
+     * கடை முகவரி கேட்கும்போது: "Vikram Technologies-ன் முகவரி: No:5, Bus Stand Complex, Mettur Road, Erode."
+     * தகவல் இல்லாதபோது: "மன்னிச்சுக்கோங்க, இப்போதைக்கு உங்க கணக்குல அந்த விவரம் இல்லைங்க."
+     * உரையாடலை முடிக்கும்போது மட்டுமே: "உங்களுக்கு வேற ஏதாச்சும் உதவி வேணுமா?"
 
 4. பயனர் ஆங்கிலத்திலோ (English) அல்லது தங்க்லீஷிலோ (Tanglish) கேள்வி கேட்டாலும் (e.g. "kadayin address ai sollu"), உங்களின் பதிலை எப்போதும் மரியாதையான எளிய பேச்சுத் தமிழில் மட்டுமே வழங்கவும்.
 
@@ -386,6 +390,26 @@ class ChatOrchestrator:
         )
 
         bot_reply = ai_res.get("reply", "")
+
+        # Strip repetitive robot greeting prefix if user query was not an explicit greeting
+        greetings = ["வணக்கம்", "hi", "hello", "hey", "vanakkam", "வாழ்த்து", "good morning", "good evening"]
+        if not any(g in user_msg_lower for g in greetings):
+            bot_reply = re.sub(
+                r"^\s*வணக்கம்!?\s*சொல்லுங்க,?\s*(உங்களுக்கு\s*நான்\s*எ[ப்இ]படி\s*உதவலாம்[:?.]?\s*)?",
+                "",
+                bot_reply,
+                flags=re.IGNORECASE,
+            )
+            bot_reply = re.sub(
+                r"^\s*வணக்கம்!?\s*",
+                "",
+                bot_reply,
+                flags=re.IGNORECASE,
+            ).strip()
+            # If reply starts with colon, dash or extra punctuation, strip it
+            bot_reply = re.sub(r"^[:,\- ]+", "", bot_reply).strip()
+            if bot_reply and bot_reply[0].islower():
+                bot_reply = bot_reply[0].upper() + bot_reply[1:]
 
         # 7. Save message interaction into MongoDB
         msg_id = save_message_interaction(
