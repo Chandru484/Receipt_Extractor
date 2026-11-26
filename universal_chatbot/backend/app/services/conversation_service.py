@@ -13,6 +13,7 @@ def get_or_create_conversation(
     conversation_id: Optional[str] = None,
     session_id: Optional[str] = None,
     user_id: Optional[str] = None,
+    package_id: Optional[str] = None,
     language: str = "en",
 ) -> Dict[str, Any]:
     """Retrieve an active conversation or initialize a new one in MongoDB."""
@@ -22,13 +23,20 @@ def get_or_create_conversation(
     if conversation_id and convs is not None:
         existing = convs.find_one({"conversation_id": conversation_id, "website_id": website_id}, {"_id": 0})
         if existing:
+            updates = {}
             # Update active language if changed
             if language and existing.get("language") != language:
-                convs.update_one(
-                    {"conversation_id": conversation_id},
-                    {"$set": {"language": language, "updated_at": now_str}}
-                )
+                updates["language"] = language
                 existing["language"] = language
+            if package_id and existing.get("package_id") != package_id:
+                updates["package_id"] = package_id
+                existing["package_id"] = package_id
+            if user_id and existing.get("user_id") != user_id:
+                updates["user_id"] = user_id
+                existing["user_id"] = user_id
+            if updates:
+                updates["updated_at"] = now_str
+                convs.update_one({"conversation_id": conversation_id}, {"$set": updates})
             return existing
 
     new_id = conversation_id or f"conv_{uuid.uuid4().hex[:12]}"
@@ -37,6 +45,7 @@ def get_or_create_conversation(
         "website_id": website_id,
         "tenant_id": tenant_id,
         "user_id": user_id,
+        "package_id": package_id,
         "session_id": session_id,
         "title": "New Conversation",
         "language": language,

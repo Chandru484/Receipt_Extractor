@@ -323,6 +323,13 @@ class ChatOrchestrator:
         # 3. Detect Website Action Intent (e.g. show report, upload receipt, navigate)
         action = _detect_action_intent(request.message)
 
+        # Resolve deterministic conversation_id if package_id + (user_id or admin_id) are provided
+        target_uid = request.user_id or request.admin_id
+        if request.package_id and target_uid and not request.conversation_id:
+            clean_pkg = re.sub(r"[^\w\-]", "_", str(request.package_id).strip())
+            clean_uid = re.sub(r"[^\w\-]", "_", str(target_uid).strip())
+            request.conversation_id = f"conv_{clean_pkg}_{clean_uid}"
+
         # 4. Get or create conversation in MongoDB
         conv = get_or_create_conversation(
             website_id=request.website_id,
@@ -330,6 +337,7 @@ class ChatOrchestrator:
             conversation_id=request.conversation_id,
             session_id=request.session_id,
             user_id=verified_user_id,
+            package_id=request.package_id,
             language=effective_lang,
         )
         active_conv_id = conv["conversation_id"]
@@ -564,6 +572,7 @@ class ChatOrchestrator:
                 "action": action,
                 "is_voice": request.is_voice,
                 "sql_query": executed_sql,
+                "package_id": request.package_id,
             },
         )
 
@@ -577,6 +586,7 @@ class ChatOrchestrator:
             escalate_to_human=False,
             created_at=get_ist_now_str(),
             is_voice=request.is_voice,
+            package_id=request.package_id,
             sql_query=executed_sql,
             action=action,
         )

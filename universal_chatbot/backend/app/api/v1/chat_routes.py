@@ -1,3 +1,4 @@
+import re
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Header, Query, status
 from universal_chatbot.backend.app.schemas.chat_schema import ChatMessageRequest, ChatMessageResponse, EditMessageRequest
@@ -22,6 +23,7 @@ def send_chat_message(
     background_tasks: BackgroundTasks,
     website_id: Optional[str] = Query(None, description="Optional project/website ID from URL query"),
     project_id: Optional[str] = Query(None, description="Optional project/website ID from URL query"),
+    package_id: Optional[str] = Query(None, description="Optional package identifier from URL query"),
 ):
     """Process a user question, orchestrate retrieval and AI response, and persist conversation."""
     try:
@@ -30,6 +32,9 @@ def send_chat_message(
             request.website_id = project_id
         elif website_id:
             request.website_id = website_id
+
+        if package_id and not request.package_id:
+            request.package_id = package_id
 
         effective_user_id = request.admin_id or request.user_id
         if request.admin_id and not request.role:
@@ -44,6 +49,47 @@ def send_chat_message(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Chatbot failed to process message: {str(exc)}"
         )
+
+
+@router.get("/history", summary="Get conversation history by package_id and user_id")
+def get_history_by_package_and_user(
+    package_id: str = Query(..., description="Package identifier (e.g. 'pkg_basic')"),
+    user_id: Optional[str] = Query(None, description="Logged in user ID"),
+    admin_id: Optional[str] = Query(None, description="Logged in admin ID"),
+    website_id: str = Query("site_demo", description="Website / project identifier"),
+    limit: int = Query(50, ge=1, le=200, description="Max messages to retrieve"),
+):
+    """
+    Retrieve past conversation messages for a specific user and package combination.
+    When a user re-opens the chatbot with the same user_id and package_id, this endpoint
+    returns their previous chat history so it can be restored and displayed.
+    """
+    target_uid = user_id or admin_id
+    if not target_uid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Either user_id or admin_id must be provided to fetch conversation history."
+        )
+
+    clean_pkg = re.sub(r"[^\w\-]", "_", str(package_id).strip())
+    clean_uid = re.sub(r"[^\w\-]", "_", str(target_uid).strip())
+    conv_id = f"conv_{clean_pkg}_{clean_uid}"
+
+    detail = get_conversation_detail(conv_id)
+    if detail:
+        detail["package_id"] = package_id
+        detail["user_id"] = target_uid
+        return detail
+
+    return {
+        "conversation_id": conv_id,
+        "website_id": website_id,
+        "package_id": package_id,
+        "user_id": target_uid,
+        "title": "New Conversation",
+        "messages": [],
+        "count": 0,
+    }
 
 
 @router.get("/conversations", summary="List past conversations for user or session")

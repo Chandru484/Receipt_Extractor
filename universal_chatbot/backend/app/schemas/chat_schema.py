@@ -21,6 +21,7 @@ class ChatMessageRequest(BaseModel):
     user_id: Optional[str] = Field(None, description="Logged-in User ID (e.g. 'usr_101')")
     admin_id: Optional[str] = Field(None, description="Logged-in Admin ID (e.g. 'adm_01') - auto-assigns admin scope")
     role: Optional[str] = Field(None, description="Role of the logged-in candidate ('admin', 'worker', 'user')")
+    package_id: Optional[str] = Field(None, description="Package identifier (e.g. 'pkg_starter', 'pkg_pro')")
     package_questions: Optional[List[str]] = Field(default=None, description="Optional list of package questions sent from frontend")
 
 
@@ -37,6 +38,7 @@ class ChatMessageResponse(BaseModel):
     tawk_direct_url: Optional[str] = None
     created_at: str
     is_voice: bool = False
+    package_id: Optional[str] = Field(None, description="Associated package ID")
     sql_query: Optional[str] = Field(None, description="Generated SQL / database query executed to retrieve data")
     action: Optional[Dict[str, Any]] = Field(None, description="Executable website action triggered by voice/text command")
 

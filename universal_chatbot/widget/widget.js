@@ -23,6 +23,15 @@
   let candidateId = (
     (scriptUrlParams && (scriptUrlParams.get("user_id") || scriptUrlParams.get("candidate_id"))) ||
     (currentScript && currentScript.getAttribute ? (currentScript.getAttribute("data-user-id") || currentScript.getAttribute("data-candidate-id")) : null) ||
+    urlParams.get("user_id") ||
+    urlParams.get("candidate_id") ||
+    null
+  );
+  let packageId = (
+    (scriptUrlParams && (scriptUrlParams.get("package_id") || scriptUrlParams.get("package"))) ||
+    (currentScript && currentScript.getAttribute ? (currentScript.getAttribute("data-package-id") || currentScript.getAttribute("data-package")) : null) ||
+    urlParams.get("package_id") ||
+    urlParams.get("package") ||
     null
   );
   const apiBase = currentScript && currentScript.src ? (new URL(currentScript.src, window.location.href)).origin : window.location.origin;
@@ -35,7 +44,12 @@
     try { localStorage.setItem("chat_session_id", activeSessionId); } catch (_) {}
   }
   let activeConvId = null;
-  try { activeConvId = localStorage.getItem("chat_active_conv_id"); } catch (_) {}
+  if (packageId && candidateId) {
+    activeConvId = "conv_" + String(packageId).trim().replace(/[^\w-]/g, "_") + "_" + String(candidateId).trim().replace(/[^\w-]/g, "_");
+    try { localStorage.setItem("chat_active_conv_id", activeConvId); } catch (_) {}
+  } else {
+    try { activeConvId = localStorage.getItem("chat_active_conv_id"); } catch (_) {}
+  }
   let welcomeSpoken = false;
   let widgetConfig = {
     bot_name: "AI Assistant",
@@ -1530,6 +1544,7 @@
         is_voice: isVoice,
         user_id: candidateId,
         role: candidateRole,
+        package_id: packageId,
       }),
     })
       .then(r => r.json())
@@ -1817,10 +1832,17 @@
 
   // Expose global controller for host application testing & role switching
   window.UniversalChatbot = {
-    setRole: function (role, id = null, name = null) {
+    setRole: function (role, id = null, name = null, pkgId = null) {
       unlockAudioPlayback();
       candidateRole = (role || "user").toLowerCase();
       candidateId = id;
+      if (pkgId) packageId = pkgId;
+      if (packageId && candidateId) {
+        activeConvId = "conv_" + String(packageId).trim().replace(/[^\w-]/g, "_") + "_" + String(candidateId).trim().replace(/[^\w-]/g, "_");
+        try { localStorage.setItem("chat_active_conv_id", activeConvId); } catch (_) {}
+        loadConversation(activeConvId);
+        return;
+      }
       const displayName = name || (id ? `${role} (${id})` : role);
       // Clean previous messages and session context for strict candidate data isolation
       resetConversation(true);
