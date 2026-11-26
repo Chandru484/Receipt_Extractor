@@ -20,7 +20,10 @@ router = APIRouter(prefix="/chat", tags=["Chat"])
 def send_chat_message(request: ChatMessageRequest, background_tasks: BackgroundTasks):
     """Process a user question, orchestrate retrieval and AI response, and persist conversation."""
     try:
-        response = chat_orchestrator.process_message(request, verified_user_id=request.user_id)
+        effective_user_id = request.admin_id or request.user_id
+        if request.admin_id and not request.role:
+            request.role = "admin"
+        response = chat_orchestrator.process_message(request, verified_user_id=effective_user_id)
         # Pre-synthesize and warm audio cache in background immediately
         if response and response.reply:
             background_tasks.add_task(prewarm_tts_cache, response.reply, response.language)

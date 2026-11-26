@@ -11,15 +11,17 @@ class SourceCitation(BaseModel):
 
 
 class ChatMessageRequest(BaseModel):
-    website_id: str = Field(..., description="Target website or application ID")
+    website_id: str = Field(..., description="Target website or application ID (or project_id)")
     message: str = Field(..., min_length=1, max_length=4000, description="User prompt or question")
     conversation_id: Optional[str] = Field(None, description="Existing conversation ID to continue")
     session_id: Optional[str] = Field(None, description="Visitor session token")
     language: Literal["en", "ta"] = Field(default="en", description="Selected language ('en' for English, 'ta' for Tamil)")
     active_document_id: Optional[str] = Field(None, description="Optional document ID if asking about uploaded file")
     is_voice: bool = Field(default=False, description="Flag indicating input originated from speech/microphone")
-    user_id: Optional[str] = Field(None, description="Logged-in User/Candidate ID (e.g. 'user_123', 'adm_01')")
+    user_id: Optional[str] = Field(None, description="Logged-in User ID (e.g. 'usr_101')")
+    admin_id: Optional[str] = Field(None, description="Logged-in Admin ID (e.g. 'adm_01') - auto-assigns admin scope")
     role: Optional[str] = Field(None, description="Role of the logged-in candidate ('admin', 'worker', 'user')")
+    package_questions: Optional[List[str]] = Field(default=None, description="Optional list of package questions sent from frontend")
 
 
 class ChatMessageResponse(BaseModel):

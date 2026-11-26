@@ -319,6 +319,14 @@ class ChatOrchestrator:
         citations: List[SourceCitation] = []
         response_source = "general"
 
+        # Inject dynamic package questions if supplied in request
+        if request.package_questions:
+            pkg_q_str = "\n".join([f"- {q}" for q in request.package_questions])
+            context_blocks.append(
+                f"--- ASSIGNED PACKAGE QUESTIONS FOR THIS USER/ROLE ---\n{pkg_q_str}\n"
+                "The user may be selecting or asking one of these assigned package questions. Answer accurately and directly using relevant database records or document knowledge."
+            )
+
         # Handle Action-Specific Data Enrichment
         if action:
             response_source = "app_database"
