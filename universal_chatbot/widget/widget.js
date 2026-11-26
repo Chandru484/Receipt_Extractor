@@ -1289,6 +1289,29 @@
     return cleaned.substring(0, 800);
   }
 
+  function sanitizeSpeechText(text, lang) {
+    if (!text) return "";
+    if (lang === "ta") {
+      return sanitizeTamilTextForSpeech(text);
+    }
+    // Clean English speech for natural Edge TTS pronunciation
+    let cleaned = text
+      .replace(/https?:\/\/\S+/g, "")
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+      .replace(/[*_#`~>]/g, "")
+      .replace(/\|[^\n]+\|/g, "")
+      .replace(/-{3,}/g, "")
+      .replace(/₹\s*([\d,]+)\.\d+/g, "Rupees $1")
+      .replace(/₹\s*([\d,]+)/g, "Rupees $1")
+      .replace(/Rs\.?\s*([\d,]+)/gi, "Rupees $1")
+      .replace(/%/g, " percent ")
+      .replace(/&/g, " and ")
+      .replace(/[:;]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    return cleaned.substring(0, 800);
+  }
+
   function playSpeech(text, lang, btn = null, onEndedCallback = null) {
     if (btn && currentPlayingBtn === btn) {
       stopCurrentAudio();
@@ -1296,8 +1319,8 @@
     }
 
     stopCurrentAudio();
-    const cleanText = sanitizeTamilTextForSpeech(text);
-    const targetLang = lang || activeLang;
+    const targetLang = lang || activeLang || "en";
+    const cleanText = sanitizeSpeechText(text, targetLang);
 
     // High-Definition Neural Speech with Sentence-Level Pipelining
     const sentences = splitIntoSentences(cleanText);
@@ -1637,16 +1660,22 @@
       fetch(`${apiBase}/api/v1/voice/warmup`, { method: "POST" }).catch(() => {});
     } catch (_) {}
 
-    recognition.lang = "ta-IN";
+    recognition.lang = (activeLang === "ta") ? "ta-IN" : "en-US";
     userInput.value = "";
-    userInput.placeholder = "🎙️ தமிழில் பேசவும்... கேட்கிறேன் (Listening... speak)...";
+    userInput.placeholder = (activeLang === "ta")
+      ? "🎙️ தமிழில் பேசவும்... கேட்கிறேன்..."
+      : "🎙️ Listening... Speak your question in English...";
     micBtn.classList.add("recording");
     if (isCallModeActive) {
       if (callBanner) {
         callBanner.classList.remove("speaking", "thinking");
         callBanner.classList.add("listening");
       }
-      if (callBannerText) callBannerText.textContent = "🎙️ உங்களைக் கேட்கிறது... (Listening to you...)";
+      if (callBannerText) {
+        callBannerText.textContent = (activeLang === "ta")
+          ? "🎙️ உங்களைக் கேட்கிறது... (Listening to you...)"
+          : "🎙️ Listening to you... Speak now";
+      }
     }
     try {
       recognition.start();
@@ -1676,10 +1705,12 @@
       if (final) {
         userInput.value = final;
         micBtn.classList.remove("recording");
-        userInput.placeholder = "உங்கள் கேள்வியைக் கேளுங்கள் (Ask in Tamil or English)...";
+        userInput.placeholder = (activeLang === "ta") ? "உங்கள் கேள்வியைக் கேளுங்கள்..." : "Type your message or question...";
         if (isCallModeActive) {
           if (callBanner) callBanner.classList.remove("listening");
-          if (callBannerText) callBannerText.textContent = "⏳ சிந்திக்கிறது... (Thinking...)";
+          if (callBannerText) {
+            callBannerText.textContent = (activeLang === "ta") ? "⏳ சிந்திக்கிறது... (Thinking...)" : "⏳ Thinking...";
+          }
         }
         sendMessage(true);
       } else if (interim) {
@@ -1695,7 +1726,9 @@
       console.warn("Speech recognition error:", e.error);
       if (e.error === "no-speech") {
         if (isCallModeActive && !isSpeaking && !isProcessingMessage) {
-          if (callBannerText) callBannerText.textContent = "🎙️ மீண்டும் பேசவும்... (Listening...)";
+          if (callBannerText) {
+            callBannerText.textContent = (activeLang === "ta") ? "🎙️ மீண்டும் பேசவும்... (Listening...)" : "🎙️ Listening... Please speak...";
+          }
           setTimeout(() => {
             if (isCallModeActive && !isSpeaking && !isProcessingMessage && !micBtn.classList.contains("recording")) {
               startListening();
@@ -1703,9 +1736,9 @@
           }, 1200);
           return;
         }
-        userInput.placeholder = "பேச்சு கேட்கவில்லை, மீண்டும் பேசவும்...";
+        userInput.placeholder = (activeLang === "ta") ? "பேச்சு கேட்கவில்லை, மீண்டும் பேசவும்..." : "No speech detected, please speak again...";
         setTimeout(() => {
-          userInput.placeholder = "உங்கள் கேள்வியைக் கேளுங்கள் (Ask in Tamil or English)...";
+          userInput.placeholder = (activeLang === "ta") ? "உங்கள் கேள்வியைக் கேளுங்கள்..." : "Type your message or question...";
         }, 3000);
       } else if (e.error === "not-allowed" || e.error === "service-not-allowed") {
         if (isCallModeActive) endCallMode();
@@ -1714,14 +1747,14 @@
         if (isCallModeActive) endCallMode();
         appendMessage("system-note", "⚠️ Speech recognition service unreachable. Please check internet access or type your question.");
       } else {
-        userInput.placeholder = "உங்கள் கேள்வியைக் கேளுங்கள் (Ask in Tamil or English)...";
+        userInput.placeholder = (activeLang === "ta") ? "உங்கள் கேள்வியைக் கேளுங்கள்..." : "Type your message or question...";
       }
     };
 
     recognition.onend = () => {
       micBtn.classList.remove("recording");
       if (!userInput.value.trim()) {
-        userInput.placeholder = "உங்கள் கேள்வியைக் கேளுங்கள் (Ask in Tamil or English)...";
+        userInput.placeholder = (activeLang === "ta") ? "உங்கள் கேள்வியைக் கேளுங்கள்..." : "Type your message or question...";
       }
       if (isCallModeActive && !isSpeaking && !isProcessingMessage) {
         setTimeout(() => {

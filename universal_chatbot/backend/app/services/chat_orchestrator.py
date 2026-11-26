@@ -535,11 +535,19 @@ class ChatOrchestrator:
 
         # 6. Build prompt & call MultiProvider AI Engine
         if request.is_voice:
-            voice_prompt = (
-                "குரல் பயன்முறை (ULTRA-FAST VOICE MODE ACTIVE): பயனர் நேரடியாகக் குரலில் பேசுகிறார். "
-                "பதிலை அதிகபட்சம் 1 அல்லது 2 சிறிய வரிகளில் (30 வார்த்தைகளுக்குள்) கச்சிதமாகக் கூறவும். "
-                "நீளமான பட்டியலையோ தேவையில்லாத விளக்கங்களையோ தவிர்த்து, நேரடியாகக் குரலில் பேச ஏதுவாகப் பதிலளிக்கவும்."
-            )
+            if effective_lang == "ta":
+                voice_prompt = (
+                    "குரல் பயன்முறை (ULTRA-FAST VOICE MODE ACTIVE): பயனர் நேரடியாகக் குரலில் பேசுகிறார். "
+                    "பதிலை அதிகபட்சம் 1 அல்லது 2 சிறிய வரிகளில் (30 வார்த்தைகளுக்குள்) கச்சிதமாகக் கூறவும். "
+                    "நீளமான பட்டியலையோ தேவையில்லாத விளக்கங்களையோ தவிர்த்து, நேரடியாகக் குரலில் பேச ஏதுவாகப் பதிலளிக்கவும்."
+                )
+            else:
+                voice_prompt = (
+                    "VOICE ASSISTANT MODE ACTIVE: The user is speaking live via voice assistant. "
+                    "Respond strictly in natural, polite spoken English. "
+                    "Keep your response strictly to 1 or 2 concise sentences (under 30 words) so that text-to-speech speaks it smoothly. "
+                    "Never output markdown tables, bullet points, asterisks, or unpronounceable characters."
+                )
             context_blocks.insert(0, voice_prompt)
 
         system_prompt = _build_system_prompt(bot_name, effective_lang, context_blocks)
