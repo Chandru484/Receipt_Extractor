@@ -9,8 +9,14 @@
   const apiBase = currentScript ? (new URL(currentScript.src)).origin : window.location.origin;
 
   let activeLang = "ta";
+  let activeSessionId = null;
+  try { activeSessionId = localStorage.getItem("chat_session_id"); } catch (_) {}
+  if (!activeSessionId) {
+    activeSessionId = "sess_" + Math.random().toString(36).substring(2, 10);
+    try { localStorage.setItem("chat_session_id", activeSessionId); } catch (_) {}
+  }
   let activeConvId = null;
-  let activeSessionId = "sess_" + Math.random().toString(36).substring(2, 10);
+  try { activeConvId = localStorage.getItem("chat_active_conv_id"); } catch (_) {}
   let welcomeSpoken = false;
   let widgetConfig = {
     bot_name: "AI Assistant",
@@ -160,6 +166,135 @@
     .sugg-chip { background: #ffffff; border: 1px solid #cbd5e1; border-radius: 14px; padding: 4px 10px; font-size: 11.5px; color: #1e293b; white-space: nowrap; cursor: pointer; transition: all 0.15s; flex-shrink: 0; box-shadow: 0 1px 2px rgba(0,0,0,0.03); }
     .sugg-chip:hover { border-color: ${widgetConfig.primary_color}; color: ${widgetConfig.primary_color}; background: #eff6ff; }
     @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.15); } 100% { transform: scale(1); } }
+
+    /* Past Chat History Drawer */
+    .history-view {
+      position: absolute;
+      top: 52px;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: #ffffff;
+      z-index: 30;
+      display: flex;
+      flex-direction: column;
+      animation: slideDown 0.2s ease-out;
+    }
+    @keyframes slideDown {
+      from { opacity: 0; transform: translateY(-8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .history-header {
+      padding: 10px 14px;
+      border-bottom: 1px solid #e2e8f0;
+      background: #f8fafc;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .history-action-btn {
+      background: ${widgetConfig.primary_color};
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 4px 9px;
+      font-size: 11px;
+      cursor: pointer;
+      font-weight: 500;
+      transition: opacity 0.15s;
+    }
+    .history-action-btn:hover { opacity: 0.9; }
+    .history-close-btn {
+      background: none;
+      border: none;
+      font-size: 14px;
+      cursor: pointer;
+      color: #64748b;
+      padding: 3px 7px;
+      border-radius: 4px;
+    }
+    .history-close-btn:hover { background: #e2e8f0; color: #0f172a; }
+    .history-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+      background: #f9fafb;
+    }
+    .history-item {
+      padding: 9px 12px;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      background: #ffffff;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      transition: all 0.15s ease;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.02);
+    }
+    .history-item:hover {
+      border-color: ${widgetConfig.primary_color};
+      background: #f0f7ff;
+      transform: translateX(2px);
+    }
+    .history-item.active {
+      border-color: ${widgetConfig.primary_color};
+      background: #eff6ff;
+      border-left: 3.5px solid ${widgetConfig.primary_color};
+    }
+    .history-item-info {
+      flex: 1;
+      overflow: hidden;
+      margin-right: 8px;
+    }
+    .history-item-title {
+      font-size: 12.5px;
+      color: #1e293b;
+      font-weight: 600;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .history-item-meta {
+      font-size: 10.5px;
+      color: #64748b;
+      margin-top: 3px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .history-item-badge {
+      background: #e2e8f0;
+      color: #475569;
+      padding: 1px 5px;
+      border-radius: 4px;
+      font-size: 9.5px;
+      font-weight: 500;
+    }
+    .history-item-del {
+      background: none;
+      border: none;
+      color: #94a3b8;
+      cursor: pointer;
+      padding: 4px 6px;
+      border-radius: 5px;
+      font-size: 12px;
+      transition: all 0.15s;
+    }
+    .history-item-del:hover {
+      background: #fee2e2;
+      color: #dc2626;
+    }
+    .history-empty {
+      padding: 36px 16px;
+      text-align: center;
+      color: #64748b;
+      font-size: 12.5px;
+      line-height: 1.5;
+    }
   `;
 
   const template = `
@@ -177,11 +312,32 @@
             <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M20.01 15.38c-1.23 0-2.42-.2-3.53-.56a.977.977 0 00-1.01.24l-1.57 1.97c-2.83-1.44-5.15-3.75-6.59-6.59l1.97-1.57c.28-.28.36-.67.25-1.02A11.36 11.36 0 018.96 4.3c0-.55-.45-1-1-1H4.45c-.55 0-1 .45-1 1 0 9.39 7.61 17 17 17 .55 0 1-.45 1-1v-3.56c0-.55-.45-.96-.44-.96z"/></svg>
             <span id="callModeLabel">Voice Call</span>
           </button>
+          <button class="header-btn" id="historyBtn" title="View Past Chat History (முந்தைய உரையாடல்கள்)">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+            <span id="historyBtnLabel">History</span>
+          </button>
           <button class="header-btn" id="newChatBtn" title="Start New Conversation (புதிய அரட்டை)">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
             <span>New Chat</span>
           </button>
         </div>
+      </div>
+      <div class="history-view" id="historyView" style="display: none;">
+        <div class="history-header">
+          <div style="display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 13px; color: #1e293b;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+            <span id="historyTitle">Past Conversations</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <button class="history-action-btn" id="historyNewChatBtn" title="Start fresh conversation">
+              + New Chat
+            </button>
+            <button class="history-close-btn" id="closeHistoryBtn" title="Close history">
+              ✕
+            </button>
+          </div>
+        </div>
+        <div class="history-list" id="historyList"></div>
       </div>
       <div class="call-banner" id="callBanner" style="display: none;">
         <div style="display: flex; align-items: center; gap: 10px;">
@@ -242,6 +398,12 @@
   const hideTawkBtn = shadow.getElementById("hideTawkBtn");
   const botHeader = shadow.getElementById("botHeader");
   const newChatBtn = shadow.getElementById("newChatBtn");
+  const historyBtn = shadow.getElementById("historyBtn");
+  const historyView = shadow.getElementById("historyView");
+  const historyList = shadow.getElementById("historyList");
+  const closeHistoryBtn = shadow.getElementById("closeHistoryBtn");
+  const historyNewChatBtn = shadow.getElementById("historyNewChatBtn");
+  const historyTitle = shadow.getElementById("historyTitle");
   const callModeBtn = shadow.getElementById("callModeBtn");
   const callModeLabel = shadow.getElementById("callModeLabel");
   const callBanner = shadow.getElementById("callBanner");
@@ -354,7 +516,7 @@
     endCallMode();
     removeTawkTo(false);
     activeConvId = null;
-    activeSessionId = "sess_" + Math.random().toString(36).substring(2, 10);
+    try { localStorage.removeItem("chat_active_conv_id"); } catch (_) {}
     welcomeSpoken = false;
     if (filePicker) filePicker.value = "";
     if (clearMessages) {
@@ -364,16 +526,198 @@
     }
   }
 
-  if (newChatBtn) {
-    newChatBtn.onclick = () => {
-      unlockAudioPlayback();
+  function toggleHistoryView() {
+    if (!historyView) return;
+    if (historyView.style.display === "flex") {
+      closeHistoryView();
+    } else {
+      openHistoryView();
+    }
+  }
+
+  function openHistoryView() {
+    endCallMode();
+    stopCurrentAudio();
+    if (!historyView) return;
+    historyView.style.display = "flex";
+    if (historyList) {
+      historyList.innerHTML = `<div class="history-empty">⏳ ${activeLang === "ta" ? "முந்தைய உரையாடல்கள் ஏற்றப்படுகின்றன..." : "Loading past conversations..."}</div>`;
+    }
+
+    const q = new URLSearchParams({
+      website_id: websiteId,
+      session_id: activeSessionId,
+    });
+    if (candidateId) q.append("user_id", candidateId);
+
+    fetch(`${apiBase}/api/v1/chat/conversations?${q.toString()}`)
+      .then(r => r.json())
+      .then(data => {
+        if (!historyList) return;
+        historyList.innerHTML = "";
+        const convs = (data && data.conversations) ? data.conversations : [];
+        if (convs.length === 0) {
+          historyList.innerHTML = `<div class="history-empty">${activeLang === "ta" ? "முந்தைய உரையாடல்கள் எதுவும் இல்லை.<br>நீங்கள் பேசத் தொடங்கும் புதிய உரையாடல்கள் இங்கே சேமிக்கப்படும்." : "No past conversations found yet.<br>New chats you start will appear here."}</div>`;
+          return;
+        }
+
+        convs.forEach(c => {
+          const item = document.createElement("div");
+          item.className = "history-item" + (c.conversation_id === activeConvId ? " active" : "");
+          item.dataset.convId = c.conversation_id;
+
+          const info = document.createElement("div");
+          info.className = "history-item-info";
+
+          const title = document.createElement("div");
+          title.className = "history-item-title";
+          title.textContent = c.title || (activeLang === "ta" ? "உரையாடல்" : "Conversation");
+
+          const meta = document.createElement("div");
+          meta.className = "history-item-meta";
+          meta.innerHTML = `
+            <span>🕒 ${formatTimestamp(c.updated_at || c.created_at)}</span>
+            <span class="history-item-badge">${c.message_count || 0} msgs</span>
+            ${c.conversation_id === activeConvId ? `<span style="color:${widgetConfig.primary_color};font-weight:600;">● Active</span>` : ""}
+          `;
+
+          info.appendChild(title);
+          info.appendChild(meta);
+          item.appendChild(info);
+
+          // Delete button
+          const delBtn = document.createElement("button");
+          delBtn.className = "history-item-del";
+          delBtn.innerHTML = `🗑️`;
+          delBtn.title = activeLang === "ta" ? "இந்த உரையாடலை நீக்கு" : "Delete this conversation";
+          delBtn.onclick = (e) => {
+            e.stopPropagation();
+            deleteConversationFromHistory(c.conversation_id, item);
+          };
+          item.appendChild(delBtn);
+
+          // Click to load conversation
+          item.onclick = () => {
+            loadConversation(c.conversation_id);
+          };
+
+          historyList.appendChild(item);
+        });
+      })
+      .catch(() => {
+        if (historyList) {
+          historyList.innerHTML = `<div class="history-empty" style="color:#ef4444;">${activeLang === "ta" ? "வரலாற்றை ஏற்றுவதில் பிழை ஏற்பட்டது." : "Failed to load chat history."}</div>`;
+        }
+      });
+  }
+
+  function closeHistoryView() {
+    if (historyView) historyView.style.display = "none";
+  }
+
+  function deleteConversationFromHistory(convId, itemElement) {
+    if (!convId) return;
+    fetch(`${apiBase}/api/v1/chat/conversations/${convId}`, { method: "DELETE" }).catch(() => {});
+    if (itemElement) {
+      itemElement.style.opacity = "0";
+      itemElement.style.transform = "translateX(10px)";
+      setTimeout(() => {
+        itemElement.remove();
+        if (historyList && historyList.children.length === 0) {
+          historyList.innerHTML = `<div class="history-empty">${activeLang === "ta" ? "முந்தைய உரையாடல்கள் எதுவும் இல்லை." : "No past conversations found."}</div>`;
+        }
+      }, 200);
+    }
+    if (activeConvId === convId) {
+      resetConversation(true);
+    }
+  }
+
+  function loadConversation(convId) {
+    if (!convId) return;
+    stopCurrentAudio();
+    endCallMode();
+    closeHistoryView();
+
+    activeConvId = convId;
+    try { localStorage.setItem("chat_active_conv_id", convId); } catch (_) {}
+
+    msgList.innerHTML = `<div class="msg-group system-note"><div class="msg system-note">⏳ ${activeLang === "ta" ? "உரையாடல் ஏற்றப்படுகிறது..." : "Loading conversation..."}</div></div>`;
+
+    fetch(`${apiBase}/api/v1/chat/conversations/${convId}`)
+      .then(r => r.json())
+      .then(data => {
+        msgList.innerHTML = "";
+        const msgs = (data && data.messages) ? data.messages : [];
+        if (msgs.length === 0) {
+          appendMessage("bot", widgetConfig.welcome_message_ta || "வணக்கம்! சொல்லுங்க, உங்களுக்கு நான் எப்படி உதவலாம்?");
+          return;
+        }
+
+        // Render each interaction
+        msgs.forEach(m => {
+          if (m.user_message) {
+            appendMessage("user", m.user_message, [], null, m.message_id, "pair_" + m.message_id);
+          }
+          if (m.bot_reply) {
+            appendMessage("bot", m.bot_reply, m.citations || [], m.action || null, m.message_id, "pair_" + m.message_id);
+          }
+        });
+
+        appendMessage(
+          "system-note",
+          activeLang === "ta"
+            ? `📜 முந்தைய உரையாடல் "${data.title || "உரையாடல்"}" திறக்கப்பட்டது (${msgs.length} பதில்கள்). நீங்கள் தொடர்ந்து பேசலாம்!`
+            : `📜 Loaded past conversation: "${data.title || "Chat"}" (${msgs.length} replies). You can continue chatting!`
+        );
+        msgList.scrollTop = msgList.scrollHeight;
+      })
+      .catch(() => {
+        msgList.innerHTML = "";
+        appendMessage("system-note", activeLang === "ta" ? "❌ உரையாடலை ஏற்றுவதில் பிழை." : "❌ Failed to load conversation.");
+      });
+  }
+
+  function formatTimestamp(ts) {
+    if (!ts) return "";
+    try {
+      const d = new Date(ts.replace(" ", "T"));
+      if (isNaN(d.getTime())) return ts.substring(0, 16);
+      return d.toLocaleDateString("en-IN", { day: "numeric", month: "short" }) + ", " + d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", hour12: true });
+    } catch (_) {
+      return ts.substring(0, 16);
+    }
+  }
+
+  if (historyBtn) {
+    historyBtn.onclick = () => toggleHistoryView();
+  }
+  if (closeHistoryBtn) {
+    closeHistoryBtn.onclick = () => closeHistoryView();
+  }
+  if (historyNewChatBtn) {
+    historyNewChatBtn.onclick = () => {
+      closeHistoryView();
       resetConversation(true);
       speakWelcomeGreeting();
     };
   }
 
-  // Render initial welcome message immediately so it is available before async fetches
-  appendMessage("bot", widgetConfig.welcome_message_ta || "வணக்கம்! சொல்லுங்க, உங்களுக்கு நான் எப்படி உதவலாம்?");
+  if (newChatBtn) {
+    newChatBtn.onclick = () => {
+      unlockAudioPlayback();
+      closeHistoryView();
+      resetConversation(true);
+      speakWelcomeGreeting();
+    };
+  }
+
+  // Load existing conversation or render initial welcome message
+  if (activeConvId) {
+    loadConversation(activeConvId);
+  } else {
+    appendMessage("bot", widgetConfig.welcome_message_ta || "வணக்கம்! சொல்லுங்க, உங்களுக்கு நான் எப்படி உதவலாம்?");
+  }
 
   // Fetch website config
   fetch(`${apiBase}/api/v1/chat/widget-config/${websiteId}`)
@@ -383,6 +727,7 @@
       botHeader.textContent = (widgetConfig.bot_name === "Universal Assistant" || !widgetConfig.bot_name) ? "AI Assistant" : widgetConfig.bot_name;
     })
     .catch(() => {});
+
 
   // Pre-unlocked HTML5 Audio element for seamless auto-speech without browser autoplay blocks
   let sharedAudio = new Audio();
@@ -1171,6 +1516,8 @@
         isProcessingMessage = false;
         loadingGroup.remove();
         activeConvId = data.conversation_id;
+        try { localStorage.setItem("chat_active_conv_id", activeConvId); } catch (_) {}
+
 
         // Attach message_id to user message group for future delete/edit
         if (userGroup && data.message_id) {

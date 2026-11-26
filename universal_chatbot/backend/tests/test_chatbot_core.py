@@ -225,3 +225,66 @@ def test_delete_and_edit_message():
         assert del_resp.json()["success"] is True
         assert del_resp.json()["message_id"] == "msg_test123"
 
+
+def test_conversation_history_lifecycle():
+    """Verify listing past conversations, fetching detail, and deleting conversation."""
+    mock_messages = MagicMock()
+    mock_convs = MagicMock()
+
+    sample_conv = {
+        "conversation_id": "conv_hist_1",
+        "website_id": "site_demo",
+        "session_id": "sess_abc",
+        "title": "Stationery bill inquiry",
+        "message_count": 4,
+        "created_at": "2026-11-26 12:00:00",
+        "updated_at": "2026-11-26 12:05:00",
+        "status": "active",
+    }
+    sample_msgs = [
+        {
+            "message_id": "msg_1",
+            "conversation_id": "conv_hist_1",
+            "user_message": "What is the bill total?",
+            "bot_reply": "Total is ₹500.",
+            "created_at": "2026-11-26 12:00:00",
+        }
+    ]
+
+    mock_cursor_convs = MagicMock()
+    mock_cursor_convs.sort.return_value.limit.return_value = [sample_conv]
+    mock_convs.find.return_value = mock_cursor_convs
+    mock_convs.find_one.return_value = sample_conv.copy()
+    mock_convs.delete_one.return_value = MagicMock(deleted_count=1)
+
+    mock_cursor_msgs = MagicMock()
+    mock_cursor_msgs.sort.return_value.limit.return_value = sample_msgs
+    mock_messages.find.return_value = mock_cursor_msgs
+    mock_messages.delete_many.return_value = MagicMock(deleted_count=1)
+
+    with patch("universal_chatbot.backend.app.database.collections.get_messages_collection", return_value=mock_messages), \
+         patch("universal_chatbot.backend.app.database.collections.get_conversations_collection", return_value=mock_convs):
+
+        client = TestClient(app)
+
+        # 1. List conversations
+        list_resp = client.get("/api/v1/chat/conversations?website_id=site_demo&session_id=sess_abc")
+        assert list_resp.status_code == 200
+        data = list_resp.json()
+        assert data["count"] == 1
+        assert data["conversations"][0]["conversation_id"] == "conv_hist_1"
+
+        # 2. Get detailed conversation with messages
+        detail_resp = client.get("/api/v1/chat/conversations/conv_hist_1")
+        assert detail_resp.status_code == 200
+        detail_data = detail_resp.json()
+        assert detail_data["conversation_id"] == "conv_hist_1"
+        assert len(detail_data["messages"]) == 1
+        assert detail_data["messages"][0]["user_message"] == "What is the bill total?"
+
+        # 3. Delete conversation
+        del_resp = client.delete("/api/v1/chat/conversations/conv_hist_1")
+        assert del_resp.status_code == 200
+        assert del_resp.json()["success"] is True
+
+

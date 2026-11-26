@@ -1,9 +1,12 @@
-from typing import Any, Dict
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Header, status
+from typing import Any, Dict, List, Optional
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Header, Query, status
 from universal_chatbot.backend.app.schemas.chat_schema import ChatMessageRequest, ChatMessageResponse, EditMessageRequest
 from universal_chatbot.backend.app.services.chat_orchestrator import chat_orchestrator
 from universal_chatbot.backend.app.services.conversation_service import (
     get_conversation_history,
+    get_conversation_detail,
+    list_user_conversations,
+    delete_conversation,
     delete_message,
     update_user_message,
 )
@@ -29,15 +32,55 @@ def send_chat_message(request: ChatMessageRequest, background_tasks: BackgroundT
         )
 
 
+@router.get("/conversations", summary="List past conversations for user or session")
+def list_conversations(
+    website_id: str = Query(..., description="Website identifier"),
+    user_id: Optional[str] = Query(None, description="Optional logged in user ID"),
+    session_id: Optional[str] = Query(None, description="Visitor session ID"),
+    limit: int = Query(30, ge=1, le=100, description="Max conversations to return"),
+):
+    """List previous conversation sessions for the visitor/user."""
+    convs = list_user_conversations(
+        website_id=website_id,
+        user_id=user_id,
+        session_id=session_id,
+        limit=limit,
+    )
+    return {
+        "website_id": website_id,
+        "conversations": convs,
+        "count": len(convs),
+    }
+
+
 @router.get("/conversations/{conversation_id}", summary="Get conversation history")
 def get_chat_history(conversation_id: str, limit: int = 50):
-    """Retrieve previous message exchanges for an existing conversation ID."""
+    """Retrieve full structured message history for a conversation ID."""
+    detail = get_conversation_detail(conversation_id)
+    if detail:
+        return detail
+
+    # Fallback to LLM formatted history if metadata document missing
     history = get_conversation_history(conversation_id, limit=limit)
     return {
         "conversation_id": conversation_id,
+        "title": "Conversation",
         "messages": history,
         "count": len(history),
     }
+
+
+@router.delete("/conversations/{conversation_id}", summary="Delete an entire conversation")
+def remove_conversation(conversation_id: str):
+    """Delete a conversation and all its messages."""
+    success = delete_conversation(conversation_id)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Conversation '{conversation_id}' not found."
+        )
+    return {"success": True, "conversation_id": conversation_id}
+
 
 
 @router.get("/widget-config/{website_id}", summary="Get widget public configuration")

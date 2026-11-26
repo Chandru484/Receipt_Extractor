@@ -183,6 +183,68 @@ def update_bot_reply(message_id: str, new_bot_reply: str) -> bool:
     return result.matched_count > 0
 
 
+def list_user_conversations(
+    website_id: str,
+    user_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+    limit: int = 30,
+) -> List[Dict[str, Any]]:
+    """Retrieve past conversations for a user or visitor session, newest first."""
+    convs = collections.get_conversations_collection()
+    if convs is None:
+        return []
+
+    clauses: List[Dict[str, Any]] = [
+        {"website_id": website_id},
+        {"status": {"$ne": "deleted"}},
+    ]
+    if user_id:
+        clauses.append({"$or": [{"user_id": user_id}, {"session_id": session_id}]})
+    elif session_id:
+        clauses.append({"session_id": session_id})
+
+    query = {"$and": clauses} if len(clauses) > 1 else clauses[0]
+    cursor = convs.find(query, {"_id": 0}).sort("updated_at", -1).limit(limit)
+    conv_list = list(cursor)
+
+    # Filter out empty conversations that had no messages
+    return [c for c in conv_list if c.get("message_count", 0) > 0]
+
+
+def get_conversation_detail(conversation_id: str) -> Optional[Dict[str, Any]]:
+    """Retrieve conversation metadata and full structured message history."""
+    convs = collections.get_conversations_collection()
+    messages = collections.get_messages_collection()
+    if convs is None or messages is None:
+        return None
+
+    conv = convs.find_one({"conversation_id": conversation_id}, {"_id": 0})
+    if not conv:
+        return None
+
+    msg_cursor = messages.find(
+        {"conversation_id": conversation_id},
+        {"_id": 0}
+    ).sort("created_at", 1).limit(100)
+
+    conv["messages"] = list(msg_cursor)
+    conv["count"] = len(conv["messages"])
+    return conv
+
+
+def delete_conversation(conversation_id: str) -> bool:
+    """Delete a conversation and all its messages permanently."""
+    convs = collections.get_conversations_collection()
+    messages = collections.get_messages_collection()
+    if convs is None or messages is None:
+        return False
+
+    messages.delete_many({"conversation_id": conversation_id})
+    res = convs.delete_one({"conversation_id": conversation_id})
+    return res.deleted_count > 0
+
+
+
 
 def record_support_handoff(
     website_id: str,
