@@ -211,7 +211,7 @@ class RAGService:
                 c for c in user_candidates if c.get("source_id") == latest_source_id
             ]
             latest_doc_chunks.sort(key=lambda x: x.get("chunk_index", 0))
-            for c in latest_doc_chunks[:max(top_k, 7)]:
+            for c in latest_doc_chunks[:15]:
                 user_scored.append({
                     "chunk_id": c.get("chunk_id"),
                     "source_id": c.get("source_id"),
@@ -248,9 +248,17 @@ class RAGService:
                     "is_user_document": False,
                 })
 
-        # Sort descending by relevance score (and chunk_index ascending for ties)
-        scored_chunks.sort(key=lambda x: (-x["score"], x["chunk_index"]))
-        return scored_chunks[:top_k]
+        # Separate user uploaded document chunks and knowledge chunks
+        user_chunks = [c for c in scored_chunks if c.get("is_user_document")]
+        kb_chunks = [c for c in scored_chunks if not c.get("is_user_document")]
+
+        user_chunks.sort(key=lambda x: (-x["score"], x.get("chunk_index", 0)))
+        kb_chunks.sort(key=lambda x: (-x["score"], x.get("chunk_index", 0)))
+
+        # When an uploaded document is present, return all its chunks (up to 15) so multi-page bills are complete
+        if user_chunks:
+            return user_chunks[:15]
+        return kb_chunks[:top_k]
 
 
 rag_service = RAGService()

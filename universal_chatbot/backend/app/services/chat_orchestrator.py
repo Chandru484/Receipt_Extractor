@@ -151,7 +151,7 @@ def _build_system_prompt(bot_name: str, language: str, context_blocks: List[str]
      * பில் / ரசீது கேட்கும்போது: "கண்டிப்பா, இதோ உங்க பில் விவரங்கள். கடை பெயர் Vikram Technologies, பில் தொகை ₹ 300."
      * செலவு கேட்கும்போது: "இந்த மாசத்துல நீங்க மொத்தம் ₹ 218 செலவு பண்ணி இருக்கீங்க (2 ரசீதுகள்)."
      * கடை முகவரி கேட்கும்போது: "Vikram Technologies-ன் முகவரி: No:5, Bus Stand Complex, Mettur Road, Erode."
-     * தகவல் இல்லாதபோது: "மன்னிச்சுக்கோங்க, இப்போதைக்கு உங்க கணக்குல அந்த விவரம் இல்லைங்க."
+     * தகவல் இல்லாதபோது: "மன்னிச்சுக்கோங்க, அந்த விவரம் இதில் இல்லைங்க." (ஆவணம் இணைக்கப்பட்டிருந்தால், "மன்னிச்சுக்கோங்க, நீங்க பதிவேற்றிய ஆவணத்தில் அந்த விவரம் இல்லைங்க.")
 
 4. பயனர் ஆங்கிலத்திலோ (English) அல்லது தங்க்லீஷிலோ (Tanglish) கேள்வி கேட்டாலும் (e.g. "kadayin address ai sollu"), உங்களின் பதிலை எப்போதும் மரியாதையான எளிய பேச்சுத் தமிழில் மட்டுமே வழங்கவும்.
 
@@ -184,9 +184,10 @@ def _build_system_prompt(bot_name: str, language: str, context_blocks: List[str]
    - இப்படி முழுத் தமிழ்ப் பெயராக எழுதும்போது வாய்ஸ் அசிஸ்டண்ட் எந்தத் தடங்கலும் இன்றி மிகத் தெளிவாக உச்சரிக்கும்.
 
 9. பயனர் பதிவேற்றிய ஆவணம் (USER ATTACHED / UPLOADED DOCUMENT):
-   - பயனர் சாட்பாட்டில் ஏதேனும் PDF அல்லது ஆவணத்தைப் பதிவேற்றி, "இதை பத்தி சொல்லு", "upload panren adha pathi sollu", "இதுல என்ன இருக்கு" என்று கேட்டால்:
-   - கீழே கொடுக்கப்பட்டுள்ள 'USER UPLOADED DOCUMENT' தகவலை நேரடியாகப் படித்து, கனிவான எளிய பேச்சுத் தமிழில் சுருக்கமாக விளக்குங்கள் (கடை பெயர், தேதி, பொருட்கள், மொத்தத் தொகை).
-   - ஒருபோதும் "ஆவணம் கிடைக்கவில்லை", "இங்கே அப்லோட் பண்ணுங்க" என்று மீண்டும் கேட்கவே கூடாது! ஏற்கனவே அப்லோட் செய்யப்பட்ட ஆவணத்தின் விவரங்களை உடனடியாகக் கூறுங்கள்.
+   - பயனர் சாட்பாட்டில் ஏதேனும் PDF அல்லது ஆவணத்தைப் பதிவேற்றிவிட்டு, ஆவணப் பெயரைக் குறிப்பிடாமல் பொதுவான கேள்விகள் கேட்டாலும் (எ.கா. "வங்கி விவரங்கள் சொல்லு", "Bank details patri kooru", "மொத்தம் எவ்வளவு?", "பொருட்கள் என்னென்ன?", "இதை பத்தி சொல்லு"):
+   - எப்போதும் இணைக்கப்பட்டுள்ள ஆவணத்தின் விவரங்களைக் கொண்டே பதிலளிக்க வேண்டும்! ஆவணப் பெயரை பயனர் மீண்டும் சொல்லவில்லை என்பதற்காக டேட்டாபேஸையோ கணக்கையோ பார்க்கக் கூடாது.
+   - பயனர் கேட்கும் விவரம் (எ.கா. வங்கி விவரங்கள் / Bank details) அந்த ஆவணத்தில் இல்லை என்றால், "உங்க கணக்குல இல்லை" என்று ஒருபோதும் கூறக் கூடாது! மாறாக:
+     "மன்னிச்சுக்கோங்க, நீங்க பதிவேற்றிய [ஆவணப் பெயர்]-ல் அந்த விவரம் (எ.கா. வங்கி விவரங்கள்) குறிப்பிடப்படவில்லைங்க. இதில் [கடை பெயர், பொருட்கள், மொத்தத் தொகை] மட்டுமே உள்ளது." என்று வெளிப்படையாகக் கூற வேண்டும்.
    - சரியான பேச்சுத்தமிழ் வடிவம்: 'பார்க்கி' ❌ ➡️ 'பார்த்து' ✅ (எ.கா. 'பார்த்துச் சொல்றேன்'), 'சொல்லுறேன்' ❌ ➡️ 'சொல்றேன்' ✅."""
 
     if context_str:
@@ -348,12 +349,18 @@ class ChatOrchestrator:
                     )
             context_blocks.append("--- RELEVANT KNOWLEDGE & UPLOADED DOCUMENT CONTENT ---\n" + "\n\n".join(rag_texts))
             if is_user_doc:
+                doc_name = relevant_chunks[0].get("source_name", "Uploaded Document")
                 user_doc_instruction = (
-                    "--- USER ATTACHED / UPLOADED DOCUMENT INSTRUCTION (CRITICAL) ---\n"
-                    "The user has attached and uploaded this document in this chat session. The full text extracted from the document is provided above.\n"
-                    "You MUST directly read and analyze the provided text, answer the user's questions, summarize key details (e.g. vendor name, invoice/bill number, date, items, grand total amount).\n"
-                    "NEVER say the document is not found or ask the user to upload it again because it is ALREADY uploaded and provided right here!\n"
-                    "If the user asks 'tell me about it' or 'upload panren adha pathi sollu', directly summarize this uploaded document."
+                    f"--- USER ATTACHED / UPLOADED DOCUMENT: '{doc_name}' (CRITICAL) ---\n"
+                    f"The user has uploaded and attached the document '{doc_name}' in this chat session.\n"
+                    "The full text extracted across all pages of this document is provided above.\n"
+                    "RULES FOR ANSWERING:\n"
+                    "1. ALWAYS answer based on this uploaded document, even if the user did NOT repeat the document's filename in their prompt!\n"
+                    "2. If the user asks for a specific detail (such as bank details, IFSC, account number, discount, GST, PAN, etc.):\n"
+                    "   - If it IS in the document text, directly state it.\n"
+                    f"   - If it is NOT in the document, explicitly state: 'மன்னிச்சுக்கோங்க, நீங்க பதிவேற்றிய \"{doc_name}\" ஆவணத்தில் அந்த விவரம் (எ.கா. வங்கி விவரங்கள்) எதுவும் குறிப்பிடப்படவில்லைங்க.' and briefly mention what IS in the document (e.g. vendor name, items, grand total).\n"
+                    "   - NEVER say 'உங்க கணக்குல இல்லை' (not in your account) when an uploaded document is attached!\n"
+                    "3. Summarize key facts accurately: vendor name, invoice/quotation number, date, items, and grand total."
                 )
                 context_blocks.insert(0, user_doc_instruction)
 
