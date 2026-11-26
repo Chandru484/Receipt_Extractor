@@ -146,11 +146,7 @@
     <div class="chat-window" id="chatWin">
       <div class="chat-header">
         <div>
-          <span class="chat-title" id="botHeader">${widgetConfig.bot_name}</span>
-          <div style="font-size: 11px; color: #dbeafe; display: flex; align-items: center; gap: 4px; margin-top: 2px;">
-            <span style="width: 7px; height: 7px; border-radius: 50%; background: #22c55e; display: inline-block;"></span>
-            <span>🇮🇳 தமிழ் குரல் AI (Tamil Voice AI)</span>
-          </div>
+          <span class="chat-title" id="botHeader">${widgetConfig.bot_name || "AI Assistant"}</span>
         </div>
         <div style="display: flex; align-items: center; gap: 6px;">
           <button class="header-btn" id="voiceEngineBtn" title="Switch Voice Engine: ⚡ Instant (0s Delay) vs 🎧 HD Cloud Voice">
@@ -391,7 +387,7 @@
     .then(r => r.json())
     .then(cfg => {
       Object.assign(widgetConfig, cfg);
-      botHeader.textContent = widgetConfig.bot_name;
+      botHeader.textContent = (widgetConfig.bot_name === "Universal Assistant" || !widgetConfig.bot_name) ? "AI Assistant" : widgetConfig.bot_name;
     })
     .catch(() => {});
 
