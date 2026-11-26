@@ -809,7 +809,7 @@
           console.warn("HD Cloud voice buffering, switching to instant voice to avoid delay");
           playBrowserSpeech(cleanText, targetLang, btn, onEndedCallback);
         }
-      }, 1200);
+      }, 380);
 
       audioObj.onplay = () => {
         clearTimeout(watchdogTimer);
@@ -856,10 +856,11 @@
       return;
     }
     window.speechSynthesis.cancel();
+    try { if (window.speechSynthesis.paused) window.speechSynthesis.resume(); } catch (_) {}
     const cleanText = sanitizeTamilTextForSpeech(text);
     const utterance = new SpeechSynthesisUtterance(cleanText);
     utterance.lang = lang === "ta" ? "ta-IN" : "en-IN";
-    utterance.rate = 1.0;
+    utterance.rate = 1.15;
 
     if (lang === "ta") {
       const voices = window.speechSynthesis.getVoices();

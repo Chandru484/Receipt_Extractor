@@ -1,7 +1,7 @@
 import io
 import re
 import logging
-from typing import Optional, AsyncIterator, Dict, Tuple
+from typing import Optional, AsyncIterator, Dict, Tuple, List
 import edge_tts
 
 logger = logging.getLogger(__name__)
@@ -366,29 +366,22 @@ _TTS_CACHE: Dict[Tuple[str, str, str], bytes] = {}
 _MAX_CACHE_ENTRIES = 128
 
 
-async def prewarm_tts_cache(
-    text: str,
-    language: str = "en",
-    voice: Optional[str] = None
-) -> None:
-    """
-    Pre-synthesize speech in background immediately after chat response generation.
-    Populates in-memory LRU cache so when browser requests /api/v1/voice/tts,
-    the audio is served from RAM with zero synthesis delay.
-    """
-    clean_text = sanitize_text_for_speech(text, language=language)
-    if not clean_text:
-        return
+def split_into_speech_sentences(text: str) -> List[str]:
+    """Split text into sentence clauses on punctuation boundaries matching frontend pipeline."""
+    if not text:
+        return []
+    raw = re.split(r"(?<=[.?!।\n])\s+", text)
+    return [s.strip() for s in raw if len(s.strip()) > 1]
 
-    selected_voice = voice or DEFAULT_VOICES.get(language, DEFAULT_VOICES["en"])
-    cache_key = (clean_text, language, selected_voice)
+
+async def _synthesize_and_store_cache(clean_text: str, language: str, voice: str) -> None:
+    cache_key = (clean_text, language, voice)
     if cache_key in _TTS_CACHE:
         return
-
     try:
-        rate_param = "+10%" if "Pallavi" in selected_voice else "+4%"
-        pitch_param = "+2Hz" if "Pallavi" in selected_voice else "-2Hz"
-        communicate = edge_tts.Communicate(clean_text, selected_voice, rate=rate_param, pitch=pitch_param)
+        rate_param = "+14%" if "Pallavi" in voice else "+6%"
+        pitch_param = "+2Hz" if "Pallavi" in voice else "-2Hz"
+        communicate = edge_tts.Communicate(clean_text, voice, rate=rate_param, pitch=pitch_param)
         collected = bytearray()
         async for chunk in communicate.stream():
             if chunk["type"] == "audio":
@@ -400,7 +393,34 @@ async def prewarm_tts_cache(
                 _TTS_CACHE.pop(first_key, None)
             _TTS_CACHE[cache_key] = bytes(collected)
     except Exception as exc:
-        logger.debug(f"prewarm_tts_cache notice: {exc}")
+        logger.debug(f"_synthesize_and_store_cache notice: {exc}")
+
+
+async def prewarm_tts_cache(
+    text: str,
+    language: str = "en",
+    voice: Optional[str] = None
+) -> None:
+    """
+    Pre-synthesize speech in background immediately after chat response generation.
+    Splits into sentences and pre-caches Sentence 1 first so the frontend sentence-level
+    pipeline gets an immediate RAM cache hit (<5ms) on the first audio segment.
+    """
+    clean_text = sanitize_text_for_speech(text, language=language)
+    if not clean_text:
+        return
+
+    selected_voice = voice or DEFAULT_VOICES.get(language, DEFAULT_VOICES["en"])
+    
+    # 1. Prewarm sentence 1 immediately (matches exact string frontend requests first)
+    sentences = split_into_speech_sentences(clean_text)
+    if sentences:
+        await _synthesize_and_store_cache(sentences[0], language, selected_voice)
+        if len(sentences) > 1:
+            await _synthesize_and_store_cache(sentences[1], language, selected_voice)
+
+    # 2. Also prewarm full clean text
+    await _synthesize_and_store_cache(clean_text, language, selected_voice)
 
 
 async def generate_speech_stream(
@@ -424,12 +444,12 @@ async def generate_speech_stream(
 
     cache_key = (clean_text, language, selected_voice)
     if cache_key in _TTS_CACHE:
-        # Cache hit: instantaneous response directly from RAM
+        # Cache hit: instantaneous response directly from RAM (<5ms)
         yield _TTS_CACHE[cache_key]
         return
 
-    # Friendly, casual shop-assistant prosody: +10% rate tightens natural silence between commas; +2Hz lifts brightness
-    rate_param = "+10%" if "Pallavi" in selected_voice else "+4%"
+    # Brisk, lively prosody: +14% rate eliminates dead pauses between clauses; +2Hz lifts brightness
+    rate_param = "+14%" if "Pallavi" in selected_voice else "+6%"
     pitch_param = "+2Hz" if "Pallavi" in selected_voice else "-2Hz"
     communicate = edge_tts.Communicate(clean_text, selected_voice, rate=rate_param, pitch=pitch_param)
     
@@ -440,10 +460,9 @@ async def generate_speech_stream(
             collected_chunks.extend(chunk_data)
             yield chunk_data
 
-    # Store in memory cache if within reasonable entry size (< 1MB)
-    if len(collected_chunks) > 0 and len(collected_chunks) < 1_000_000:
+    # Store in memory cache if within reasonable entry size (< 1.5MB)
+    if len(collected_chunks) > 0 and len(collected_chunks) < 1_500_000:
         if len(_TTS_CACHE) >= _MAX_CACHE_ENTRIES:
-            # Pop oldest entry (FIFO)
             first_key = next(iter(_TTS_CACHE))
             _TTS_CACHE.pop(first_key, None)
         _TTS_CACHE[cache_key] = bytes(collected_chunks)
