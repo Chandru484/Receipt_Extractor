@@ -241,6 +241,18 @@ def sanitize_text_for_speech(text: str, language: str = "en") -> str:
         cleaned = re.sub(r"\bபார்க்கி\s*சொல்லுறேன்\b", "பார்த்துச் சொல்றேன்", cleaned)
         cleaned = re.sub(r"\bபார்க்கி\b", "பார்த்து", cleaned)
         cleaned = re.sub(r"\bசொல்லுறேன்\b", "சொல்றேன்", cleaned)
+        cleaned = re.sub(r"சேமிக்கப்பட்டுள்ளனங்க\b", "சேமிக்கப்பட்டிருக்கு", cleaned)
+        cleaned = re.sub(r"சேமிக்கப்பட்டு\s*உள்ளனங்க\b", "சேமிக்கப்பட்டிருக்கு", cleaned)
+        cleaned = re.sub(r"கிடைக்கின்றனங்க\b", "கிடைக்குது", cleaned)
+        cleaned = re.sub(r"கிடைக்கிறதுங்க\b", "கிடைக்குது", cleaned)
+        cleaned = re.sub(r"எடுக்கப்பட்டுள்ளனங்க\b", "எடுக்கப்பட்டிருக்கு", cleaned)
+        cleaned = re.sub(r"எடுக்கப்பட்டு\s*உள்ளனங்க\b", "எடுக்கப்பட்டிருக்கு", cleaned)
+        cleaned = re.sub(r"இருக்கின்றனங்க\b", "இருக்கு", cleaned)
+        cleaned = re.sub(r"உள்ளனங்க\b", "இருக்கு", cleaned)
+        cleaned = re.sub(r"வருகின்றனங்க\b", "வருது", cleaned)
+        cleaned = re.sub(r"காட்டப்பட்டுள்ளனங்க\b", "காட்டப்பட்டிருக்கு", cleaned)
+        cleaned = re.sub(r"குறிப்பிடப்பட்டுள்ளனங்க\b", "குறிப்பிடப்பட்டிருக்கு", cleaned)
+        cleaned = re.sub(r"தெரியவருகிறதுங்க\b", "தெரியவருது", cleaned)
 
         # 5. Convert numeric dates to full Tamil month speech: e.g. 15/11/2024 or 2024-11-15 -> 15 நவம்பர் 2024
         cleaned = re.sub(
