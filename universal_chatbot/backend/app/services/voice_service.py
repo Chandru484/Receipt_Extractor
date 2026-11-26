@@ -88,20 +88,55 @@ def sanitize_text_for_speech(text: str, language: str = "en") -> str:
         cleaned = re.sub(r"\bபில்கள்ல\b", "பில்களில்", cleaned)
         cleaned = re.sub(r"\bஇப்போதைக்கு\b", "தற்போது", cleaned)
 
-        # 6. Expand business, tech, and address terms into clear phonetic Tamil
+        # 6. Expand business, tech, cities, and address terms into clear phonetic Tamil
+        cleaned = re.sub(r"உங்களுக்கு\s*வேற\s*ஏதாச்சும்\s*உதவி\s*வேணுமா[?.]?", "", cleaned, flags=re.IGNORECASE)
+
+        # Buyer / seller section headings
+        cleaned = re.sub(r"\bBuyer\s*\(\s*Bill\s*to\s*\)\s*details\b", "வாங்குபவர் விவரங்கள்:", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\bBuyer\s*details\b", "வாங்குபவர் விவரங்கள்:", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\bSeller\s*details\b", "விற்பனையாளர் விவரங்கள்:", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\bCompany\s*:", "நிறுவனம்:", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\bAddress\s*:", "முகவரி:", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\bGSTIN\s*/\s*UIN\s*:", "ஜி.எஸ்.டி எண்:", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\bGSTIN\s*:", "ஜி.எஸ்.டி எண்:", cleaned, flags=re.IGNORECASE)
+
+        # City names: Erode must be 'ஈரோடு' (eerodu), not 'யாரோடு' (yaarodu)
+        cleaned = re.sub(r"\bErode\b", "ஈரோடு", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\bEerodu\b", "ஈரோடு", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\bCoimbatore\b", "கோயம்புத்தூர்", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\bCovai\b", "கோவை", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\bSalem\b", "சேலம்", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\bChennai\b", "சென்னை", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\bMadurai\b", "மதுரை", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\bTirupur\b", "திருப்பூர்", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\bTrichy\b", "திருச்சி", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\bTamil\s*Nadu\b", "தமிழ்நாடு", cleaned, flags=re.IGNORECASE)
+
+        # Common address and company words
         cleaned = re.sub(r"\bNo\s*[:.]?\s*(\d+)", r"எண் \1", cleaned, flags=re.IGNORECASE)
         cleaned = re.sub(r"\bBus\s*Stand\b", "பஸ் ஸ்டாண்ட்", cleaned, flags=re.IGNORECASE)
         cleaned = re.sub(r"\bComplex\b", "காம்ப்ளக்ஸ்", cleaned, flags=re.IGNORECASE)
         cleaned = re.sub(r"\bRoad\b", "ரோடு", cleaned, flags=re.IGNORECASE)
         cleaned = re.sub(r"\bStreet\b", "தெரு", cleaned, flags=re.IGNORECASE)
         cleaned = re.sub(r"\bTechnologies\b", "டெக்னாலஜிஸ்", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\bSoftwares\b", "சாப்ட்வேர்ஸ்", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\bSurya\b", "சூர்யா", cleaned, flags=re.IGNORECASE)
         cleaned = re.sub(r"\bAgency\b", "ஏஜென்சி", cleaned, flags=re.IGNORECASE)
         cleaned = re.sub(r"\bElectricals\b", "எலக்ட்ரிக்கல்ஸ்", cleaned, flags=re.IGNORECASE)
         cleaned = re.sub(r"\bAI\b", "ஏ.ஐ", cleaned)
         cleaned = re.sub(r"\bPDF\b", "பி.டி.எஃப்", cleaned)
         cleaned = re.sub(r"\bG\s*Pay\b", "ஜி பே", cleaned, flags=re.IGNORECASE)
         cleaned = re.sub(r"\bPhonePe\b", "போன்பே", cleaned, flags=re.IGNORECASE)
-        cleaned = re.sub(r"-\s*(\d{6})\b", r" பின்கோடு \1", cleaned)
+        
+        # Pincodes with standard or unicode non-breaking hyphens (e.g. Erode‑638001 -> ஈரோடு பின்கோடு 638001)
+        cleaned = re.sub(r"[-\u2010-\u2015\u2212]\s*(\d{6})\b", r" பின்கோடு \1", cleaned)
+
+        # Space out 15-character GST numbers so neural voice articulates each letter clearly
+        cleaned = re.sub(
+            r"ஜி\.எஸ்\.டி எண்:?\s*([0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1})",
+            lambda m: "ஜி.எஸ்.டி எண் " + " ".join(list(m.group(1))),
+            cleaned
+        )
 
         # 7. Expand common symbols to spoken conversational Tamil
         cleaned = cleaned.replace("₹", " ரூபாய் ")
