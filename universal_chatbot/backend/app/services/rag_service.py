@@ -158,22 +158,20 @@ class RAGService:
         query_tokens = _tokenize(query)
         scored_chunks: List[Dict[str, Any]] = []
 
-        # 1. Prioritize user-uploaded documents scoped strictly to this conversation
+        # 1. Prioritize user-uploaded documents scoped strictly to this conversation or session
         user_candidates: List[Dict[str, Any]] = []
+        user_query_conditions = []
         if conversation_id and not conversation_id.startswith("conv_support"):
+            user_query_conditions.append({"conversation_id": conversation_id})
+        if session_id:
+            user_query_conditions.append({"session_id": session_id})
+
+        if user_query_conditions:
             user_filter: Dict[str, Any] = {
                 "website_id": website_id,
                 "tenant_id": tenant_id,
                 "is_user_document": True,
-                "conversation_id": conversation_id,
-            }
-            user_candidates = list(chunks_col.find(user_filter).sort("_id", -1).limit(50))
-        elif session_id and not conversation_id:
-            user_filter = {
-                "website_id": website_id,
-                "tenant_id": tenant_id,
-                "is_user_document": True,
-                "session_id": session_id,
+                "$or": user_query_conditions,
             }
             user_candidates = list(chunks_col.find(user_filter).sort("_id", -1).limit(50))
 
@@ -192,16 +190,20 @@ class RAGService:
                     "is_user_document": True,
                 })
 
-        # Fallback ONLY when:
-        # 1. The user has uploaded documents in this active session
-        # 2. No direct term match occurred (user_scored == 0)
-        # 3. The query demonstrates clear document intent (referring to a file, upload, or summary)
+        # Fallback when the user has uploaded documents in this active session/conversation
+        # but the query is conversational/deictic (e.g. "Ipo naan adha upload panren adha pathi sollu",
+        # "tell me about this", "adhula enna irukku", "summarize it")
         DOC_QUERY_INTENT_KEYWORDS = {
-            "document", "file", "pdf", "attachment", "doc", "uploaded", "invoice", "receipt",
-            "summarize", "summary",
-            "ஆவணம்", "கோப்பு", "இணைப்பு", "ரசீது", "சுருக்கம்"
+            "document", "file", "pdf", "attachment", "doc", "uploaded", "upload", "uploading",
+            "invoice", "receipt", "bill", "summarize", "summary", "explain", "details",
+            "content", "contents", "read", "check", "view", "analyze", "look", "what",
+            "adha", "idha", "atha", "itha", "adhula", "idhula", "this", "that", "it",
+            "sollu", "sol", "pathi", "paththi", "enna", "irukku", "panren", "panniruken",
+            "ஆவணம்", "கோப்பு", "இணைப்பு", "ரசீது", "பில்", "சுருக்கம்", "அப்லோட்", "பதிவேற்றம்",
+            "பதிவேற்றிய", "இதை", "அதை", "இதில்", "அதில்", "விளக்கு", "சொல்லு", "படி", "பார்",
+            "விவரம்", "விவரங்கள்", "என்ன"
         }
-        has_doc_intent = bool(query_words.intersection(DOC_QUERY_INTENT_KEYWORDS))
+        has_doc_intent = bool(query_words.intersection(DOC_QUERY_INTENT_KEYWORDS)) or (len(user_candidates) > 0 and len(query_tokens) <= 10)
 
         if user_candidates and len(user_scored) == 0 and has_doc_intent:
             latest_source_id = user_candidates[0].get("source_id")
@@ -209,7 +211,7 @@ class RAGService:
                 c for c in user_candidates if c.get("source_id") == latest_source_id
             ]
             latest_doc_chunks.sort(key=lambda x: x.get("chunk_index", 0))
-            for c in latest_doc_chunks[:top_k]:
+            for c in latest_doc_chunks[:max(top_k, 7)]:
                 user_scored.append({
                     "chunk_id": c.get("chunk_id"),
                     "source_id": c.get("source_id"),

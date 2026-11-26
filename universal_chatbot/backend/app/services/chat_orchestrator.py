@@ -181,7 +181,13 @@ def _build_system_prompt(bot_name: str, language: str, context_blocks: List[str]
      * "நவம்பர் மாசத்துல நீங்க மொத்தம் ₹ 218 செலவு பண்ணி இருக்கீங்க (2 ரசீதுகள்)."
      * "அக்டோபர் மாசத்துல 1 ரசீது, தொகை ₹ 500."
      * "ரசீது தேதி: 15 நவம்பர் 2024."
-   - இப்படி முழுத் தமிழ்ப் பெயராக எழுதும்போது வாய்ஸ் அசிஸ்டண்ட் எந்தத் தடங்கலும் இன்றி மிகத் தெளிவாக உச்சரிக்கும்."""
+   - இப்படி முழுத் தமிழ்ப் பெயராக எழுதும்போது வாய்ஸ் அசிஸ்டண்ட் எந்தத் தடங்கலும் இன்றி மிகத் தெளிவாக உச்சரிக்கும்.
+
+9. பயனர் பதிவேற்றிய ஆவணம் (USER ATTACHED / UPLOADED DOCUMENT):
+   - பயனர் சாட்பாட்டில் ஏதேனும் PDF அல்லது ஆவணத்தைப் பதிவேற்றி, "இதை பத்தி சொல்லு", "upload panren adha pathi sollu", "இதுல என்ன இருக்கு" என்று கேட்டால்:
+   - கீழே கொடுக்கப்பட்டுள்ள 'USER UPLOADED DOCUMENT' தகவலை நேரடியாகப் படித்து, கனிவான எளிய பேச்சுத் தமிழில் சுருக்கமாக விளக்குங்கள் (கடை பெயர், தேதி, பொருட்கள், மொத்தத் தொகை).
+   - ஒருபோதும் "ஆவணம் கிடைக்கவில்லை", "இங்கே அப்லோட் பண்ணுங்க" என்று மீண்டும் கேட்கவே கூடாது! ஏற்கனவே அப்லோட் செய்யப்பட்ட ஆவணத்தின் விவரங்களை உடனடியாகக் கூறுங்கள்.
+   - சரியான பேச்சுத்தமிழ் வடிவம்: 'பார்க்கி' ❌ ➡️ 'பார்த்து' ✅ (எ.கா. 'பார்த்துச் சொல்றேன்'), 'சொல்லுறேன்' ❌ ➡️ 'சொல்றேன்' ✅."""
 
     if context_str:
         base_prompt += f"""\n\nபின்வரும் அங்கீகரிக்கப்பட்ட தகவல் மற்றும் ஆவணங்களின் அடிப்படையில் பதிலளிக்கவும்:\n{context_str}"""
@@ -341,6 +347,15 @@ class ChatOrchestrator:
                         )
                     )
             context_blocks.append("--- RELEVANT KNOWLEDGE & UPLOADED DOCUMENT CONTENT ---\n" + "\n\n".join(rag_texts))
+            if is_user_doc:
+                user_doc_instruction = (
+                    "--- USER ATTACHED / UPLOADED DOCUMENT INSTRUCTION (CRITICAL) ---\n"
+                    "The user has attached and uploaded this document in this chat session. The full text extracted from the document is provided above.\n"
+                    "You MUST directly read and analyze the provided text, answer the user's questions, summarize key details (e.g. vendor name, invoice/bill number, date, items, grand total amount).\n"
+                    "NEVER say the document is not found or ask the user to upload it again because it is ALREADY uploaded and provided right here!\n"
+                    "If the user asks 'tell me about it' or 'upload panren adha pathi sollu', directly summarize this uploaded document."
+                )
+                context_blocks.insert(0, user_doc_instruction)
 
         # 4b. Application Database Search (e.g. Receipt Extractor DB or App DB)
         # If the user already uploaded a document and is asking about it, avoid polluting
@@ -425,11 +440,16 @@ class ChatOrchestrator:
 
         # Strip repetitive robot closing sentence if LLM appends it
         bot_reply = re.sub(
-            r"\s*உங்களுக்கு\s*வேற\s*ஏதாச்சும்\s*உதவி\s*வேணுமா[?.]?\s*$",
+            r"\s*(?:உங்களுக்கு\s*)?(?:வேற|வேறு)\s*(?:ஏதாச்சும்|ஏதாவது|எதாவது)\s*உதவி\s*(?:வேண்டுமா|வேணுமா|தேவையா)[?.]?\s*$",
             "",
             bot_reply,
             flags=re.IGNORECASE,
         ).strip()
+
+        # Clean typos and colloquial smoothing in bot reply
+        bot_reply = re.sub(r"\bபார்க்கி\s*சொல்லுறேன்\b", "பார்த்துச் சொல்றேன்", bot_reply)
+        bot_reply = re.sub(r"\bபார்க்கி\b", "பார்த்து", bot_reply)
+        bot_reply = re.sub(r"\bசொல்லுறேன்\b", "சொல்றேன்", bot_reply)
 
         # 7. Save message interaction into MongoDB
         msg_id = save_message_interaction(

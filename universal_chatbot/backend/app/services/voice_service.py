@@ -237,7 +237,10 @@ def sanitize_text_for_speech(text: str, language: str = "en") -> str:
         cleaned = re.sub(r"([\d,]+)\.00\b", r"\1", cleaned)
 
         # 4. Remove repetitive closing questions
-        cleaned = re.sub(r"உங்களுக்கு\s*வேற\s*ஏதாச்சும்\s*உதவி\s*வேணுமா[?.]?", "", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"(?:உங்களுக்கு\s*)?(?:வேற|வேறு)\s*(?:ஏதாச்சும்|ஏதாவது|எதாவது)\s*உதவி\s*(?:வேண்டுமா|வேணுமா|தேவையா)[?.]?", "", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\bபார்க்கி\s*சொல்லுறேன்\b", "பார்த்துச் சொல்றேன்", cleaned)
+        cleaned = re.sub(r"\bபார்க்கி\b", "பார்த்து", cleaned)
+        cleaned = re.sub(r"\bசொல்லுறேன்\b", "சொல்றேன்", cleaned)
 
         # 5. Convert numeric dates to full Tamil month speech: e.g. 15/11/2024 or 2024-11-15 -> 15 நவம்பர் 2024
         cleaned = re.sub(
