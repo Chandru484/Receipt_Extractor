@@ -85,6 +85,7 @@
     .header-btn { background: rgba(255,255,255,0.18); border: 1px solid rgba(255,255,255,0.35); color: #fff; border-radius: 14px; padding: 4px 9px; font-size: 11px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; transition: all 0.15s; font-weight: 500; }
     .header-btn:hover { background: rgba(255,255,255,0.3); }
     .header-btn.active { background: #16a34a !important; border-color: #22c55e !important; color: #fff !important; font-weight: 700; box-shadow: 0 0 10px rgba(34, 197, 94, 0.5); }
+    .header-btn.muted { background: rgba(239, 68, 68, 0.28) !important; border-color: rgba(239, 68, 68, 0.55) !important; color: #fee2e2 !important; }
 
     .mini-waveform { display: inline-flex; align-items: center; gap: 2px; height: 12px; margin-right: 3px; }
     .mbar { width: 2.5px; height: 4px; background: currentColor; border-radius: 2px; animation: miniWave 0.7s infinite alternate ease-in-out; }
@@ -296,7 +297,11 @@
         <div>
           <span class="chat-title" id="botHeader">${widgetConfig.bot_name || "AI Assistant"}</span>
         </div>
-        <div style="display: flex; align-items: center; gap: 6px;">
+        <div style="display: flex; align-items: center; gap: 5px;">
+          <button class="header-btn" id="muteBtn" title="Mute or Unmute voice audio">
+            <span id="muteIcon" style="font-size: 11px;">🔊</span>
+            <span id="muteLabel">Voice</span>
+          </button>
           <button class="header-btn" id="historyBtn" title="View Past Chat History">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
             <span id="historyBtnLabel">History</span>
@@ -376,6 +381,49 @@
   const closeHistoryBtn = shadow.getElementById("closeHistoryBtn");
   const historyNewChatBtn = shadow.getElementById("historyNewChatBtn");
   const historyTitle = shadow.getElementById("historyTitle");
+  const muteBtn = shadow.getElementById("muteBtn");
+  const muteIcon = shadow.getElementById("muteIcon");
+  const muteLabel = shadow.getElementById("muteLabel");
+  let isVoiceMuted = (
+    (scriptUrlParams && (scriptUrlParams.get("mute") === "true" || scriptUrlParams.get("mute_voice") === "true")) ||
+    (currentScript && currentScript.getAttribute && (currentScript.getAttribute("data-mute") === "true" || currentScript.getAttribute("data-voice") === "muted")) ||
+    false
+  );
+  try {
+    const savedMute = localStorage.getItem("chat_voice_muted");
+    if (savedMute !== null) {
+      isVoiceMuted = savedMute === "true";
+    }
+  } catch (_) {}
+
+  function updateMuteUI() {
+    if (!muteBtn) return;
+    if (isVoiceMuted) {
+      muteBtn.classList.add("muted");
+      if (muteIcon) muteIcon.textContent = "🔇";
+      if (muteLabel) muteLabel.textContent = "Muted";
+      muteBtn.title = activeLang === "ta" ? "ஒலியை இயக்கு (Unmute voice)" : "Unmute voice output";
+    } else {
+      muteBtn.classList.remove("muted");
+      if (muteIcon) muteIcon.textContent = "🔊";
+      if (muteLabel) muteLabel.textContent = "Voice";
+      muteBtn.title = activeLang === "ta" ? "ஒலியை முடக்கு (Mute voice)" : "Mute voice output";
+    }
+  }
+
+  function toggleMute() {
+    isVoiceMuted = !isVoiceMuted;
+    try { localStorage.setItem("chat_voice_muted", String(isVoiceMuted)); } catch (_) {}
+    if (isVoiceMuted) {
+      stopCurrentAudio();
+    }
+    updateMuteUI();
+  }
+
+  if (muteBtn) {
+    muteBtn.onclick = () => toggleMute();
+  }
+  updateMuteUI();
   try { localStorage.removeItem("chat_voice_engine"); } catch (_) {}
   let isCallModeActive = false;
   let isSpeaking = false;
@@ -673,7 +721,7 @@
 
   // Welcome voice greeting trigger on initial widget open
   function speakWelcomeGreeting() {
-    if (welcomeSpoken || msgList.children.length > 2) return;
+    if (isVoiceMuted || welcomeSpoken || msgList.children.length > 2) return;
     welcomeSpoken = true;
     unlockAudioPlayback();
     const welcomeVoiceText = activeLang === "ta" ? "வணக்கம்! சொல்லுங்க, என்ன உதவி வேணும்?" : "Hello! How can I help you today?";
@@ -1207,7 +1255,12 @@
     return cleaned.substring(0, 800);
   }
 
-  function playSpeech(text, lang, btn = null, onEndedCallback = null) {
+  function playSpeech(text, lang, btn = null, onEndedCallback = null, isManual = false) {
+    if (isVoiceMuted && !isManual) {
+      if (onEndedCallback) onEndedCallback();
+      return;
+    }
+
     if (btn && currentPlayingBtn === btn) {
       stopCurrentAudio();
       return;
@@ -1309,7 +1362,7 @@
   }
 
   function toggleSpeech(text, lang, btn = null) {
-    playSpeech(text, lang, btn, null);
+    playSpeech(text, lang, btn, null, true);
   }
 
   function playBrowserSpeech(text, lang, btn = null, onEndedCallback = null) {
@@ -1485,9 +1538,10 @@
           executeWebsiteAction(data.action);
         }
 
-        // Auto-speak reply in authentic Tamil neural voice
-        if (msgRes && msgRes.speakBtn) {
-          playSpeech(data.reply, "ta", msgRes.speakBtn);
+        // Auto-speak reply if voice is not muted and message was from voice input
+        if (!isVoiceMuted && isVoiceMsg && msgRes && msgRes.speakBtn) {
+          const replyLang = data.language || activeLang || "en";
+          playSpeech(data.reply, replyLang, msgRes.speakBtn, null, false);
         }
 
         if (data.escalate_to_human) {
@@ -1810,6 +1864,24 @@
     },
     close: function () {
       chatWin.classList.remove("open");
+    },
+    muteVoice: function () {
+      isVoiceMuted = true;
+      try { localStorage.setItem("chat_voice_muted", "true"); } catch (_) {}
+      stopCurrentAudio();
+      updateMuteUI();
+    },
+    unmuteVoice: function () {
+      isVoiceMuted = false;
+      try { localStorage.setItem("chat_voice_muted", "false"); } catch (_) {}
+      updateMuteUI();
+    },
+    toggleVoiceMute: function () {
+      toggleMute();
+      return isVoiceMuted;
+    },
+    isVoiceMuted: function () {
+      return isVoiceMuted;
     },
   };
 })();
