@@ -154,7 +154,18 @@ def _build_system_prompt(bot_name: str, language: str, context_blocks: List[str]
    - ✅ சரியான வடிவம்: "கடை பெயர் **Vikram Technologies**, முகவரி **No:5, Bus Stand Complex, Mettur Road, Erode**, மொத்த தொகை **₹ 300.00**."
    - ❌ தவறான வடிவம்: நிறுவனத்தின் பெயரையோ முகவரியையோ தமிழில் மாற்றி குழப்பக் கூடாது.
 
-6. வாடிக்கையாளர் கேட்ட கேள்விக்கு நேரடியாகவும், சுருக்கமாகவும் (2 முதல் 3 வரிகளில்) கனிவான குரலில் பதிலளிக்கவும்."""
+6. வாடிக்கையாளர் கேட்ட கேள்விக்கு நேரடியாகவும், சுருக்கமாகவும் (2 முதல் 3 வரிகளில்) கனிவான குரலில் பதிலளிக்கவும்.
+
+7. செலவு மற்றும் கணக்கு விவரங்களை மரியாதையான எளிய பேச்சுத் தமிழில் விளக்குதல் (EXPENSE & SPENDING ANALYTICS):
+   - பயனர் மொத்த செலவு, குறிப்பிட்ட மாசத்து செலவு அல்லது குறிப்பிட்ட கடை செலவு பற்றிக் கேட்டால் (e.g. "இந்த மாசம் மொத்தம் எவ்வளவு செலவு பண்ணியிருக்கேன்?", "Vikram Technologies-க்கு எவ்வளவு செலவு?", "மொத்த செலவு எவ்வளவு?"):
+   - எப்போதும் 'REAL-TIME EXPENSE & SPENDING ANALYTICS' பகுதியில் உள்ள துல்லியமான எண்களை மட்டுமே கொண்டு பதிலளிக்கவும்!
+   - மரியாதையான எளிய பேச்சுத் தமிழில் 'ங்க' விகுதியுடன் கனிவாகப் பதிலளிக்கவும்:
+     * இந்த மாசம் / குறிப்பிட்ட மாசம்: "இந்த மாசத்துல (அல்லது [மாசம்]-ல) நீங்க மொத்தம் ₹ [தொகை] செலவு பண்ணியிருக்கீங்க (மொத்தம் [எண்ணிக்கை] ரசீதுகள்)."
+     * குறிப்பிட்ட கடை: "[கடை பெயர்]-க்கு மொத்தம் [எண்ணிக்கை] பில்கள்ல ₹ [தொகை] செலவு பண்ணியிருக்கீங்க."
+     * மொத்த செலவு: "நீங்க இதுவரை மொத்தம் ₹ [தொகை] செலவு பண்ணியிருக்கீங்க (மொத்தம் [எண்ணிக்கை] ரசீதுகள்)."
+     * அதிகபட்ச செலவு: "அதிகபட்சமா [கடை பெயர்]-ல மொத்தம் ₹ [தொகை] செலவு பண்ணியிருக்கீங்க."
+   - கடை பெயர் மற்றும் தொகையை ஆங்கிலத்தில் (₹ [தொகை]) தெளிவாகக் குறிப்பிடவும்.
+   - ஒருபோதும் கொச்சை slang (டா, டி, பா, மச்சி) அல்லது பழைய புத்தகத் தமிழ் (ஆகும், உள்ளது) பயன்படுத்தக் கூடாது!"""
 
     if context_str:
         base_prompt += f"""\n\nபின்வரும் அங்கீகரிக்கப்பட்ட தகவல் மற்றும் ஆவணங்களின் அடிப்படையில் பதிலளிக்கவும்:\n{context_str}"""
@@ -322,6 +333,26 @@ class ChatOrchestrator:
         should_query_db = (response_source != "user_document") or any(k in user_msg_lower for k in db_explicit_keywords)
 
         if should_query_db:
+            # Check for expense and spending analytics query
+            is_expense = app_mongo_adapter.is_expense_query(request.message)
+            if is_expense:
+                expense_analytics = app_mongo_adapter.get_expense_analytics(
+                    website_id=request.website_id,
+                    user_query=request.message,
+                    user_id=verified_user_id,
+                )
+                if expense_analytics:
+                    if response_source == "general":
+                        response_source = "app_database"
+                    context_blocks.append(expense_analytics["summary_text"])
+                    citations.append(
+                        SourceCitation(
+                            source_type="database",
+                            title="Expense Analytics",
+                            snippet=f"Analyzed {expense_analytics['receipt_count']} receipts. Total spent: ₹ {expense_analytics['total_spent']:,.2f}",
+                        )
+                    )
+
             app_data = app_mongo_adapter.query_application_data(
                 website_id=request.website_id,
                 user_query=request.message,

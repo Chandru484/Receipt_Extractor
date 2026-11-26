@@ -53,9 +53,9 @@ def sanitize_text_for_speech(text: str, language: str = "en") -> str:
 
     if language == "ta":
         # Strip decimal cents/paise from currency amounts so TTS speaks clean numbers (e.g. ₹ 254 instead of robotic 'புள்ளி இருபத்து நான்கு')
-        cleaned = re.sub(r"₹\s*(\d+)\.\d+", r"₹ \1", cleaned)
-        cleaned = re.sub(r"Rs\.?\s*(\d+)\.\d+", r"Rs \1", cleaned)
-        cleaned = re.sub(r"(\d+)\.00\b", r"\1", cleaned)
+        cleaned = re.sub(r"₹\s*([\d,]+)\.\d+", r"₹ \1", cleaned)
+        cleaned = re.sub(r"Rs\.?\s*([\d,]+)\.\d+", r"Rs \1", cleaned)
+        cleaned = re.sub(r"([\d,]+)\.00\b", r"\1", cleaned)
 
         # Remove rude/disrespectful singular slang if LLM ever outputs it
         cleaned = re.sub(r"\bஇப்போடா\b", "இப்போதைக்கு", cleaned)
