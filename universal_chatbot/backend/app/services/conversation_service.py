@@ -289,3 +289,34 @@ def record_support_handoff(
         support.insert_one(doc)
 
     return handoff_id
+
+
+def ensure_user_record(
+    website_id: str,
+    user_id: str,
+    role: Optional[str] = None,
+    package_id: Optional[str] = None,
+) -> None:
+    """Store or update user profile and activity timestamp in the MongoDB users collection."""
+    if not user_id:
+        return
+    users_col = collections.get_collection("users")
+    if users_col is not None:
+        now_str = get_ist_now_str()
+        users_col.update_one(
+            {"website_id": website_id, "user_id": user_id},
+            {
+                "$setOnInsert": {
+                    "user_id": user_id,
+                    "website_id": website_id,
+                    "created_at": now_str,
+                },
+                "$set": {
+                    "role": role or "user",
+                    "package_id": package_id,
+                    "last_active_at": now_str,
+                },
+                "$inc": {"interaction_count": 1},
+            },
+            upsert=True,
+        )

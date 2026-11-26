@@ -16,6 +16,7 @@ from universal_chatbot.backend.app.services.conversation_service import (
     get_conversation_history,
     save_message_interaction,
     record_support_handoff,
+    ensure_user_record,
 )
 from universal_chatbot.backend.app.services.rag_service import rag_service
 from universal_chatbot.backend.app.application_adapters.mongodb_adapter import app_mongo_adapter
@@ -348,6 +349,13 @@ class ChatOrchestrator:
 
         # Resolve deterministic conversation_id if package_id + (user_id or admin_id) are provided
         target_uid = request.user_id or request.admin_id
+        if target_uid:
+            ensure_user_record(
+                website_id=request.website_id,
+                user_id=target_uid,
+                role=request.role,
+                package_id=request.package_id,
+            )
         if request.package_id and target_uid and not request.conversation_id:
             clean_pkg = re.sub(r"[^\w\-]", "_", str(request.package_id).strip())
             clean_uid = re.sub(r"[^\w\-]", "_", str(target_uid).strip())

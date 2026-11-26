@@ -52,11 +52,34 @@ class ApplicationMongoAdapter:
         return self._cached_clients[uri]
 
     def get_connection_config(self, website_id: str) -> Optional[Dict[str, Any]]:
-        """Retrieve registered application connection for a website."""
+        """Retrieve registered application connection for a website or auto-provision a new project database."""
         app_col = get_app_connections_collection()
         if app_col is None:
             return None
-        return app_col.find_one({"website_id": website_id, "status": "active"})
+        conn = app_col.find_one({"website_id": website_id, "status": "active"})
+        if not conn:
+            from universal_chatbot.backend.app.core.config import chatbot_settings
+            from universal_chatbot.backend.app.schemas.tenant_schema import get_ist_now_str
+            clean_pid = re.sub(r"[^\w\-]", "_", str(website_id).strip())
+            target_db = "receipt_db" if clean_pid == "site_demo" else f"project_{clean_pid}_db"
+            conn = {
+                "website_id": website_id,
+                "tenant_id": "ten_default",
+                "app_name": f"{clean_pid.replace('_', ' ').title()} App",
+                "db_type": "mongodb",
+                "target_uri": chatbot_settings.CHATBOT_MONGODB_URI,
+                "target_db": target_db,
+                "allowed_collection": "Receipt_Extraction",
+                "allowed_fields": ["*"],
+                "status": "active",
+                "created_at": get_ist_now_str(),
+            }
+            try:
+                app_col.insert_one(dict(conn))
+                conn.pop("_id", None)
+            except Exception as exc:
+                logger.warning(f"Could not auto-provision app_connection: {exc}")
+        return conn
 
     @staticmethod
     def is_expense_query(query: str) -> bool:
