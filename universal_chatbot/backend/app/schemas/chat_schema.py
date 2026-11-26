@@ -11,7 +11,7 @@ class SourceCitation(BaseModel):
 
 
 class ChatMessageRequest(BaseModel):
-    website_id: str = Field(..., description="Target website or application ID (or project_id)")
+    website_id: str = Field(default="site_demo", description="Target website or application ID (or project_id)")
     message: str = Field(..., min_length=1, max_length=4000, description="User prompt or question")
     conversation_id: Optional[str] = Field(None, description="Existing conversation ID to continue")
     session_id: Optional[str] = Field(None, description="Visitor session token")

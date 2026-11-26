@@ -17,9 +17,20 @@ router = APIRouter(prefix="/chat", tags=["Chat"])
 
 
 @router.post("/message", response_model=ChatMessageResponse, summary="Send message to AI Chatbot")
-def send_chat_message(request: ChatMessageRequest, background_tasks: BackgroundTasks):
+def send_chat_message(
+    request: ChatMessageRequest,
+    background_tasks: BackgroundTasks,
+    website_id: Optional[str] = Query(None, description="Optional project/website ID from URL query"),
+    project_id: Optional[str] = Query(None, description="Optional project/website ID from URL query"),
+):
     """Process a user question, orchestrate retrieval and AI response, and persist conversation."""
     try:
+        # Allow URL query param project_id or website_id to override or provide the project identifier
+        if project_id:
+            request.website_id = project_id
+        elif website_id:
+            request.website_id = website_id
+
         effective_user_id = request.admin_id or request.user_id
         if request.admin_id and not request.role:
             request.role = "admin"
