@@ -149,10 +149,6 @@
           <span class="chat-title" id="botHeader">${widgetConfig.bot_name || "AI Assistant"}</span>
         </div>
         <div style="display: flex; align-items: center; gap: 6px;">
-          <button class="header-btn" id="voiceEngineBtn" title="Switch Voice Engine: ⚡ Instant (0s Delay) vs 🎧 HD Cloud Voice">
-            <span id="voiceEngineIcon">⚡</span>
-            <span id="voiceEngineLabel">Instant</span>
-          </button>
           <button class="header-btn" id="callModeBtn" title="Start Hands-Free Voice Call (தொடர் குரல் அழைப்பு)">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M20.01 15.38c-1.23 0-2.42-.2-3.53-.56a.977.977 0 00-1.01.24l-1.57 1.97c-2.83-1.44-5.15-3.75-6.59-6.59l1.97-1.57c.28-.28.36-.67.25-1.02A11.36 11.36 0 018.96 4.3c0-.55-.45-1-1-1H4.45c-.55 0-1 .45-1 1 0 9.39 7.61 17 17 17 .55 0 1-.45 1-1v-3.56c0-.55-.45-.96-.44-.96z"/></svg>
             <span id="callModeLabel">Voice Call</span>
@@ -227,34 +223,7 @@
   const callBanner = shadow.getElementById("callBanner");
   const callBannerText = shadow.getElementById("callBannerText");
   const endCallBtn = shadow.getElementById("endCallBtn");
-  const voiceEngineBtn = shadow.getElementById("voiceEngineBtn");
-  const voiceEngineIcon = shadow.getElementById("voiceEngineIcon");
-  const voiceEngineLabel = shadow.getElementById("voiceEngineLabel");
-
-  let voiceEngine = localStorage.getItem("chat_voice_engine") || "instant"; // default to instant for zero latency
-
-  function updateVoiceEngineUI() {
-    if (!voiceEngineBtn) return;
-    if (voiceEngine === "instant") {
-      if (voiceEngineIcon) voiceEngineIcon.textContent = "⚡";
-      if (voiceEngineLabel) voiceEngineLabel.textContent = "Instant";
-      voiceEngineBtn.title = "Current: ⚡ Instant Device Voice (Zero Delay). Click to switch to 🎧 HD Cloud Voice.";
-    } else {
-      if (voiceEngineIcon) voiceEngineIcon.textContent = "🎧";
-      if (voiceEngineLabel) voiceEngineLabel.textContent = "HD Voice";
-      voiceEngineBtn.title = "Current: 🎧 HD Cloud Voice (Edge Neural). Click to switch to ⚡ Instant Device Voice.";
-    }
-  }
-  updateVoiceEngineUI();
-
-  if (voiceEngineBtn) {
-    voiceEngineBtn.onclick = () => {
-      voiceEngine = voiceEngine === "instant" ? "hd" : "instant";
-      localStorage.setItem("chat_voice_engine", voiceEngine);
-      updateVoiceEngineUI();
-    };
-  }
-
+  try { localStorage.removeItem("chat_voice_engine"); } catch (_) {}
   let isCallModeActive = false;
   let isSpeaking = false;
   let isProcessingMessage = false;
@@ -748,13 +717,7 @@
     const cleanText = sanitizeTamilTextForSpeech(text);
     const targetLang = lang || activeLang;
 
-    // Instant Mode: Start speaking immediately in 20ms with local native device engine
-    if (voiceEngine === "instant") {
-      playBrowserSpeech(cleanText, targetLang, btn, onEndedCallback);
-      return;
-    }
-
-    // HD Cloud Mode: Sentence-Level Pipelining for ultra-low ~200-300ms latency
+    // High-Definition Neural Speech with Sentence-Level Pipelining
     const sentences = splitIntoSentences(cleanText);
     if (sentences.length === 0) return;
 
