@@ -1,12 +1,31 @@
 (function () {
   "use strict";
 
-  // Find host script tag and extract parameters (supports website-id, project-id, role, user-id)
-  const currentScript = document.currentScript || document.querySelector("script[data-website-id], script[data-project-id]");
-  const websiteId = currentScript ? (currentScript.getAttribute("data-project-id") || currentScript.getAttribute("data-website-id") || "site_demo") : "site_demo";
-  let candidateRole = (currentScript ? (currentScript.getAttribute("data-role") || "user") : "user").toLowerCase();
-  let candidateId = currentScript ? (currentScript.getAttribute("data-user-id") || currentScript.getAttribute("data-candidate-id")) : null;
-  const apiBase = currentScript ? (new URL(currentScript.src)).origin : window.location.origin;
+  // Find host script tag and extract parameters (supports URL query params e.g. ?id=xyz or data attributes)
+  const currentScript = document.currentScript || document.querySelector("script[src*='widget.js'], script[data-website-id], script[data-project-id]");
+  let scriptUrlParams = null;
+  try {
+    if (currentScript && currentScript.src) {
+      scriptUrlParams = new URL(currentScript.src, window.location.href).searchParams;
+    }
+  } catch (_) {}
+
+  const websiteId = (
+    (scriptUrlParams && (scriptUrlParams.get("project_id") || scriptUrlParams.get("website_id") || scriptUrlParams.get("id"))) ||
+    (currentScript && currentScript.getAttribute ? (currentScript.getAttribute("data-project-id") || currentScript.getAttribute("data-website-id")) : null) ||
+    "site_demo"
+  );
+  let candidateRole = (
+    (scriptUrlParams && scriptUrlParams.get("role")) ||
+    (currentScript && currentScript.getAttribute ? currentScript.getAttribute("data-role") : null) ||
+    "user"
+  ).toLowerCase();
+  let candidateId = (
+    (scriptUrlParams && (scriptUrlParams.get("user_id") || scriptUrlParams.get("candidate_id"))) ||
+    (currentScript && currentScript.getAttribute ? (currentScript.getAttribute("data-user-id") || currentScript.getAttribute("data-candidate-id")) : null) ||
+    null
+  );
+  const apiBase = currentScript && currentScript.src ? (new URL(currentScript.src, window.location.href)).origin : window.location.origin;
 
   let activeLang = "ta";
   let activeSessionId = null;
