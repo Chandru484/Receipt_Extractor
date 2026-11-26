@@ -36,7 +36,7 @@
   );
   const apiBase = currentScript && currentScript.src ? (new URL(currentScript.src, window.location.href)).origin : window.location.origin;
 
-  let activeLang = "ta";
+  let activeLang = "en";
   let activeSessionId = null;
   try { activeSessionId = localStorage.getItem("chat_session_id"); } catch (_) {}
   if (!activeSessionId) {
@@ -54,9 +54,9 @@
   let widgetConfig = {
     bot_name: "AI Assistant",
     primary_color: "#2563eb",
-    welcome_message_en: "வணக்கம்! சொல்லுங்க, உங்களுக்கு நான் எப்படி உதவலாம்?",
+    welcome_message_en: "Hello! How can I help you today?",
     welcome_message_ta: "வணக்கம்! சொல்லுங்க, உங்களுக்கு நான் எப்படி உதவலாம்?",
-    available_languages: ["ta"],
+    available_languages: ["en", "ta"],
     allow_file_uploads: true,
     allow_voice_input: true,
     allow_speech_output: true,
@@ -693,7 +693,7 @@
         msgList.innerHTML = "";
         const msgs = (data && data.messages) ? data.messages : [];
         if (msgs.length === 0) {
-          appendMessage("bot", widgetConfig.welcome_message_ta || "வணக்கம்! சொல்லுங்க, உங்களுக்கு நான் எப்படி உதவலாம்?");
+          appendMessage("bot", (activeLang === "ta" ? widgetConfig.welcome_message_ta : widgetConfig.welcome_message_en) || "Hello! How can I help you today?");
           return;
         }
 
@@ -1827,7 +1827,7 @@
   if (activeConvId) {
     loadConversation(activeConvId);
   } else {
-    appendMessage("bot", widgetConfig.welcome_message_ta || "வணக்கம்! சொல்லுங்க, உங்களுக்கு நான் எப்படி உதவலாம்?");
+    appendMessage("bot", (activeLang === "ta" ? widgetConfig.welcome_message_ta : widgetConfig.welcome_message_en) || "Hello! How can I help you today?");
   }
 
   // Expose global controller for host application testing & role switching

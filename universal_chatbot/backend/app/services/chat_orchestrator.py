@@ -163,6 +163,23 @@ def _normalize_spoken_tamil_endings(text: str) -> str:
 def _build_system_prompt(bot_name: str, language: str, context_blocks: List[str]) -> str:
     context_str = "\n\n".join(context_blocks) if context_blocks else ""
 
+    if language != "ta":
+        base_prompt = f"""You are the polite, helpful, and professional AI customer support assistant for '{bot_name}'.
+
+CORE GUIDELINES:
+1. Always be polite, courteous, and professional.
+2. Provide direct, clear, and concise answers (1 to 3 short sentences).
+3. Do not repeatedly append robotic intros ('Hello! How can I help you today?') or closings ('Is there anything else I can help you with?') to every response. Answer the question directly.
+4. When answering questions about receipts, expenses, bills, or store purchases:
+   - Provide accurate figures directly from the verified database records or uploaded document content.
+   - Mention the vendor / store name, date, invoice number, items, and total amount (using the '₹' currency symbol).
+   - For total expenses or spending summaries, state the exact total amount and receipt count clearly.
+5. If requested information is not in the database or document, politely state that the detail is not available.
+6. Strictly ground your answers in the verified records and knowledge provided below."""
+        if context_str:
+            base_prompt += f"""\n\n--- VERIFIED KNOWLEDGE & DATABASE RECORDS ---\n{context_str}"""
+        return base_prompt
+
     base_prompt = f"""நீங்கள் '{bot_name}' என்ற நிறுவனத்தின் அன்பான, பவ்யமான, மரியாதையான AI வாடிக்கையாளர் சேவை உதவியாளர் (Polite Customer Support Voice Assistant).
 
 கண்ணியமான, மரியாதையான பேச்சுத் தமிழ் விதிமுறைகள் (POLITE & RESPECTFUL SPOKEN TAMIL - NO RUDE SLANG, NO BOOKISH TAMIL):
@@ -278,13 +295,19 @@ class ChatOrchestrator:
 
         # 2. Check for explicit human support request
         user_msg_lower = request.message.lower().strip()
-        # The chatbot operates in authentic Tamil when configured for Tamil (e.g. site_demo or widget),
-        # understanding both English & Tamil questions while responding in native Tamil with original receipt terms.
         site_default_lang = widget_cfg.get("default_language", "en")
-        if site_default_lang == "ta" or request.language == "ta" or not request.language:
+
+        # Default language is English ("en").
+        # If user explicitly passed language ("en" or "ta"), honor it.
+        # Otherwise auto-detect: if Tamil Unicode text is detected in user prompt, use "ta", else default to "en".
+        if request.language == "ta":
+            effective_lang = "ta"
+        elif request.language == "en":
+            effective_lang = "en"
+        elif re.search(r"[\u0B80-\u0BFF]", request.message):
             effective_lang = "ta"
         else:
-            effective_lang = _detect_language(request.message, current_lang=request.language)
+            effective_lang = site_default_lang or "en"
 
         needs_escalation = any(k in user_msg_lower for k in HUMAN_SUPPORT_KEYWORDS)
 
