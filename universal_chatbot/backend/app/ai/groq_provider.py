@@ -38,10 +38,13 @@ class GroqChatbotProvider(BaseLLMProvider):
         messages: List[Dict[str, str]],
         system_prompt: Optional[str] = None,
         temperature: float = 0.2,
-        max_tokens: int = 4096,
+        max_tokens: int = 1500,
     ) -> Dict[str, Any]:
         if not self._keys:
             raise RuntimeError("No CHATBOT_GROQ_API_KEYS configured.")
+
+        # Ensure max_tokens doesn't blow past free-tier TPM (8000 tokens)
+        effective_max_tokens = min(max_tokens, 1500)
 
         formatted_messages = []
         if system_prompt:
@@ -62,7 +65,7 @@ class GroqChatbotProvider(BaseLLMProvider):
                     model=chatbot_settings.CHATBOT_GROQ_MODEL,
                     messages=formatted_messages,
                     temperature=temperature,
-                    max_tokens=max_tokens,
+                    max_tokens=effective_max_tokens,
                 )
                 latency = round(time.perf_counter() - t0, 3)
 

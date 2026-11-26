@@ -100,23 +100,31 @@ def save_message_interaction(
     return message_id
 
 
-def get_conversation_history(conversation_id: str, limit: int = 20) -> List[Dict[str, str]]:
-    """Retrieve message history formatted for LLM context (role: user, role: assistant)."""
+def get_conversation_history(conversation_id: str, limit: int = 6) -> List[Dict[str, str]]:
+    """Retrieve the most recent message history formatted for LLM context (role: user, role: assistant)."""
     messages = collections.get_messages_collection()
     if messages is None:
         return []
 
-    cursor = messages.find(
+    # Fetch the most recent interactions in reverse chronological order
+    recent_docs = list(messages.find(
         {"conversation_id": conversation_id},
         {"user_message": 1, "bot_reply": 1, "_id": 0}
-    ).sort("created_at", 1).limit(limit)
+    ).sort("created_at", -1).limit(limit))
+
+    # Reverse to chronological order (oldest to newest among the recent window)
+    recent_docs.reverse()
 
     formatted: List[Dict[str, str]] = []
-    for m in cursor:
+    for m in recent_docs:
         if m.get("user_message"):
-            formatted.append({"role": "user", "content": m["user_message"]})
+            formatted.append({"role": "user", "content": m["user_message"][:400]})
         if m.get("bot_reply"):
-            formatted.append({"role": "assistant", "content": m["bot_reply"]})
+            # Compact older bot replies so that huge past tables don't exhaust TPM
+            bot_text = m["bot_reply"]
+            if len(bot_text) > 400:
+                bot_text = bot_text[:400] + "..."
+            formatted.append({"role": "assistant", "content": bot_text})
 
     return formatted
 

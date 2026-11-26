@@ -173,52 +173,38 @@ class RAGService:
                 "is_user_document": True,
                 "$or": user_query_conditions,
             }
-            user_candidates = list(chunks_col.find(user_filter).sort("_id", -1).limit(50))
+            user_candidates = list(chunks_col.find(user_filter).sort("_id", -1).limit(100))
 
         user_scored: List[Dict[str, Any]] = []
-        for c in user_candidates:
-            searchable_text = f"{c.get('source_name', '')} {c.get('content', '')}"
-            score = _compute_relevance_score(query_tokens, searchable_text)
-            if score > 0.05:
+        if user_candidates:
+            # Check if query specifically references a specific uploaded document filename
+            target_source_id = None
+            for c in user_candidates:
+                s_name = c.get("source_name", "").lower()
+                if s_name and any(tok in s_name for tok in query_tokens if len(tok) > 2):
+                    target_source_id = c.get("source_id")
+                    break
+
+            if not target_source_id:
+                # Default to the most recently uploaded document
+                target_source_id = user_candidates[0].get("source_id")
+
+            # Collect all chunks belonging to the active uploaded document
+            doc_chunks = [c for c in user_candidates if c.get("source_id") == target_source_id]
+
+            # Sort strictly by chunk_index ascending so reading flow (Page 1 -> Page 2 -> ...) is preserved
+            doc_chunks.sort(key=lambda x: x.get("chunk_index", 0))
+
+            for c in doc_chunks:
+                searchable_text = f"{c.get('source_name', '')} {c.get('content', '')}"
+                match_score = _compute_relevance_score(query_tokens, searchable_text)
                 user_scored.append({
                     "chunk_id": c.get("chunk_id"),
                     "source_id": c.get("source_id"),
                     "source_name": c.get("source_name", "Document"),
                     "content": c.get("content", ""),
                     "chunk_index": c.get("chunk_index", 0),
-                    "score": score + 0.5,  # Boost session-uploaded document relevance
-                    "is_user_document": True,
-                })
-
-        # Fallback when the user has uploaded documents in this active session/conversation
-        # but the query is conversational/deictic (e.g. "Ipo naan adha upload panren adha pathi sollu",
-        # "tell me about this", "adhula enna irukku", "summarize it")
-        DOC_QUERY_INTENT_KEYWORDS = {
-            "document", "file", "pdf", "attachment", "doc", "uploaded", "upload", "uploading",
-            "invoice", "receipt", "bill", "summarize", "summary", "explain", "details",
-            "content", "contents", "read", "check", "view", "analyze", "look", "what",
-            "adha", "idha", "atha", "itha", "adhula", "idhula", "this", "that", "it",
-            "sollu", "sol", "pathi", "paththi", "enna", "irukku", "panren", "panniruken",
-            "ஆவணம்", "கோப்பு", "இணைப்பு", "ரசீது", "பில்", "சுருக்கம்", "அப்லோட்", "பதிவேற்றம்",
-            "பதிவேற்றிய", "இதை", "அதை", "இதில்", "அதில்", "விளக்கு", "சொல்லு", "படி", "பார்",
-            "விவரம்", "விவரங்கள்", "என்ன"
-        }
-        has_doc_intent = bool(query_words.intersection(DOC_QUERY_INTENT_KEYWORDS)) or (len(user_candidates) > 0 and len(query_tokens) <= 10)
-
-        if user_candidates and len(user_scored) == 0 and has_doc_intent:
-            latest_source_id = user_candidates[0].get("source_id")
-            latest_doc_chunks = [
-                c for c in user_candidates if c.get("source_id") == latest_source_id
-            ]
-            latest_doc_chunks.sort(key=lambda x: x.get("chunk_index", 0))
-            for c in latest_doc_chunks[:15]:
-                user_scored.append({
-                    "chunk_id": c.get("chunk_id"),
-                    "source_id": c.get("source_id"),
-                    "source_name": c.get("source_name", "Document"),
-                    "content": c.get("content", ""),
-                    "chunk_index": c.get("chunk_index", 0),
-                    "score": 1.0,
+                    "score": 1.0 + match_score,  # Keep every chunk of active document with keyword boost
                     "is_user_document": True,
                 })
 
@@ -252,12 +238,14 @@ class RAGService:
         user_chunks = [c for c in scored_chunks if c.get("is_user_document")]
         kb_chunks = [c for c in scored_chunks if not c.get("is_user_document")]
 
-        user_chunks.sort(key=lambda x: (-x["score"], x.get("chunk_index", 0)))
+        # For uploaded user documents, sort strictly by chunk_index ascending (Page 1 -> Page 2 -> ...)
+        # so the LLM reads the receipt/invoice from top to bottom in natural sequential order
+        user_chunks.sort(key=lambda x: x.get("chunk_index", 0))
         kb_chunks.sort(key=lambda x: (-x["score"], x.get("chunk_index", 0)))
 
-        # When an uploaded document is present, return all its chunks (up to 15) so multi-page bills are complete
+        # When an uploaded document is present, return all its chunks (up to 30) so multi-page bills are 100% complete
         if user_chunks:
-            return user_chunks[:15]
+            return user_chunks[:30]
         return kb_chunks[:top_k]
 
 
