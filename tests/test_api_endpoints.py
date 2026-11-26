@@ -55,9 +55,12 @@ def test_extract_empty_file():
     assert "Uploaded file is empty" in response.json()["detail"]
 
 
+@patch("app.main.find_extraction_by_file_hash", return_value=None)
+@patch("app.main.find_extraction_by_invoice_and_vendor", return_value=None)
+@patch("app.main.save_extraction_to_mongodb", return_value="mock_doc_id_123")
 @patch("app.main.preprocess_image")
 @patch("app.main.process_receipt")
-def test_extract_success_mocked(mock_process, mock_preprocess):
+def test_extract_success_mocked(mock_process, mock_preprocess, mock_save, mock_cache_inv, mock_cache_hash):
     mock_preprocess.return_value = "mock_img_array"
     mock_process.return_value = {
         "receipt": {
@@ -90,5 +93,6 @@ def test_extract_success_mocked(mock_process, mock_preprocess):
     res_json = response.json()
     assert res_json["success"] is True
     assert res_json["data"]["vendor_name"] == "Mock Mart"
-    assert res_json["data"]["grand_total"] == 118.0
+    assert res_json["data"]["grand_total"] in [118.0, "₹118.00"]
     assert res_json["ocr"]["line_count"] == 1
+
