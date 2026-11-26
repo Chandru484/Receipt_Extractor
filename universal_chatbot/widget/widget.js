@@ -414,6 +414,16 @@
   let isSpeaking = false;
   let isProcessingMessage = false;
 
+  // Shared Audio, Pipeline, and Speech Engine state (declared upfront to prevent Temporal Dead Zone ReferenceErrors)
+  let sharedAudio = new Audio();
+  let audioUnlocked = false;
+  let currentAudio = null;
+  let currentPipelineAudio = null;
+  let currentPlayingBtn = null;
+  let pipelineActive = false;
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let recognition = null;
+
   function playListeningChime() {
     try {
       const AudioContextClass = window.AudioContext || window.webkitAudioContext;
@@ -712,13 +722,6 @@
     };
   }
 
-  // Load existing conversation or render initial welcome message
-  if (activeConvId) {
-    loadConversation(activeConvId);
-  } else {
-    appendMessage("bot", widgetConfig.welcome_message_ta || "வணக்கம்! சொல்லுங்க, உங்களுக்கு நான் எப்படி உதவலாம்?");
-  }
-
   // Fetch website config
   fetch(`${apiBase}/api/v1/chat/widget-config/${websiteId}`)
     .then(r => r.json())
@@ -728,11 +731,7 @@
     })
     .catch(() => {});
 
-
   // Pre-unlocked HTML5 Audio element for seamless auto-speech without browser autoplay blocks
-  let sharedAudio = new Audio();
-  let audioUnlocked = false;
-
   function unlockAudioPlayback() {
     if (audioUnlocked) return;
     audioUnlocked = true;
@@ -1078,11 +1077,6 @@
 
 
   // High-Definition Neural Speech & Audio Controls (Sentence-Level Pipelined)
-  let currentAudio = null;
-  let currentPipelineAudio = null;
-  let currentPlayingBtn = null;
-  let pipelineActive = false;
-
   function stopCurrentAudio() {
     pipelineActive = false;
     if (currentPipelineAudio) {
@@ -1591,9 +1585,6 @@
   };
 
   // Microphone Voice Input (High-Precision STT)
-  let recognition = null;
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-
   function startListening() {
     if (!recognition) return;
     if (micBtn.classList.contains("recording")) return;
@@ -1789,6 +1780,13 @@
     userInput.value = activeLang === "ta" ? "வாடிக்கையாளர் சேவை முகவரிடம் பேச வேண்டும்" : "I want to talk to human support";
     sendMessage();
   };
+
+  // Load existing conversation or render initial welcome message (after all UI & audio handlers are ready)
+  if (activeConvId) {
+    loadConversation(activeConvId);
+  } else {
+    appendMessage("bot", widgetConfig.welcome_message_ta || "வணக்கம்! சொல்லுங்க, உங்களுக்கு நான் எப்படி உதவலாம்?");
+  }
 
   // Expose global controller for host application testing & role switching
   window.UniversalChatbot = {
