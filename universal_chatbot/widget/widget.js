@@ -1781,14 +1781,6 @@
       s1.setAttribute("crossorigin", "*");
       document.head.appendChild(s1);
     }
-
-    // 3. Also provide a direct 1-click fallback link in the conversation
-    appendMessage(
-      "system-note",
-      activeLang === "ta"
-        ? `💬 நேரடி மனித வாடிக்கையாளர் சேவை இணைக்கப்படுகிறது... (<a href="${chatUrl}" target="_blank" style="font-weight:bold;color:#0369a1;text-decoration:underline;">இங்கே கிளிக் செய்து நேரலையாகப் பேசலாம்</a>)`
-        : `💬 Connecting to live support agent on Tawk.to... (<a href="${chatUrl}" target="_blank" style="font-weight:bold;color:#0369a1;text-decoration:underline;">Click Here to Open Direct Chat</a>)`
-    );
   }
 
   // Tawk.to human agent handoff button
