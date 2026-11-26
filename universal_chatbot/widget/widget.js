@@ -101,7 +101,11 @@
     .lang-select { background: rgba(255,255,255,0.2); color: #fff; border: 1px solid rgba(255,255,255,0.4); border-radius: 6px; padding: 4px 8px; font-size: 12px; cursor: pointer; outline: none; }
     .lang-select option { color: #111; }
     .chat-messages { flex: 1; padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; background: #f9fafb; }
-    .msg { max-width: 84%; padding: 10px 14px; border-radius: 14px; font-size: 13.5px; line-height: 1.45; word-wrap: break-word; }
+    .msg-group { display: flex; flex-direction: column; max-width: 84%; position: relative; }
+    .msg-group.user { align-self: flex-end; align-items: flex-end; }
+    .msg-group.bot { align-self: flex-start; align-items: flex-start; }
+    .msg-group.system-note { align-self: center; align-items: center; max-width: 90%; }
+    .msg { width: 100%; padding: 10px 14px; border-radius: 14px; font-size: 13.5px; line-height: 1.45; word-wrap: break-word; box-sizing: border-box; position: relative; transition: opacity 0.2s ease, transform 0.2s ease; }
     .msg.user { align-self: flex-end; background: ${widgetConfig.primary_color}; color: #fff; border-bottom-right-radius: 4px; }
     .msg.bot { align-self: flex-start; background: #ffffff; color: #1f2937; border: 1px solid #e5e7eb; border-bottom-left-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
     .msg.bot h3, .msg.bot h4 { font-size: 13.5px; font-weight: 700; margin: 8px 0 4px 0; color: #111827; }
@@ -118,6 +122,26 @@
     .speak-btn:hover { color: ${widgetConfig.primary_color}; background: #f3f4f6; }
     .speak-btn.playing { color: #ef4444; background: #fee2e2; font-weight: 600; }
     .citation-tag { background: #f3f4f6; color: #4b5563; padding: 2px 6px; border-radius: 4px; font-size: 10.5px; display: inline-flex; align-items: center; gap: 3px; border: 1px solid #e5e7eb; }
+    
+    /* Sleek Action Toolbar for Edit, Delete, Copy */
+    .msg-toolbar { display: flex; align-items: center; gap: 4px; margin-top: 3px; opacity: 0; transition: opacity 0.2s ease; font-size: 11px; flex-wrap: wrap; }
+    .msg-group:hover .msg-toolbar, .msg-group:focus-within .msg-toolbar, .msg-group.active-toolbar .msg-toolbar { opacity: 1; }
+    .msg-tool-btn { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 5px; padding: 2px 6px; font-size: 10.5px; color: #64748b; cursor: pointer; display: inline-flex; align-items: center; gap: 3px; box-shadow: 0 1px 2px rgba(0,0,0,0.03); transition: all 0.15s; }
+    .msg-tool-btn:hover { background: #f1f5f9; color: #0f172a; border-color: #cbd5e1; }
+    .msg-tool-btn.danger:hover { background: #fee2e2; color: #dc2626; border-color: #fca5a5; }
+    
+    /* Inline Message Editor */
+    .msg-edit-box { width: 100%; background: #ffffff; border: 1.5px solid ${widgetConfig.primary_color}; border-radius: 12px; padding: 8px 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); display: flex; flex-direction: column; gap: 6px; box-sizing: border-box; margin-top: 2px; }
+    .msg-edit-textarea { width: 100%; border: none; outline: none; font-family: inherit; font-size: 13.5px; line-height: 1.4; resize: vertical; min-height: 44px; color: #1f2937; background: transparent; box-sizing: border-box; }
+    .msg-edit-actions { display: flex; justify-content: flex-end; gap: 6px; }
+    .msg-edit-btn { border: none; border-radius: 6px; padding: 4px 10px; font-size: 11px; cursor: pointer; font-weight: 500; transition: opacity 0.15s; }
+    .msg-edit-save { background: ${widgetConfig.primary_color}; color: #fff; }
+    .msg-edit-save:hover { opacity: 0.9; }
+    .msg-edit-cancel { background: #f1f5f9; color: #475569; }
+    .msg-edit-cancel:hover { background: #e2e8f0; }
+    .edited-badge { font-size: 10px; opacity: 0.75; margin-left: 4px; font-style: italic; }
+    .msg-fade-out { opacity: 0 !important; transform: scale(0.95) translateY(-4px) !important; transition: opacity 0.2s ease, transform 0.2s ease !important; }
+
     .chat-input-area { padding: 10px 12px; background: #fff; border-top: 1px solid #e5e7eb; display: flex; align-items: center; gap: 6px; }
     .chat-input { flex: 1; border: 1px solid #d1d5db; border-radius: 20px; padding: 8px 14px; font-size: 13.5px; outline: none; transition: border-color 0.2s; }
     .chat-input:focus { border-color: ${widgetConfig.primary_color}; }
@@ -477,14 +501,22 @@
     return html;
   }
 
-  // Append message to UI
-  function appendMessage(role, text, citations = [], action = null) {
+  // Append message to UI with Edit and Delete options
+  function appendMessage(role, text, citations = [], action = null, messageId = null, pairId = null) {
+    const group = document.createElement("div");
+    group.className = `msg-group ${role}`;
+    if (messageId) group.dataset.messageId = messageId;
+    if (pairId) group.dataset.pairId = pairId;
+
     const div = document.createElement("div");
     div.className = `msg ${role}`;
+
+    const textSpan = document.createElement("div");
+    textSpan.className = "msg-text";
+
     if (role === "bot") {
-      const contentSpan = document.createElement("div");
-      contentSpan.innerHTML = formatMarkdown(text);
-      div.appendChild(contentSpan);
+      textSpan.innerHTML = formatMarkdown(text);
+      div.appendChild(textSpan);
 
       if (action) {
         const actionBadge = document.createElement("div");
@@ -493,42 +525,212 @@
         div.appendChild(actionBadge);
       }
     } else {
-      div.textContent = text;
+      textSpan.textContent = text;
+      div.appendChild(textSpan);
     }
+    group.appendChild(div);
 
     let createdSpeakBtn = null;
-    if (role === "bot") {
-      const actions = document.createElement("div");
-      actions.className = "msg-actions";
+    if (role === "user" || role === "bot") {
+      const toolbar = document.createElement("div");
+      toolbar.className = "msg-toolbar";
 
-      if (widgetConfig.allow_speech_output) {
-        const speakBtn = document.createElement("button");
-        speakBtn.className = "speak-btn";
-        speakBtn.innerHTML = "🔊 Listen";
-        speakBtn.onclick = () => toggleSpeech(text, activeLang, speakBtn);
-        actions.appendChild(speakBtn);
-        createdSpeakBtn = speakBtn;
+      if (role === "bot") {
+        if (widgetConfig.allow_speech_output) {
+          const speakBtn = document.createElement("button");
+          speakBtn.className = "msg-tool-btn";
+          speakBtn.innerHTML = `🔊 Listen`;
+          speakBtn.onclick = () => toggleSpeech(text, activeLang, speakBtn);
+          toolbar.appendChild(speakBtn);
+          createdSpeakBtn = speakBtn;
+        }
+
+        if (citations && citations.length > 0) {
+          citations.forEach(c => {
+            const citTag = document.createElement("span");
+            citTag.className = "citation-tag";
+            citTag.textContent = `📌 ${c.title || "Source"}`;
+            citTag.title = c.snippet || "";
+            toolbar.appendChild(citTag);
+          });
+        }
       }
 
-      if (citations && citations.length > 0) {
-        citations.forEach(c => {
-          const citTag = document.createElement("span");
-          citTag.className = "citation-tag";
-          citTag.textContent = `📌 ${c.title || "Source"}`;
-          citTag.title = c.snippet || "";
-          actions.appendChild(citTag);
-        });
+      // Copy Button
+      const copyBtn = document.createElement("button");
+      copyBtn.className = "msg-tool-btn";
+      copyBtn.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg> Copy`;
+      copyBtn.title = activeLang === "ta" ? "நகலெடு" : "Copy text";
+      copyBtn.onclick = () => {
+        try {
+          navigator.clipboard.writeText(text);
+          copyBtn.innerHTML = `✓ Copied`;
+          setTimeout(() => {
+            copyBtn.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg> Copy`;
+          }, 1500);
+        } catch (_) {}
+      };
+      toolbar.appendChild(copyBtn);
+
+      // Edit Button (Available for User messages)
+      if (role === "user") {
+        const editBtn = document.createElement("button");
+        editBtn.className = "msg-tool-btn";
+        editBtn.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg> Edit`;
+        editBtn.title = activeLang === "ta" ? "செய்தியைத் திருத்து" : "Edit message";
+        editBtn.onclick = () => openInlineEdit(group, div, textSpan);
+        toolbar.appendChild(editBtn);
       }
 
-      if (actions.children.length > 0) {
-        div.appendChild(actions);
-      }
+      // Delete Button (Available for both User and Bot messages)
+      const deleteBtn = document.createElement("button");
+      deleteBtn.className = "msg-tool-btn danger";
+      deleteBtn.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg> Delete`;
+      deleteBtn.title = activeLang === "ta" ? "செய்தியை நீக்கு" : "Delete message";
+      deleteBtn.onclick = () => deleteMessageElement(group);
+      toolbar.appendChild(deleteBtn);
+
+      group.appendChild(toolbar);
     }
 
-    msgList.appendChild(div);
+    msgList.appendChild(group);
     msgList.scrollTop = msgList.scrollHeight;
-    return { element: div, speakBtn: createdSpeakBtn };
+    return { group, element: div, textSpan, speakBtn: createdSpeakBtn };
   }
+
+  // Open inline editor for a user message
+  function openInlineEdit(group, msgBubble, textSpan) {
+    if (group.querySelector(".msg-edit-box")) return;
+
+    const currentText = textSpan.textContent.replace(/\s*\(edited\)$/, "");
+    msgBubble.style.display = "none";
+    const toolbar = group.querySelector(".msg-toolbar");
+    if (toolbar) toolbar.style.display = "none";
+
+    const editBox = document.createElement("div");
+    editBox.className = "msg-edit-box";
+
+    const textarea = document.createElement("textarea");
+    textarea.className = "msg-edit-textarea";
+    textarea.value = currentText;
+    textarea.placeholder = activeLang === "ta" ? "உங்கள் செய்தியைத் திருத்துங்கள்..." : "Edit your message...";
+
+    const actions = document.createElement("div");
+    actions.className = "msg-edit-actions";
+
+    const cancelBtn = document.createElement("button");
+    cancelBtn.className = "msg-edit-btn msg-edit-cancel";
+    cancelBtn.textContent = activeLang === "ta" ? "ரத்து (Cancel)" : "Cancel";
+    cancelBtn.onclick = () => {
+      editBox.remove();
+      msgBubble.style.display = "block";
+      if (toolbar) toolbar.style.display = "flex";
+    };
+
+    const saveBtn = document.createElement("button");
+    saveBtn.className = "msg-edit-btn msg-edit-save";
+    saveBtn.textContent = activeLang === "ta" ? "மாற்றி அனுப்பு (Save & Send)" : "Save & Send";
+    saveBtn.onclick = () => {
+      const newText = textarea.value.trim();
+      if (!newText) return;
+      if (newText === currentText) {
+        editBox.remove();
+        msgBubble.style.display = "block";
+        if (toolbar) toolbar.style.display = "flex";
+        return;
+      }
+
+      // Update text in UI
+      textSpan.textContent = newText;
+      let badge = msgBubble.querySelector(".edited-badge");
+      if (!badge) {
+        badge = document.createElement("span");
+        badge.className = "edited-badge";
+        badge.textContent = "(edited)";
+        msgBubble.appendChild(badge);
+      }
+      editBox.remove();
+      msgBubble.style.display = "block";
+      if (toolbar) toolbar.style.display = "flex";
+
+      const oldMsgId = group.dataset.messageId;
+      const pairId = group.dataset.pairId;
+
+      // Remove the previous bot response that answered this old question
+      if (pairId) {
+        const pairedBotMsg = msgList.querySelector(`.msg-group.bot[data-pair-id="${pairId}"]`);
+        if (pairedBotMsg) {
+          deleteMessageElement(pairedBotMsg, false);
+        }
+      }
+
+      // Delete old message record in MongoDB
+      if (oldMsgId) {
+        fetch(`${apiBase}/api/v1/chat/messages/${oldMsgId}`, {
+          method: "DELETE",
+        }).catch(() => {});
+      }
+
+      // Generate a new fresh pairId for the updated interaction
+      const newPairId = "pair_" + Date.now();
+      group.dataset.pairId = newPairId;
+      delete group.dataset.messageId;
+
+      // Send the edited prompt to chatbot backend
+      sendMessageWithText(newText, false, newPairId, group);
+    };
+
+    textarea.onkeydown = (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        saveBtn.click();
+      } else if (e.key === "Escape") {
+        cancelBtn.click();
+      }
+    };
+
+    actions.appendChild(cancelBtn);
+    actions.appendChild(saveBtn);
+    editBox.appendChild(textarea);
+    editBox.appendChild(actions);
+
+    group.insertBefore(editBox, msgBubble);
+    textarea.focus();
+    textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+  }
+
+  // Delete message element from UI and backend database
+  function deleteMessageElement(group, notifyBackend = true) {
+    const msgId = group.dataset.messageId;
+    const pairId = group.dataset.pairId;
+    const isUser = group.classList.contains("user");
+
+    // Stop audio immediately if speaking
+    stopCurrentAudio();
+
+    group.classList.add("msg-fade-out");
+
+    setTimeout(() => {
+      group.remove();
+
+      // If user deletes their question, also remove the paired bot response
+      if (isUser && pairId) {
+        const pairedBot = msgList.querySelector(`.msg-group.bot[data-pair-id="${pairId}"]`);
+        if (pairedBot) {
+          pairedBot.classList.add("msg-fade-out");
+          setTimeout(() => pairedBot.remove(), 200);
+        }
+      }
+
+      // Delete from backend MongoDB
+      if (notifyBackend && msgId) {
+        fetch(`${apiBase}/api/v1/chat/messages/${msgId}`, {
+          method: "DELETE",
+        }).catch(() => {});
+      }
+    }, 200);
+  }
+
 
   // High-Definition Neural Speech & Audio Controls (Sentence-Level Pipelined)
   let currentAudio = null;
@@ -915,8 +1117,11 @@
   function sendMessage(isVoice = false) {
     const text = userInput.value.trim();
     if (!text) return;
-    appendMessage("user", text);
     userInput.value = "";
+    sendMessageWithText(text, isVoice);
+  }
+
+  function sendMessageWithText(text, isVoice = false, existingPairId = null, existingUserGroup = null) {
     unlockAudioPlayback();
     isProcessingMessage = true;
     if (isCallModeActive) {
@@ -927,10 +1132,24 @@
       if (callBannerText) callBannerText.textContent = "⏳ சிந்திக்கிறது... (Thinking...)";
     }
 
+    const pairId = existingPairId || ("pair_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7));
+
+    let userGroup = existingUserGroup;
+    if (!userGroup) {
+      const userRes = appendMessage("user", text, [], null, null, pairId);
+      userGroup = userRes ? userRes.group : null;
+    } else {
+      userGroup.dataset.pairId = pairId;
+    }
+
+    const loadingGroup = document.createElement("div");
+    loadingGroup.className = "msg-group bot";
+    loadingGroup.dataset.pairId = pairId;
     const loadingDiv = document.createElement("div");
     loadingDiv.className = "msg bot";
-    loadingDiv.textContent = "சிந்திக்கிறது...";
-    msgList.appendChild(loadingDiv);
+    loadingDiv.textContent = activeLang === "ta" ? "சிந்திக்கிறது..." : "Thinking...";
+    loadingGroup.appendChild(loadingDiv);
+    msgList.appendChild(loadingGroup);
     msgList.scrollTop = msgList.scrollHeight;
 
     fetch(`${apiBase}/api/v1/chat/message`, {
@@ -950,10 +1169,15 @@
       .then(r => r.json())
       .then(data => {
         isProcessingMessage = false;
-        loadingDiv.remove();
+        loadingGroup.remove();
         activeConvId = data.conversation_id;
 
-        const msgRes = appendMessage("bot", data.reply, data.citations, data.action);
+        // Attach message_id to user message group for future delete/edit
+        if (userGroup && data.message_id) {
+          userGroup.dataset.messageId = data.message_id;
+        }
+
+        const msgRes = appendMessage("bot", data.reply, data.citations, data.action, data.message_id, pairId);
 
         // Execute website action if command detected
         if (data.action) {
@@ -971,8 +1195,8 @@
       })
       .catch(() => {
         isProcessingMessage = false;
-        loadingDiv.remove();
-        appendMessage("bot", "சேவையகப் பிழை ஏற்பட்டது. மீண்டும் முயற்சிக்கவும்.");
+        loadingGroup.remove();
+        appendMessage("bot", activeLang === "ta" ? "சேவையகப் பிழை ஏற்பட்டது. மீண்டும் முயற்சிக்கவும்." : "Server error. Please try again.");
       });
   }
 

@@ -1,8 +1,12 @@
 from typing import Any, Dict
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Header, status
-from universal_chatbot.backend.app.schemas.chat_schema import ChatMessageRequest, ChatMessageResponse
+from universal_chatbot.backend.app.schemas.chat_schema import ChatMessageRequest, ChatMessageResponse, EditMessageRequest
 from universal_chatbot.backend.app.services.chat_orchestrator import chat_orchestrator
-from universal_chatbot.backend.app.services.conversation_service import get_conversation_history
+from universal_chatbot.backend.app.services.conversation_service import (
+    get_conversation_history,
+    delete_message,
+    update_user_message,
+)
 from universal_chatbot.backend.app.services.tenant_service import get_website_by_id
 from universal_chatbot.backend.app.services.voice_service import prewarm_tts_cache
 
@@ -59,3 +63,28 @@ def get_widget_configuration(website_id: str):
         "website_id": website_id,
         **site.get("widget_config", {})
     }
+
+
+@router.delete("/messages/{message_id}", summary="Delete message from chat history")
+def delete_chat_message(message_id: str):
+    """Delete a specific message interaction from MongoDB conversation history."""
+    success = delete_message(message_id)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Message '{message_id}' not found or already deleted."
+        )
+    return {"success": True, "message_id": message_id}
+
+
+@router.put("/messages/{message_id}", summary="Edit existing user message")
+def edit_chat_message(message_id: str, request: EditMessageRequest):
+    """Edit the user's prompt text in an existing message interaction."""
+    success = update_user_message(message_id, request.message)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Message '{message_id}' not found."
+        )
+    return {"success": True, "message_id": message_id, "updated_message": request.message}
+

@@ -192,3 +192,36 @@ def test_website_action_and_tamil_voice_recognition():
         assert data["action"] is not None
         assert data["action"]["action_type"] == "show_latest_report"
         assert data["action"]["target"] == "#outputCard"
+
+
+def test_delete_and_edit_message():
+    """Verify deleting and editing messages via chat routes."""
+    mock_messages = MagicMock()
+    mock_convs = MagicMock()
+
+    mock_messages.find_one.return_value = {
+        "message_id": "msg_test123",
+        "conversation_id": "conv_test123",
+        "user_message": "Original query",
+        "bot_reply": "Original answer",
+    }
+    mock_messages.delete_one.return_value = MagicMock(deleted_count=1)
+    mock_messages.update_one.return_value = MagicMock(matched_count=1)
+
+    with patch("universal_chatbot.backend.app.database.collections.get_messages_collection", return_value=mock_messages), \
+         patch("universal_chatbot.backend.app.database.collections.get_conversations_collection", return_value=mock_convs):
+
+        client = TestClient(app)
+
+        # 1. Edit message
+        edit_resp = client.put("/api/v1/chat/messages/msg_test123", json={"message": "Updated query"})
+        assert edit_resp.status_code == 200
+        assert edit_resp.json()["success"] is True
+        assert edit_resp.json()["updated_message"] == "Updated query"
+
+        # 2. Delete message
+        del_resp = client.delete("/api/v1/chat/messages/msg_test123")
+        assert del_resp.status_code == 200
+        assert del_resp.json()["success"] is True
+        assert del_resp.json()["message_id"] == "msg_test123"
+

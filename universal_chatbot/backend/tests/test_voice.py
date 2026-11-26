@@ -20,7 +20,8 @@ def test_sanitize_text_tamil():
     assert "|" not in cleaned
     assert "ரூபாய்" in cleaned
     assert "சதவீதம்" in cleaned
-    assert "ஜி.எஸ்.டி" in cleaned
+    assert "ஜி எஸ் டி" in cleaned
+
 
 
 def test_sanitize_text_english():

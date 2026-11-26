@@ -46,3 +46,8 @@ class ConversationSummary(BaseModel):
     message_count: int
     created_at: str
     updated_at: str
+
+
+class EditMessageRequest(BaseModel):
+    message: str = Field(..., min_length=1, max_length=4000, description="Updated message content")
+

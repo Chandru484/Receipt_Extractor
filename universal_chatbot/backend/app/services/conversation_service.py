@@ -121,6 +121,69 @@ def get_conversation_history(conversation_id: str, limit: int = 20) -> List[Dict
     return formatted
 
 
+def delete_message(message_id: str) -> bool:
+    """Delete a message interaction from MongoDB and decrement conversation message count."""
+    messages = collections.get_messages_collection()
+    convs = collections.get_conversations_collection()
+    if messages is None:
+        return False
+
+    msg = messages.find_one({"message_id": message_id})
+    if not msg:
+        return False
+
+    conv_id = msg.get("conversation_id")
+    result = messages.delete_one({"message_id": message_id})
+    if result.deleted_count > 0:
+        if convs is not None and conv_id:
+            convs.update_one(
+                {"conversation_id": conv_id, "message_count": {"$gt": 0}},
+                {"$inc": {"message_count": -2}}
+            )
+        return True
+    return False
+
+
+def update_user_message(message_id: str, new_user_message: str) -> bool:
+    """Update a user's prompt text in an existing message interaction."""
+    messages = collections.get_messages_collection()
+    if messages is None:
+        return False
+
+    now_str = get_ist_now_str()
+    result = messages.update_one(
+        {"message_id": message_id},
+        {
+            "$set": {
+                "user_message": new_user_message,
+                "is_edited": True,
+                "edited_at": now_str,
+            }
+        }
+    )
+    return result.matched_count > 0
+
+
+def update_bot_reply(message_id: str, new_bot_reply: str) -> bool:
+    """Update the bot's reply text when a message is re-generated."""
+    messages = collections.get_messages_collection()
+    if messages is None:
+        return False
+
+    now_str = get_ist_now_str()
+    result = messages.update_one(
+        {"message_id": message_id},
+        {
+            "$set": {
+                "bot_reply": new_bot_reply,
+                "updated_at": now_str,
+            }
+        }
+    )
+    return result.matched_count > 0
+
+
+
 def record_support_handoff(
     website_id: str,
     tenant_id: str,
