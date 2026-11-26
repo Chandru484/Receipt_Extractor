@@ -298,15 +298,13 @@ class ChatOrchestrator:
         user_msg_lower = request.message.lower().strip()
         site_default_lang = widget_cfg.get("default_language", "en")
 
-        # Default language is English ("en").
-        # If user explicitly passed language ("en" or "ta"), honor it.
-        # Otherwise auto-detect: if Tamil Unicode text is detected in user prompt, use "ta", else default to "en".
-        if request.language == "ta":
+        # Language resolution:
+        # If Tamil script is detected in user message, prioritize Tamil ("ta").
+        # Otherwise honor explicitly passed language, falling back to site default ("en").
+        if re.search(r"[\u0B80-\u0BFF]", request.message):
             effective_lang = "ta"
-        elif request.language == "en":
-            effective_lang = "en"
-        elif re.search(r"[\u0B80-\u0BFF]", request.message):
-            effective_lang = "ta"
+        elif request.language in ("en", "ta"):
+            effective_lang = request.language
         else:
             effective_lang = site_default_lang or "en"
 
@@ -558,6 +556,20 @@ class ChatOrchestrator:
         )
 
         bot_reply = ai_res.get("reply", "")
+
+        # Graceful fallback: If external LLMs encountered an issue but an action or DB record was found, provide clear confirmation
+        if ai_res.get("provider") == "emergency_fallback":
+            if action and action.get("action_type") == "show_latest_report":
+                rec = action.get("data") or {}
+                v_name = rec.get("vendor_name") or rec.get("vendor_or_seller") or "Vendor"
+                g_total = rec.get("grand_total") or rec.get("total_amount") or ""
+                if effective_lang == "ta":
+                    bot_reply = f"சமீபத்திய ரசீது அறிக்கை திரையில் காட்டப்படுகிறது. கடை பெயர்: {v_name}" + (f", மொத்த தொகை: {g_total}." if g_total else ".")
+                else:
+                    bot_reply = f"The latest receipt report is displayed on the screen. Vendor: {v_name}" + (f" — Total Amount: {g_total}." if g_total else ".")
+            elif action and action.get("action_type") == "navigate":
+                target_label = action.get("label") or "requested page"
+                bot_reply = f"Navigating to {target_label}." if effective_lang != "ta" else f"{target_label} பக்கத்திற்கு செல்கிறேன்."
 
         # Strip repetitive robot greeting prefix if user query was not an explicit greeting
         greetings = ["வணக்கம்", "hi", "hello", "hey", "vanakkam", "வாழ்த்து", "good morning", "good evening"]
