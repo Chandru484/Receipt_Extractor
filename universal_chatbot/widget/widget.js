@@ -84,49 +84,6 @@
     .header-btn { background: rgba(255,255,255,0.18); border: 1px solid rgba(255,255,255,0.35); color: #fff; border-radius: 14px; padding: 4px 9px; font-size: 11px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; transition: all 0.15s; font-weight: 500; }
     .header-btn:hover { background: rgba(255,255,255,0.3); }
     .header-btn.active { background: #16a34a !important; border-color: #22c55e !important; color: #fff !important; font-weight: 700; box-shadow: 0 0 10px rgba(34, 197, 94, 0.5); }
-    .call-banner { background: #0f172a; color: #f8fafc; padding: 8px 14px; font-size: 11.5px; display: flex; align-items: center; justify-content: space-between; gap: 8px; border-bottom: 1px solid #1e293b; transition: all 0.2s; }
-    .audio-waveform { display: inline-flex; align-items: center; gap: 3.5px; height: 18px; padding: 0 2px; }
-    .wave-bar { width: 3.5px; height: 5px; border-radius: 4px; background: #64748b; transition: height 0.15s ease, background 0.2s ease; }
-    
-    .call-banner.speaking .wave-bar {
-      background: linear-gradient(180deg, #38bdf8, #2563eb);
-      animation: waveJump 0.75s infinite ease-in-out alternate;
-    }
-    .call-banner.listening .wave-bar {
-      background: linear-gradient(180deg, #4ade80, #16a34a);
-      animation: waveJump 0.55s infinite ease-in-out alternate;
-    }
-    .call-banner.thinking .wave-bar {
-      background: linear-gradient(180deg, #c084fc, #7c3aed);
-      animation: wavePulse 0.9s infinite ease-in-out alternate;
-    }
-    .call-banner.speaking .bar-1 { animation-delay: 0.0s; }
-    .call-banner.speaking .bar-2 { animation-delay: 0.18s; }
-    .call-banner.speaking .bar-3 { animation-delay: 0.35s; }
-    .call-banner.speaking .bar-4 { animation-delay: 0.12s; }
-    .call-banner.speaking .bar-5 { animation-delay: 0.26s; }
-
-    .call-banner.listening .bar-1 { animation-delay: 0.05s; }
-    .call-banner.listening .bar-2 { animation-delay: 0.22s; }
-    .call-banner.listening .bar-3 { animation-delay: 0.10s; }
-    .call-banner.listening .bar-4 { animation-delay: 0.32s; }
-    .call-banner.listening .bar-5 { animation-delay: 0.18s; }
-
-    .call-banner.thinking .bar-1 { animation-delay: 0.0s; }
-    .call-banner.thinking .bar-2 { animation-delay: 0.15s; }
-    .call-banner.thinking .bar-3 { animation-delay: 0.3s; }
-    .call-banner.thinking .bar-4 { animation-delay: 0.15s; }
-    .call-banner.thinking .bar-5 { animation-delay: 0.0s; }
-
-    @keyframes waveJump {
-      0% { height: 4px; }
-      50% { height: 18px; }
-      100% { height: 7px; }
-    }
-    @keyframes wavePulse {
-      0% { height: 5px; opacity: 0.5; }
-      100% { height: 13px; opacity: 1; }
-    }
 
     .mini-waveform { display: inline-flex; align-items: center; gap: 2px; height: 12px; margin-right: 3px; }
     .mbar { width: 2.5px; height: 4px; background: currentColor; border-radius: 2px; animation: miniWave 0.7s infinite alternate ease-in-out; }
@@ -135,8 +92,6 @@
     .mbar:nth-child(3) { animation-delay: 0.4s; }
     @keyframes miniWave { 0% { height: 3px; } 100% { height: 11px; } }
 
-    .end-call-btn { background: #dc2626; color: #fff; border: none; border-radius: 10px; padding: 3px 8px; font-size: 10.5px; cursor: pointer; font-weight: 600; transition: background 0.15s; }
-    .end-call-btn:hover { background: #b91c1c; }
     .lang-select { background: rgba(255,255,255,0.2); color: #fff; border: 1px solid rgba(255,255,255,0.4); border-radius: 6px; padding: 4px 8px; font-size: 12px; cursor: pointer; outline: none; }
     .lang-select option { color: #111; }
     .chat-messages { flex: 1; padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; background: #f9fafb; }
@@ -341,10 +296,6 @@
           <span class="chat-title" id="botHeader">${widgetConfig.bot_name || "AI Assistant"}</span>
         </div>
         <div style="display: flex; align-items: center; gap: 6px;">
-          <button class="header-btn" id="callModeBtn" title="Start Hands-Free Voice Call (தொடர் குரல் அழைப்பு)">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M20.01 15.38c-1.23 0-2.42-.2-3.53-.56a.977.977 0 00-1.01.24l-1.57 1.97c-2.83-1.44-5.15-3.75-6.59-6.59l1.97-1.57c.28-.28.36-.67.25-1.02A11.36 11.36 0 018.96 4.3c0-.55-.45-1-1-1H4.45c-.55 0-1 .45-1 1 0 9.39 7.61 17 17 17 .55 0 1-.45 1-1v-3.56c0-.55-.45-.96-.44-.96z"/></svg>
-            <span id="callModeLabel">Voice Call</span>
-          </button>
           <button class="header-btn" id="historyBtn" title="View Past Chat History (முந்தைய உரையாடல்கள்)">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
             <span id="historyBtnLabel">History</span>
@@ -371,19 +322,6 @@
           </div>
         </div>
         <div class="history-list" id="historyList"></div>
-      </div>
-      <div class="call-banner" id="callBanner" style="display: none;">
-        <div style="display: flex; align-items: center; gap: 10px;">
-          <div class="audio-waveform" id="callWaveform">
-            <span class="wave-bar bar-1"></span>
-            <span class="wave-bar bar-2"></span>
-            <span class="wave-bar bar-3"></span>
-            <span class="wave-bar bar-4"></span>
-            <span class="wave-bar bar-5"></span>
-          </div>
-          <span id="callBannerText" style="font-weight: 500;">📞 நேரலை குரல் அழைப்பு (Live Call Active)</span>
-        </div>
-        <button id="endCallBtn" class="end-call-btn">End Call</button>
       </div>
       <div class="chat-messages" id="msgList"></div>
       <div class="suggestions-container" id="suggBox">
@@ -437,11 +375,6 @@
   const closeHistoryBtn = shadow.getElementById("closeHistoryBtn");
   const historyNewChatBtn = shadow.getElementById("historyNewChatBtn");
   const historyTitle = shadow.getElementById("historyTitle");
-  const callModeBtn = shadow.getElementById("callModeBtn");
-  const callModeLabel = shadow.getElementById("callModeLabel");
-  const callBanner = shadow.getElementById("callBanner");
-  const callBannerText = shadow.getElementById("callBannerText");
-  const endCallBtn = shadow.getElementById("endCallBtn");
   try { localStorage.removeItem("chat_voice_engine"); } catch (_) {}
   let isCallModeActive = false;
   let isSpeaking = false;
@@ -476,53 +409,6 @@
       osc.stop(ctx.currentTime + 0.25);
     } catch (_) {}
   }
-
-  function toggleCallMode() {
-    unlockAudioPlayback();
-    if (isCallModeActive) {
-      endCallMode();
-    } else {
-      startCallMode();
-    }
-  }
-
-  function startCallMode() {
-    isCallModeActive = true;
-    if (callModeBtn) callModeBtn.classList.add("active");
-    if (callBanner) {
-      callBanner.style.display = "flex";
-      callBanner.classList.remove("listening");
-    }
-    if (callBannerText) callBannerText.textContent = "📞 நேரலை குரல் அழைப்பு துவங்கியது...";
-    appendMessage(
-      "system-note",
-      activeLang === "ta"
-        ? "📞 நேரலை தொடர் குரல் அழைப்பு துவங்கப்பட்டுள்ளது. நீங்கள் இனி எதையும் அழுத்தாமல் தொடர்ச்சியாக தமிழில் பேசலாம்!"
-        : "📞 Hands-Free Voice Call active. You can now speak back and forth continuously without clicking any buttons!"
-    );
-
-    const firstSpeakBtn = msgList.querySelector(".speak-btn");
-    const welcomeVoiceText = activeLang === "ta" ? "சொல்லுங்க, கேட்கிறேன்..." : "I'm listening, please go ahead...";
-    playSpeech(welcomeVoiceText, activeLang, firstSpeakBtn);
-  }
-
-  function endCallMode() {
-    isCallModeActive = false;
-    isSpeaking = false;
-    if (callModeBtn) callModeBtn.classList.remove("active");
-    if (callBanner) {
-      callBanner.style.display = "none";
-      callBanner.classList.remove("speaking", "listening", "thinking");
-    }
-    stopCurrentAudio();
-    if (recognition) {
-      try { recognition.stop(); } catch (_) {}
-    }
-    if (micBtn) micBtn.classList.remove("recording");
-  }
-
-  if (callModeBtn) callModeBtn.onclick = toggleCallMode;
-  if (endCallBtn) endCallBtn.onclick = endCallMode;
 
   function removeTawkTo(notify = true) {
     if (window.Tawk_API && typeof window.Tawk_API.hideWidget === "function") {
@@ -1889,15 +1775,6 @@
       unlockAudioPlayback();
       resetConversation(true);
       speakWelcomeGreeting();
-    },
-    startCall: function () {
-      if (!isCallModeActive) toggleCallMode();
-    },
-    endCall: function () {
-      if (isCallModeActive) endCallMode();
-    },
-    isCallActive: function () {
-      return isCallModeActive;
     },
     removeTawkTo: function () {
       removeTawkTo(true);
