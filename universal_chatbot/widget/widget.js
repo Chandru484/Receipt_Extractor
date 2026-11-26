@@ -565,11 +565,21 @@
     return { element: div, speakBtn: createdSpeakBtn };
   }
 
-  // High-Definition Neural Speech & Audio Controls
+  // High-Definition Neural Speech & Audio Controls (Sentence-Level Pipelined)
   let currentAudio = null;
+  let currentPipelineAudio = null;
   let currentPlayingBtn = null;
+  let pipelineActive = false;
 
   function stopCurrentAudio() {
+    pipelineActive = false;
+    if (currentPipelineAudio) {
+      try {
+        currentPipelineAudio.pause();
+        currentPipelineAudio.currentTime = 0;
+      } catch (_) {}
+      currentPipelineAudio = null;
+    }
     if (currentAudio) {
       currentAudio.pause();
       currentAudio.currentTime = 0;
@@ -589,9 +599,17 @@
     }
   }
 
+  function splitIntoSentences(text) {
+    if (!text) return [];
+    // Split on sentence boundaries (. ? ! newline or comma in long clauses)
+    const raw = text.split(/(?<=[.?!।\n])\s+/);
+    return raw.map(s => s.trim()).filter(s => s.length > 1);
+  }
+
   function sanitizeTamilTextForSpeech(text) {
     if (!text) return "";
     let cleaned = text
+      .replace(/[\u00A0\u1680\u2000-\u200B\u202F\u205F\u3000]/g, " ")
       .replace(/[*#_`|]/g, " ")
       .replace(/https?:\/\/\S+/g, "")
       .replace(/உங்களுக்கு\s*வேற\s*ஏதாச்சும்\s*உதவி\s*வேணுமா[?.]?/gi, "")
@@ -634,11 +652,12 @@
       .replace(/\bSurya\b/gi, "சூர்யா")
       .replace(/\bAgency\b/gi, "ஏஜென்சி")
       .replace(/\bElectricals\b/gi, "எலக்ட்ரிக்கல்ஸ்")
+      .replace(/\bTekis\b/gi, "டெக்கிஸ்")
       .replace(/\bAI\b/g, "ஏ.ஐ")
       .replace(/\bPDF\b/g, "பி.டி.எஃப்")
       .replace(/\bG\s*Pay\b/gi, "ஜி பே")
       .replace(/[-\u2010-\u2015\u2212]\s*(\d{6})\b/g, " பின்கோடு $1")
-      .replace(/ஜி\.எஸ்\.டி எண்:?\s*([0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1})/g, (m, g) => "ஜி.எஸ்.டி எண் " + g.split("").join(" "))
+      .replace(/\b([0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1})\b/g, (m) => m.split("").join(" "))
       .replace(/[:;]/g, " ")
       .replace(/\//g, " அல்லது ")
       .replace(/[()]/g, ", ")
@@ -663,71 +682,95 @@
       return;
     }
 
-    // HD Cloud Mode: Microsoft Edge Neural TTS with pre-warmed streaming & 1.1s watchdog
+    // HD Cloud Mode: Sentence-Level Pipelining for ultra-low ~200-300ms latency
+    const sentences = splitIntoSentences(cleanText);
+    if (sentences.length === 0) return;
+
     if (btn) {
-      btn.innerHTML = '<span class="mini-waveform"><span class="mbar"></span><span class="mbar"></span><span class="mbar"></span></span> ⏳ Loading...';
+      btn.innerHTML = '<span class="mini-waveform"><span class="mbar"></span><span class="mbar"></span><span class="mbar"></span></span> ⏹️ Stop';
       btn.classList.add("playing");
       currentPlayingBtn = btn;
     }
 
-    const ttsUrl = `${apiBase}/api/v1/voice/tts?text=${encodeURIComponent(cleanText)}&language=${targetLang}`;
-    sharedAudio.src = ttsUrl;
-    currentAudio = sharedAudio;
+    pipelineActive = true;
+    let nextPreloadedAudio = null;
 
-    let watchdogTimer = setTimeout(() => {
-      if (!isSpeaking) {
-        console.warn("HD Cloud voice buffering, switching to instant voice to avoid delay");
-        playBrowserSpeech(cleanText, targetLang, btn, onEndedCallback);
-      }
-    }, 1100);
-
-    sharedAudio.onplay = () => {
-      clearTimeout(watchdogTimer);
-      isSpeaking = true;
-      if (btn) btn.innerHTML = '<span class="mini-waveform"><span class="mbar"></span><span class="mbar"></span><span class="mbar"></span></span> ⏹️ Stop';
-      if (isCallModeActive) {
-        if (callBanner) {
-          callBanner.classList.remove("listening", "thinking");
-          callBanner.classList.add("speaking");
-        }
-        if (callBannerText) callBannerText.textContent = "🔊 AI பேசுகிறது... (AI Speaking...)";
-      }
-    };
-
-    sharedAudio.onended = () => {
-      clearTimeout(watchdogTimer);
-      isSpeaking = false;
-      stopCurrentAudio();
-      if (onEndedCallback) onEndedCallback();
-      if (isCallModeActive) {
-        if (callBanner) {
-          callBanner.classList.remove("speaking", "thinking");
-          callBanner.classList.add("listening");
-        }
-        if (callBannerText) callBannerText.textContent = "🎙️ உங்களைக் கேட்கிறது... (Listening to you...)";
-        playListeningChime();
-        setTimeout(() => {
-          if (isCallModeActive && !isSpeaking && !isProcessingMessage) {
-            startListening();
+    function playSentenceIndex(index) {
+      if (!pipelineActive || index >= sentences.length) {
+        pipelineActive = false;
+        isSpeaking = false;
+        stopCurrentAudio();
+        if (onEndedCallback) onEndedCallback();
+        if (isCallModeActive) {
+          if (callBanner) {
+            callBanner.classList.remove("speaking", "thinking");
+            callBanner.classList.add("listening");
           }
-        }, 380);
+          if (callBannerText) callBannerText.textContent = "🎙️ உங்களைக் கேட்கிறது... (Listening to you...)";
+          playListeningChime();
+          setTimeout(() => {
+            if (isCallModeActive && !isSpeaking && !isProcessingMessage) {
+              startListening();
+            }
+          }, 380);
+        }
+        return;
       }
-    };
 
-    sharedAudio.onerror = (err) => {
-      clearTimeout(watchdogTimer);
-      console.warn("sharedAudio stream error, falling back to browser speech:", err);
-      playBrowserSpeech(cleanText, targetLang, btn, onEndedCallback);
-    };
+      const sText = sentences[index];
+      const sUrl = `${apiBase}/api/v1/voice/tts?text=${encodeURIComponent(sText)}&language=${targetLang}`;
+      
+      const audioObj = nextPreloadedAudio || new Audio(sUrl);
+      nextPreloadedAudio = null;
+      currentPipelineAudio = audioObj;
+      currentAudio = audioObj;
 
-    const playPromise = sharedAudio.play();
-    if (playPromise !== undefined) {
-      playPromise.catch(playErr => {
+      // Pipeline pre-fetch: start buffering the NEXT sentence in the background while current is speaking!
+      if (index + 1 < sentences.length) {
+        const nextUrl = `${apiBase}/api/v1/voice/tts?text=${encodeURIComponent(sentences[index + 1])}&language=${targetLang}`;
+        nextPreloadedAudio = new Audio(nextUrl);
+        nextPreloadedAudio.preload = "auto";
+      }
+
+      let watchdogTimer = setTimeout(() => {
+        if (!isSpeaking) {
+          console.warn("HD Cloud voice buffering, switching to instant voice to avoid delay");
+          playBrowserSpeech(cleanText, targetLang, btn, onEndedCallback);
+        }
+      }, 1200);
+
+      audioObj.onplay = () => {
         clearTimeout(watchdogTimer);
-        console.warn("sharedAudio play blocked, using browser fallback:", playErr);
+        isSpeaking = true;
+        if (btn) btn.innerHTML = '<span class="mini-waveform"><span class="mbar"></span><span class="mbar"></span><span class="mbar"></span></span> ⏹️ Stop';
+        if (isCallModeActive) {
+          if (callBanner) {
+            callBanner.classList.remove("listening", "thinking");
+            callBanner.classList.add("speaking");
+          }
+          if (callBannerText) callBannerText.textContent = "🔊 AI பேசுகிறது... (AI Speaking...)";
+        }
+      };
+
+      audioObj.onended = () => {
+        clearTimeout(watchdogTimer);
+        playSentenceIndex(index + 1);
+      };
+
+      audioObj.onerror = (err) => {
+        clearTimeout(watchdogTimer);
+        console.warn("Sentence pipeline error, falling back to instant speech:", err);
+        playBrowserSpeech(cleanText, targetLang, btn, onEndedCallback);
+      };
+
+      audioObj.play().catch(playErr => {
+        clearTimeout(watchdogTimer);
+        console.warn("Audio play blocked, using browser fallback:", playErr);
         playBrowserSpeech(cleanText, targetLang, btn, onEndedCallback);
       });
     }
+
+    playSentenceIndex(0);
   }
 
   function toggleSpeech(text, lang, btn = null) {
@@ -948,6 +991,12 @@
     if (!recognition) return;
     if (micBtn.classList.contains("recording")) return;
     stopCurrentAudio();
+
+    // Pre-warm Edge-TTS connection and backend caches on mic open for zero latency
+    try {
+      fetch(`${apiBase}/api/v1/voice/warmup`, { method: "POST" }).catch(() => {});
+    } catch (_) {}
+
     recognition.lang = "ta-IN";
     userInput.value = "";
     userInput.placeholder = "🎙️ தமிழில் பேசவும்... கேட்கிறேன் (Listening... speak)...";

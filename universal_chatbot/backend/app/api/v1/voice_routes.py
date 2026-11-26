@@ -1,4 +1,5 @@
 import urllib.parse
+import asyncio
 from typing import Optional
 from fastapi import APIRouter, Query, HTTPException, status
 from fastapi.responses import StreamingResponse
@@ -6,10 +7,24 @@ from pydantic import BaseModel
 
 from universal_chatbot.backend.app.services.voice_service import (
     generate_speech_stream,
+    prewarm_tts_cache,
     DEFAULT_VOICES,
 )
 
 router = APIRouter(prefix="/voice", tags=["Voice & Speech"])
+
+
+@router.api_route("/warmup", methods=["GET", "POST"], summary="Pre-warm TTS connections and caches on mic open")
+async def voice_warmup():
+    """
+    Called when the user taps mic button or enters live voice call mode.
+    Pre-warms DNS, TLS, and Edge-TTS socket so zero cold-start delay occurs when response arrives.
+    """
+    try:
+        asyncio.create_task(prewarm_tts_cache("சரி", language="ta"))
+        return {"status": "warmed", "voice": DEFAULT_VOICES["ta"]}
+    except Exception as exc:
+        return {"status": "ok", "error": str(exc)}
 
 
 class TTSRequest(BaseModel):

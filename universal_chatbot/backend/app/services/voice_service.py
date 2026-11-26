@@ -14,6 +14,71 @@ DEFAULT_VOICES = {
     "en_us": "en-US-JennyNeural",      # Standard US English
 }
 
+# English business/tech terms & Tamil loanwords -> Tamil script for native neural acoustic flow
+TAMIL_PRONUNCIATION_MAP = {
+    # English business & tech terms
+    r"\binvoices?\b": "இன்வாய்ஸ்",
+    r"\bpayments?\b": "பேமென்ட்",
+    r"\bstocks?\b": "ஸ்டாக்",
+    r"\bdiscounts?\b": "டிஸ்கவுண்ட்",
+    r"\bbalances?\b": "பேலன்ஸ்",
+    r"\bpending\b": "பெண்டிங்",
+    r"\borders?\b": "ஆர்டர்",
+    r"\bstatus\b": "ஸ்டேட்டஸ்",
+    r"\btotal\b": "டோட்டல்",
+    r"\bbills?\b": "பில்",
+    r"\breports?\b": "ரிப்போர்ட்",
+    r"\breceipts?\b": "ரசீது",
+    r"\bdetails?\b": "விவரங்கள்",
+    r"\bcustomers?\b": "கஸ்டமர்",
+    r"\bvendors?\b": "வெண்டார்",
+    r"\bdownloads?\b": "டவுன்லோடு",
+    r"\bviews?\b": "வியூ",
+    r"\bchecks?\b": "செக்",
+    r"\bupdates?\b": "அப்டேட்",
+    r"\bproblems?\b": "ப்ராப்ளம்",
+    r"\bonline\b": "ஆன்லைன்",
+    r"\boffline\b": "ஆஃப்லைன்",
+    r"\bcables?\b": "கேபிள்",
+    r"\bwarrant(y|ies)\b": "வாரண்டி",
+    r"\bpower\b": "பவர்",
+    r"\bcombo\b": "காம்போ",
+    r"\bblack\b": "பிளாக்",
+    r"\bwired\b": "வயர்",
+
+    # Acronyms & Brands
+    r"\bGSTIN\s*/\s*UIN\b": "ஜி எஸ் டி எண்",
+    r"\bGSTIN\b": "ஜி எஸ் டி எண்",
+    r"\bGST\b": "ஜி எஸ் டி",
+    r"\bUPI\b": "யூ பி ஐ",
+    r"\bQR\b": "க்யூ ஆர்",
+    r"\bOTP\b": "ஓ டி பி",
+    r"\bSMS\b": "எஸ் எம் எஸ்",
+    r"\bAI\b": "ஏ.ஐ",
+    r"\bPDF\b": "பி.டி.எஃப்",
+    r"\bVikram\b": "விக்ரம்",
+    r"\bTechnologies\b": "டெக்னாலஜிஸ்",
+    r"\bSoftwares\b": "சாப்ட்வேர்ஸ்",
+    r"\bSurya\b": "சூர்யா",
+    r"\bZebronics\b": "ஜெப்ரானிக்ஸ்",
+    r"\bAxis\s*Bank\b": "ஆக்சிஸ் பேங்க்",
+    r"\bBank\b": "வங்கி",
+    r"\bG\s*Pay\b": "ஜி பே",
+    r"\bPhonePe\b": "போன்பே",
+
+    # Cities (Erode -> ஈரோடு, never யாரோடு)
+    r"\bErode\b": "ஈரோடு",
+    r"\bEerodu\b": "ஈரோடு",
+    r"\bCoimbatore\b": "கோயம்புத்தூர்",
+    r"\bCovai\b": "கோவை",
+    r"\bSalem\b": "சேலம்",
+    r"\bChennai\b": "சென்னை",
+    r"\bMadurai\b": "மதுரை",
+    r"\bTirupur\b": "திருப்பூர்",
+    r"\bTrichy\b": "திருச்சி",
+    r"\bTamil\s*Nadu\b": "தமிழ்நாடு",
+}
+
 
 def sanitize_text_for_speech(text: str, language: str = "en") -> str:
     """
@@ -22,6 +87,9 @@ def sanitize_text_for_speech(text: str, language: str = "en") -> str:
     """
     if not text:
         return ""
+
+    # Normalize unicode spaces and non-breaking spaces
+    text = re.sub(r"[\u00A0\u1680\u2000-\u200B\u202F\u205F\u3000]", " ", text)
 
     # Remove URLs
     cleaned = re.sub(r"https?://\S+", "", text)
@@ -51,17 +119,50 @@ def sanitize_text_for_speech(text: str, language: str = "en") -> str:
     cleaned = re.sub(r"^\s*[-+]\s+", "", cleaned, flags=re.MULTILINE)
     cleaned = re.sub(r"^\s*\d+\.\s+", "", cleaned, flags=re.MULTILINE)
 
-    if language == "ta":
-        # 1. Remove commas inside numbers so Edge TTS speaks continuous Tamil numerals ("ஆறு லட்சத்து இருபதாயிரம்")
+    is_tamil = (
+        language.lower().startswith("ta")
+        or language.lower() in ("tamil", "ta-in")
+        or bool(re.search(r"[\u0B80-\u0BFF]", cleaned))
+    )
+
+    if is_tamil:
+        # 0. Space out 15-character Indian GST numbers first so neural voice articulates each character clearly
+        cleaned = re.sub(
+            r"\b([0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1})\b",
+            lambda m: " ".join(list(m.group(1))),
+            cleaned
+        )
+
+        # 1. Split CamelCase & concatenated words/numbers like Bill102 -> Bill 102
+        cleaned = re.sub(r"([a-zA-Z]+)(\d+)", r"\1 \2", cleaned)
+        cleaned = re.sub(r"(\d+)([a-zA-Z]+)", r"\1 \2", cleaned)
+
+        # 2. Remove commas inside numbers so Edge TTS speaks continuous Tamil numerals ("ஆறு லட்சத்து இருபதாயிரம்")
         # instead of saying "கமா" or pausing awkwardly
         cleaned = re.sub(r"(?<=\d),(?=\d)", "", cleaned)
 
-        # 2. Strip decimal cents/paise from currency amounts so TTS speaks clean numbers (e.g. ₹ 254 instead of robotic 'புள்ளி இருபத்து நான்கு')
+        # 3. Strip decimal cents/paise from currency amounts so TTS speaks clean numbers (e.g. ₹ 254 instead of robotic 'புள்ளி இருபத்து நான்கு')
         cleaned = re.sub(r"₹\s*([\d,]+)\.\d+", r"₹ \1", cleaned)
         cleaned = re.sub(r"Rs\.?\s*([\d,]+)\.\d+", r"Rs \1", cleaned)
         cleaned = re.sub(r"([\d,]+)\.00\b", r"\1", cleaned)
 
-        # 3. Remove rude/disrespectful singular slang if LLM ever outputs it
+        # 4. Remove repetitive closing questions
+        cleaned = re.sub(r"உங்களுக்கு\s*வேற\s*ஏதாச்சும்\s*உதவி\s*வேணுமா[?.]?", "", cleaned, flags=re.IGNORECASE)
+
+        # 5. Section headings (Buyer, Bill to, Seller, Company, Address)
+        cleaned = re.sub(r"\bBuyer\s*\(\s*Bill\s*to\s*\)\s*details\b", "வாங்குபவர் விவரங்கள்:", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\bBuyer\s*details\b", "வாங்குபவர் விவரங்கள்:", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\bSeller\s*details\b", "விற்பனையாளர் விவரங்கள்:", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\bCompany\s*:", "நிறுவனம்:", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\bAddress\s*:", "முகவரி:", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\bGSTIN\s*/\s*UIN\s*:", "ஜி.எஸ்.டி எண்:", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\bGSTIN\s*:", "ஜி.எஸ்.டி எண்:", cleaned, flags=re.IGNORECASE)
+
+        # Apply comprehensive Tamil phonetic pronunciation map
+        for pat, repl in TAMIL_PRONUNCIATION_MAP.items():
+            cleaned = re.sub(pat, repl, cleaned, flags=re.IGNORECASE)
+
+        # 6. Remove rude/disrespectful singular slang if LLM ever outputs it
         cleaned = re.sub(r"\bஇப்போடா\b", "இப்போதைக்கு", cleaned)
         cleaned = re.sub(r"\bஇப்பொடா\b", "இப்போதைக்கு", cleaned)
         cleaned = re.sub(r"\bசொல்லுடா\b", "சொல்லுங்க", cleaned)
@@ -69,7 +170,7 @@ def sanitize_text_for_speech(text: str, language: str = "en") -> str:
         cleaned = re.sub(r"\bபாருடா\b", "பாருங்க", cleaned)
         cleaned = re.sub(r"\bடா\b", "", cleaned)
 
-        # 4. Smooth out bookish/formal words into natural polite conversational spoken Tamil
+        # 7. Smooth out bookish/formal words into natural polite conversational spoken Tamil
         cleaned = re.sub(r"\bஆகும்\b", "", cleaned)
         cleaned = re.sub(r"\bஆவார்\b", "", cleaned)
         cleaned = re.sub(r"\bஉள்ளது\b", "இருக்கு", cleaned)
@@ -79,7 +180,7 @@ def sanitize_text_for_speech(text: str, language: str = "en") -> str:
         cleaned = re.sub(r"\bதெரிவிக்கவும்\b", "சொல்லுங்க", cleaned)
         cleaned = re.sub(r"\bபட்டியலிடப்பட்டுள்ளன\b", "இதோ இருக்கு", cleaned)
 
-        # 5. Separate compound/agglutinated spoken Tamil verbs for crisp neural enunciation
+        # 8. Separate compound/agglutinated spoken Tamil verbs for crisp neural enunciation
         cleaned = re.sub(r"\bபண்ணியிருக்கீங்க\b", "பண்ணி இருக்கீங்க", cleaned)
         cleaned = re.sub(r"\bபண்ணியிருக்கேன்\b", "பண்ணி இருக்கேன்", cleaned)
         cleaned = re.sub(r"\bபண்ணியிருக்காங்க\b", "பண்ணி இருக்காங்க", cleaned)
@@ -88,57 +189,20 @@ def sanitize_text_for_speech(text: str, language: str = "en") -> str:
         cleaned = re.sub(r"\bபில்கள்ல\b", "பில்களில்", cleaned)
         cleaned = re.sub(r"\bஇப்போதைக்கு\b", "தற்போது", cleaned)
 
-        # 6. Expand business, tech, cities, and address terms into clear phonetic Tamil
-        cleaned = re.sub(r"உங்களுக்கு\s*வேற\s*ஏதாச்சும்\s*உதவி\s*வேணுமா[?.]?", "", cleaned, flags=re.IGNORECASE)
-
-        # Buyer / seller section headings
-        cleaned = re.sub(r"\bBuyer\s*\(\s*Bill\s*to\s*\)\s*details\b", "வாங்குபவர் விவரங்கள்:", cleaned, flags=re.IGNORECASE)
-        cleaned = re.sub(r"\bBuyer\s*details\b", "வாங்குபவர் விவரங்கள்:", cleaned, flags=re.IGNORECASE)
-        cleaned = re.sub(r"\bSeller\s*details\b", "விற்பனையாளர் விவரங்கள்:", cleaned, flags=re.IGNORECASE)
-        cleaned = re.sub(r"\bCompany\s*:", "நிறுவனம்:", cleaned, flags=re.IGNORECASE)
-        cleaned = re.sub(r"\bAddress\s*:", "முகவரி:", cleaned, flags=re.IGNORECASE)
-        cleaned = re.sub(r"\bGSTIN\s*/\s*UIN\s*:", "ஜி.எஸ்.டி எண்:", cleaned, flags=re.IGNORECASE)
-        cleaned = re.sub(r"\bGSTIN\s*:", "ஜி.எஸ்.டி எண்:", cleaned, flags=re.IGNORECASE)
-
-        # City names: Erode must be 'ஈரோடு' (eerodu), not 'யாரோடு' (yaarodu)
-        cleaned = re.sub(r"\bErode\b", "ஈரோடு", cleaned, flags=re.IGNORECASE)
-        cleaned = re.sub(r"\bEerodu\b", "ஈரோடு", cleaned, flags=re.IGNORECASE)
-        cleaned = re.sub(r"\bCoimbatore\b", "கோயம்புத்தூர்", cleaned, flags=re.IGNORECASE)
-        cleaned = re.sub(r"\bCovai\b", "கோவை", cleaned, flags=re.IGNORECASE)
-        cleaned = re.sub(r"\bSalem\b", "சேலம்", cleaned, flags=re.IGNORECASE)
-        cleaned = re.sub(r"\bChennai\b", "சென்னை", cleaned, flags=re.IGNORECASE)
-        cleaned = re.sub(r"\bMadurai\b", "மதுரை", cleaned, flags=re.IGNORECASE)
-        cleaned = re.sub(r"\bTirupur\b", "திருப்பூர்", cleaned, flags=re.IGNORECASE)
-        cleaned = re.sub(r"\bTrichy\b", "திருச்சி", cleaned, flags=re.IGNORECASE)
-        cleaned = re.sub(r"\bTamil\s*Nadu\b", "தமிழ்நாடு", cleaned, flags=re.IGNORECASE)
-
-        # Common address and company words
+        # 9. Address details & pincodes
         cleaned = re.sub(r"\bNo\s*[:.]?\s*(\d+)", r"எண் \1", cleaned, flags=re.IGNORECASE)
         cleaned = re.sub(r"\bBus\s*Stand\b", "பஸ் ஸ்டாண்ட்", cleaned, flags=re.IGNORECASE)
         cleaned = re.sub(r"\bComplex\b", "காம்ப்ளக்ஸ்", cleaned, flags=re.IGNORECASE)
         cleaned = re.sub(r"\bRoad\b", "ரோடு", cleaned, flags=re.IGNORECASE)
         cleaned = re.sub(r"\bStreet\b", "தெரு", cleaned, flags=re.IGNORECASE)
-        cleaned = re.sub(r"\bTechnologies\b", "டெக்னாலஜிஸ்", cleaned, flags=re.IGNORECASE)
-        cleaned = re.sub(r"\bSoftwares\b", "சாப்ட்வேர்ஸ்", cleaned, flags=re.IGNORECASE)
-        cleaned = re.sub(r"\bSurya\b", "சூர்யா", cleaned, flags=re.IGNORECASE)
         cleaned = re.sub(r"\bAgency\b", "ஏஜென்சி", cleaned, flags=re.IGNORECASE)
         cleaned = re.sub(r"\bElectricals\b", "எலக்ட்ரிக்கல்ஸ்", cleaned, flags=re.IGNORECASE)
-        cleaned = re.sub(r"\bAI\b", "ஏ.ஐ", cleaned)
-        cleaned = re.sub(r"\bPDF\b", "பி.டி.எஃப்", cleaned)
-        cleaned = re.sub(r"\bG\s*Pay\b", "ஜி பே", cleaned, flags=re.IGNORECASE)
-        cleaned = re.sub(r"\bPhonePe\b", "போன்பே", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\bTekis\b", "டெக்கிஸ்", cleaned, flags=re.IGNORECASE)
         
         # Pincodes with standard or unicode non-breaking hyphens (e.g. Erode‑638001 -> ஈரோடு பின்கோடு 638001)
         cleaned = re.sub(r"[-\u2010-\u2015\u2212]\s*(\d{6})\b", r" பின்கோடு \1", cleaned)
 
-        # Space out 15-character GST numbers so neural voice articulates each letter clearly
-        cleaned = re.sub(
-            r"ஜி\.எஸ்\.டி எண்:?\s*([0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1})",
-            lambda m: "ஜி.எஸ்.டி எண் " + " ".join(list(m.group(1))),
-            cleaned
-        )
-
-        # 7. Expand common symbols to spoken conversational Tamil
+        # 10. Expand common symbols to spoken conversational Tamil
         cleaned = cleaned.replace("₹", " ரூபாய் ")
         cleaned = cleaned.replace("Rs.", " ரூபாய் ")
         cleaned = cleaned.replace("Rs", " ரூபாய் ")
@@ -157,7 +221,7 @@ def sanitize_text_for_speech(text: str, language: str = "en") -> str:
         cleaned = cleaned.replace("KG", " கிலோ ")
         cleaned = cleaned.replace("g ", " கிராம் ")
 
-        # 8. Punctuation smoothing for natural speech cadence
+        # 11. Punctuation smoothing for natural speech cadence
         cleaned = cleaned.replace(":", " ")
         cleaned = cleaned.replace(";", " ")
         cleaned = cleaned.replace("/", " அல்லது ")
@@ -213,7 +277,9 @@ async def prewarm_tts_cache(
         return
 
     try:
-        communicate = edge_tts.Communicate(clean_text, selected_voice, rate="+0%")
+        rate_param = "+10%" if "Pallavi" in selected_voice else "+4%"
+        pitch_param = "+2Hz" if "Pallavi" in selected_voice else "-2Hz"
+        communicate = edge_tts.Communicate(clean_text, selected_voice, rate=rate_param, pitch=pitch_param)
         collected = bytearray()
         async for chunk in communicate.stream():
             if chunk["type"] == "audio":
@@ -253,9 +319,10 @@ async def generate_speech_stream(
         yield _TTS_CACHE[cache_key]
         return
 
-    # Natural conversational pacing (standard rate delivers clear, unhurried Tamil consonant articulation)
-    rate_param = "+0%"
-    communicate = edge_tts.Communicate(clean_text, selected_voice, rate=rate_param)
+    # Friendly, casual shop-assistant prosody: +10% rate tightens natural silence between commas; +2Hz lifts brightness
+    rate_param = "+10%" if "Pallavi" in selected_voice else "+4%"
+    pitch_param = "+2Hz" if "Pallavi" in selected_voice else "-2Hz"
+    communicate = edge_tts.Communicate(clean_text, selected_voice, rate=rate_param, pitch=pitch_param)
     
     collected_chunks = bytearray()
     async for chunk in communicate.stream():
