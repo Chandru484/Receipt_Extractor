@@ -524,7 +524,7 @@
       return;
     }
     const q = new URLSearchParams({
-      website_id: websiteId,
+      website_id: websiteId || "site_demo",
       user_id: candidateId,
       limit: "5",
     });
@@ -562,7 +562,7 @@
     }
 
     const q = new URLSearchParams({
-      website_id: websiteId,
+      website_id: websiteId || "site_demo",
     });
     if (candidateId) {
       q.append("user_id", candidateId);
@@ -1546,22 +1546,32 @@
     msgList.appendChild(loadingGroup);
     msgList.scrollTop = msgList.scrollHeight;
 
+    const cleanWebId = websiteId || "site_demo";
+    const cleanLang = (activeLang && String(activeLang).toLowerCase().startsWith("ta")) ? "ta" : "en";
+    const cleanRole = candidateRole || "user";
+
     fetch(`${apiBase}/api/v1/chat/message`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        website_id: websiteId,
+        website_id: cleanWebId,
         message: text,
-        conversation_id: activeConvId,
-        session_id: activeSessionId,
-        language: activeLang,
+        conversation_id: activeConvId || null,
+        session_id: activeSessionId || null,
+        language: cleanLang,
         is_voice: isVoice,
-        user_id: candidateId,
-        role: candidateRole,
-        package_id: packageId,
+        user_id: candidateId || null,
+        role: cleanRole,
+        package_id: packageId || null,
       }),
     })
-      .then(r => r.json())
+      .then(async (r) => {
+        if (!r.ok) {
+          const errData = await r.json().catch(() => ({}));
+          throw new Error(errData.detail || `HTTP ${r.status}`);
+        }
+        return r.json();
+      })
       .then(data => {
         isProcessingMessage = false;
         loadingGroup.remove();

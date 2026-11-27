@@ -11,11 +11,11 @@ class SourceCitation(BaseModel):
 
 
 class ChatMessageRequest(BaseModel):
-    website_id: str = Field(default="site_demo", description="Target website or application ID (or project_id)")
+    website_id: Optional[str] = Field(default="site_demo", description="Target website or application ID (or project_id)")
     message: str = Field(..., min_length=1, max_length=4000, description="User prompt or question")
     conversation_id: Optional[str] = Field(None, description="Existing conversation ID to continue")
     session_id: Optional[str] = Field(None, description="Visitor session token")
-    language: Literal["en", "ta"] = Field(default="en", description="Selected language ('en' for English, 'ta' for Tamil)")
+    language: Optional[str] = Field(default="en", description="Selected language ('en' for English, 'ta' for Tamil)")
     active_document_id: Optional[str] = Field(None, description="Optional document ID if asking about uploaded file")
     is_voice: bool = Field(default=False, description="Flag indicating input originated from speech/microphone")
     user_id: Optional[str] = Field(None, description="Logged-in User ID (e.g. 'usr_101')")

@@ -43,7 +43,7 @@ def upload_packaged_questions(project_id: str, payload: PackagedQuestionsCreate)
 )
 def get_candidate_suggestions(
     project_id: str,
-    role: RoleType = Query("user", description="Logged-in candidate type: 'admin', 'worker', or 'user'"),
+    role: str = Query("user", description="Logged-in candidate type: 'admin', 'worker', or 'user'"),
     candidate_id: Optional[str] = Query(None, description="Optional admin_id, worker_id, or user_id"),
 ):
     """
@@ -53,9 +53,12 @@ def get_candidate_suggestions(
     Strictly isolated: An admin collection is never accessed for worker or user requests.
     """
     try:
+        clean_role = (role or "user").strip().lower()
+        if clean_role not in ("admin", "worker", "user", "guest"):
+            clean_role = "user"
         return package_service.get_candidate_suggestions(
             project_id=project_id,
-            role=role,
+            role=clean_role,
             candidate_id=candidate_id,
         )
     except Exception as exc:

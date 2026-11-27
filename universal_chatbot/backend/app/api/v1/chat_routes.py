@@ -32,6 +32,16 @@ def send_chat_message(
             request.website_id = project_id
         elif website_id:
             request.website_id = website_id
+        elif not request.website_id:
+            request.website_id = "site_demo"
+
+        # Sanitize and normalize language to supported codes ('en', 'ta')
+        if not request.language:
+            request.language = "en"
+        elif str(request.language).lower().startswith("ta"):
+            request.language = "ta"
+        else:
+            request.language = "en"
 
         if package_id and not request.package_id:
             request.package_id = package_id
@@ -94,20 +104,22 @@ def get_history_by_package_and_user(
 
 @router.get("/conversations", summary="List past conversations for user or session")
 def list_conversations(
-    website_id: str = Query(..., description="Website identifier"),
+    website_id: Optional[str] = Query(None, description="Website identifier"),
+    project_id: Optional[str] = Query(None, description="Project identifier"),
     user_id: Optional[str] = Query(None, description="Optional logged in user ID"),
     session_id: Optional[str] = Query(None, description="Visitor session ID"),
     limit: int = Query(30, ge=1, le=100, description="Max conversations to return"),
 ):
     """List previous conversation sessions for the visitor/user."""
+    target_site = website_id or project_id or "site_demo"
     convs = list_user_conversations(
-        website_id=website_id,
+        website_id=target_site,
         user_id=user_id,
         session_id=session_id,
         limit=limit,
     )
     return {
-        "website_id": website_id,
+        "website_id": target_site,
         "conversations": convs,
         "count": len(convs),
     }
