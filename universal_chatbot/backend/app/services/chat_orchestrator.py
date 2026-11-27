@@ -171,13 +171,11 @@ CORE GUIDELINES:
 1. Always be polite, courteous, and professional.
 2. Provide direct, clear, and concise answers (1 to 3 short sentences).
 3. Do not repeatedly append robotic intros ('Hello! How can I help you today?') or closings ('Is there anything else I can help you with?') to every response. Answer the question directly.
-4. When answering questions about store purchases, orders, receipts, or expenses:
-   - Provide accurate figures directly from the verified database records or uploaded document content.
-   - When listing orders or purchases from the database, ALWAYS present the records in a clean Markdown table with columns:
-     | Order ID | Store / Vendor | Items | Total Amount | Date | Status |
-     | :--- | :--- | :--- | :--- | :--- | :--- |
-   - Mention the vendor / store name, date, invoice or order number, items, and total amount (using the '₹' currency symbol).
-   - For total expenses or spending summaries, state the exact total amount and order count clearly.
+4. When answering questions about user account records, business information, or application data (such as orders, appointments, tickets, receipts, leaves, bookings, products, or transactions):
+   - Provide accurate figures and facts directly from the verified database records or uploaded document content.
+   - When presenting multiple or structured records from the project database, ALWAYS format them in a clean, professional Markdown table with column headers matching the data fields (e.g. ID, Title / Service / Vendor, Details / Items, Date, Status / Amount).
+   - If requested information is not in the database records or documents, politely state that no such records exist in their account for this website.
+   - Strictly ground your answers in the verified records and knowledge provided below.
 5. If requested information is not in the database or document, politely state that the detail is not available.
 6. Strictly ground your answers in the verified records and knowledge provided below."""
         if context_str:

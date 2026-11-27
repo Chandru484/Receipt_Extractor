@@ -62,13 +62,13 @@ class ApplicationMongoAdapter:
         clean_pid = re.sub(r"[^\w\-]", "_", str(website_id).strip().lower())
         is_receipt_app = clean_pid in ("receipt_extractor", "receipt_db")
         expected_db = "receipt_db" if is_receipt_app else f"project_{clean_pid}_db"
-        expected_col = "Receipt_Extraction" if is_receipt_app else "orders"
+        expected_col = "Receipt_Extraction" if is_receipt_app else "*"
         app_name = "Receipt Extractor App" if is_receipt_app else f"{clean_pid.replace('_', ' ').title()} Portal"
 
         conn = app_col.find_one({"website_id": website_id, "status": "active"})
         if conn:
-            # Enforce project database isolation: migrate away from receipt_db or mismatched collections
-            if conn.get("target_db") != expected_db or conn.get("allowed_collection") != expected_col:
+            # Enforce project database isolation: migrate away from receipt_db if not receipt app
+            if conn.get("target_db") != expected_db:
                 app_col.update_one(
                     {"website_id": website_id},
                     {
@@ -324,8 +324,9 @@ class ApplicationMongoAdapter:
         max_results: int = 5,
     ) -> Optional[Dict[str, Any]]:
         """
-        Inspect user query, execute safe search on allowed application collections,
-        and return sanitized document records to inject into chatbot prompt context.
+        Inspect user query, dynamically discover and search business collections/tables
+        in the project's isolated MongoDB database, and return clean records for LLM context.
+        Works universally for any business domain (orders, tickets, appointments, leaves, etc.).
         """
         conn = self.get_connection_config(website_id)
         if not conn:
@@ -335,37 +336,55 @@ class ApplicationMongoAdapter:
         target_db = conn.get("target_db")
         allowed_col = conn.get("allowed_collection")
 
-        if not target_uri or not target_db or not allowed_col:
+        if not target_uri or not target_db:
             return None
+
+        PLATFORM_COLLECTIONS = {
+            "conversations",
+            "messages",
+            "visitor_sessions",
+            "document_chunks",
+            "knowledge_sources",
+            "support_handoffs",
+            "analytics_events",
+            "admins",
+            "tenants",
+            "websites",
+            "app_connections",
+            "system.indexes",
+        }
+
+        COMMON_USER_FIELDS = [
+            "user_id",
+            "customer_id",
+            "patient_id",
+            "employee_id",
+            "client_id",
+            "member_id",
+            "student_id",
+            "email",
+            "candidate_id",
+            "data.user_id",
+        ]
 
         try:
             client = self._get_client(target_uri)
             db = client[target_db]
-            collection = db[allowed_col]
+            all_cols = [c for c in db.list_collection_names() if c not in PLATFORM_COLLECTIONS]
+            if not all_cols:
+                return None
 
-            conditions: List[Dict[str, Any]] = []
+            # Determine target collection(s) to search
+            if allowed_col and allowed_col != "*" and allowed_col in all_cols:
+                target_cols = [allowed_col]
+            else:
+                q_lower = user_query.lower()
+                matched = [c for c in all_cols if c.lower() in q_lower or c.lower().rstrip("s") in q_lower]
+                target_cols = matched if matched else all_cols
 
-            # 1. Strict User Boundary Condition
-            user_cond: Optional[Dict[str, Any]] = None
-            if user_id:
-                user_f = conn.get("user_id_field") or "user_id"
-                user_cond = {
-                    "$or": [
-                        {user_f: user_id},
-                        {"user_id": user_id},
-                        {"customer_id": user_id},
-                        {"candidate_id": user_id},
-                        {"email": user_id},
-                        {f"data.{user_f}": user_id},
-                    ]
-                }
-                conditions.append(user_cond)
-
-            # 2. Extract search terms from user query
             tokens = re.findall(r"[\w]+", user_query, re.UNICODE)
             stop_words = {
-                "show", "me", "all", "the", "my", "receipts", "receipt", "invoices",
-                "invoice", "from", "for", "latest", "what", "how", "much", "did",
+                "show", "me", "all", "the", "my", "from", "for", "latest", "what", "how", "much", "did",
                 "spend", "spent", "spending", "expenses", "expense", "at", "in", "bill", "bills", "get", "view", "details",
                 "address", "kadayin", "kadaisi", "sollu", "sol", "patri", "kooru", "mukavari",
                 "selavu", "motha", "motham", "evvalavu", "paniruken", "panniyiruken",
@@ -375,121 +394,91 @@ class ApplicationMongoAdapter:
                 "hi", "hello", "hey", "how", "are", "you", "your", "who", "what", "is", "was",
                 "am", "can", "tell", "please", "help", "good", "morning", "afternoon", "evening",
                 "night", "thanks", "thank", "வணக்கம்", "நன்றி", "ஹலோ", "ஹாய்",
-                "order", "orders", "recent", "purchases", "purchase", "item", "items", "buy", "bought",
-                "track", "status", "give", "check", "find", "list", "vaangina", "ordersai", "orderkal"
+                "track", "status", "give", "check", "find", "list", "record", "records", "data"
             }
             search_terms = [t for t in tokens if t.lower() not in stop_words and len(t) > 2]
 
-            if search_terms:
-                regex_pattern = "|".join([re.escape(t) for t in search_terms])
-                conditions.append({
-                    "$or": [
-                        {"order_id": {"$regex": regex_pattern, "$options": "i"}},
-                        {"invoice_number": {"$regex": regex_pattern, "$options": "i"}},
-                        {"vendor": {"$regex": regex_pattern, "$options": "i"}},
-                        {"vendor_name": {"$regex": regex_pattern, "$options": "i"}},
-                        {"store_name": {"$regex": regex_pattern, "$options": "i"}},
-                        {"status": {"$regex": regex_pattern, "$options": "i"}},
-                        {"category": {"$regex": regex_pattern, "$options": "i"}},
-                        {"items": {"$regex": regex_pattern, "$options": "i"}},
-                        {"items.name": {"$regex": regex_pattern, "$options": "i"}},
-                        {"items.item_name": {"$regex": regex_pattern, "$options": "i"}},
-                        {"data.vendor_name": {"$regex": regex_pattern, "$options": "i"}},
-                        {"data.seller": {"$regex": regex_pattern, "$options": "i"}},
-                        {"data.buyer": {"$regex": regex_pattern, "$options": "i"}},
-                        {"data.invoice_number": {"$regex": regex_pattern, "$options": "i"}},
-                        {"data.category": {"$regex": regex_pattern, "$options": "i"}},
-                        {"formatted_display": {"$regex": regex_pattern, "$options": "i"}},
-                    ]
-                })
+            user_cond: Optional[Dict[str, Any]] = None
+            if user_id:
+                user_f = conn.get("user_id_field")
+                cond_list = [{user_f: user_id}] if user_f else []
+                cond_list.extend([{uf: user_id} for uf in COMMON_USER_FIELDS])
+                user_cond = {"$or": cond_list}
 
-            filter_query: Dict[str, Any] = {}
-            if len(conditions) == 1:
-                filter_query = conditions[0]
-            elif len(conditions) > 1:
-                filter_query = {"$and": conditions}
+            for col_name in target_cols:
+                collection = db[col_name]
+                if collection.count_documents({}) == 0:
+                    continue
 
-            cursor = collection.find(filter_query).sort("_id", -1).limit(max_results)
-            raw_records = list(cursor)
+                conditions: List[Dict[str, Any]] = []
+                if user_cond:
+                    conditions.append(user_cond)
 
-            # Fallback: if search by term yielded no matches, but user_cond exists,
-            # retrieve that user's owned records so broad questions can still show their account's items
-            if not raw_records and user_cond and search_terms:
-                raw_records = list(collection.find(user_cond).sort("_id", -1).limit(max_results))
+                if search_terms:
+                    regex_pattern = "|".join([re.escape(t) for t in search_terms])
+                    # Search dynamically across string fields in this collection
+                    conditions.append({
+                        "$or": [
+                            {"id": {"$regex": regex_pattern, "$options": "i"}},
+                            {"order_id": {"$regex": regex_pattern, "$options": "i"}},
+                            {"ticket_id": {"$regex": regex_pattern, "$options": "i"}},
+                            {"appointment_id": {"$regex": regex_pattern, "$options": "i"}},
+                            {"leave_id": {"$regex": regex_pattern, "$options": "i"}},
+                            {"invoice_number": {"$regex": regex_pattern, "$options": "i"}},
+                            {"title": {"$regex": regex_pattern, "$options": "i"}},
+                            {"subject": {"$regex": regex_pattern, "$options": "i"}},
+                            {"name": {"$regex": regex_pattern, "$options": "i"}},
+                            {"vendor": {"$regex": regex_pattern, "$options": "i"}},
+                            {"vendor_name": {"$regex": regex_pattern, "$options": "i"}},
+                            {"store_name": {"$regex": regex_pattern, "$options": "i"}},
+                            {"doctor": {"$regex": regex_pattern, "$options": "i"}},
+                            {"status": {"$regex": regex_pattern, "$options": "i"}},
+                            {"category": {"$regex": regex_pattern, "$options": "i"}},
+                            {"data.vendor_name": {"$regex": regex_pattern, "$options": "i"}},
+                            {"data.seller": {"$regex": regex_pattern, "$options": "i"}},
+                        ]
+                    })
 
-            if not raw_records:
-                return None
+                filter_q: Dict[str, Any] = {}
+                if len(conditions) == 1:
+                    filter_q = conditions[0]
+                elif len(conditions) > 1:
+                    filter_q = {"$and": conditions}
 
-            # Sanitize and flatten records
-            sanitized_records = []
-            for r in raw_records:
-                data_sub = r.get("data") or {}
-                vendor = (
-                    r.get("vendor")
-                    or r.get("vendor_name")
-                    or r.get("store_name")
-                    or data_sub.get("vendor_name")
-                    or data_sub.get("seller")
-                    or "Store"
-                )
-                buyer = r.get("customer_name") or r.get("buyer") or data_sub.get("buyer") or r.get("buyer_name")
-                inv_no = r.get("order_id") or r.get("invoice_number") or data_sub.get("invoice_number") or str(r.get("_id"))
-                inv_date = r.get("date") or r.get("order_date") or r.get("created_at") or data_sub.get("invoice_date") or r.get("stored_date")
-                total = r.get("amount") or r.get("total_amount") or r.get("grand_total") or data_sub.get("grand_total")
-                status_str = r.get("status") or "Completed"
-                seller_addr = r.get("vendor_address") or r.get("address") or data_sub.get("seller_address") or data_sub.get("address")
+                raw_records = list(collection.find(filter_q).sort("_id", -1).limit(max_results))
 
-                items_raw = r.get("items") or data_sub.get("items") or []
-                items_list = []
-                if isinstance(items_raw, list):
-                    for it in items_raw:
-                        if isinstance(it, dict):
-                            items_list.append({
-                                "name": it.get("name") or it.get("item_name") or it.get("product_name"),
-                                "qty": it.get("qty") or it.get("quantity") or 1,
-                                "amount": it.get("amount") or it.get("price") or it.get("total_price"),
-                            })
-                        elif isinstance(it, str):
-                            items_list.append({"name": it, "qty": 1, "amount": 0.0})
+                # Fallback to user owned records if term search yielded no match
+                if not raw_records and user_cond:
+                    raw_records = list(collection.find(user_cond).sort("_id", -1).limit(max_results))
 
-                sanitized_records.append({
-                    "order_id": inv_no,
-                    "vendor": vendor,
-                    "vendor_name": vendor,
-                    "vendor_address": seller_addr,
-                    "address": seller_addr,
-                    "seller_phone": data_sub.get("seller_phone"),
-                    "buyer": buyer,
-                    "invoice_number": inv_no,
-                    "invoice_date": str(inv_date) if inv_date else "N/A",
-                    "date": str(inv_date) if inv_date else "N/A",
-                    "grand_total": total,
-                    "total_amount": total,
-                    "amount": total,
-                    "status": status_str,
-                    "currency": r.get("currency") or data_sub.get("currency", "INR"),
-                    "items": items_list,
-                })
+                if raw_records:
+                    # Sanitize and keep real fields
+                    sanitized_records = []
+                    for r in raw_records:
+                        doc = dict(r)
+                        doc.pop("_id", None)
+                        if "data" in doc and isinstance(doc["data"], dict):
+                            for dk, dv in doc["data"].items():
+                                if dk not in doc:
+                                    doc[dk] = dv
+                        for sk in ("password", "token", "hash", "secret"):
+                            doc.pop(sk, None)
+                        sanitized_records.append(doc)
 
-            if search_terms:
-                where_terms = " OR ".join([f"vendor_name ILIKE '%{t}%'" for t in search_terms])
-                if user_id:
-                    gen_sql = f"SELECT vendor_name, invoice_number, invoice_date, grand_total, seller_address FROM {allowed_col} WHERE user_id = '{user_id}' AND ({where_terms}) ORDER BY id DESC LIMIT {max_results};"
-                else:
-                    gen_sql = f"SELECT vendor_name, invoice_number, invoice_date, grand_total, seller_address FROM {allowed_col} WHERE ({where_terms}) ORDER BY id DESC LIMIT {max_results};"
-            else:
-                if user_id:
-                    gen_sql = f"SELECT vendor_name, invoice_number, invoice_date, grand_total, seller_address FROM {allowed_col} WHERE user_id = '{user_id}' ORDER BY id DESC LIMIT {max_results};"
-                else:
-                    gen_sql = f"SELECT vendor_name, invoice_number, invoice_date, grand_total, seller_address FROM {allowed_col} ORDER BY id DESC LIMIT {max_results};"
+                    gen_sql = f"SELECT * FROM {col_name} WHERE user_id = '{user_id}' ORDER BY id DESC LIMIT {max_results};" if user_id else f"SELECT * FROM {col_name} ORDER BY id DESC LIMIT {max_results};"
 
-            return {
-                "source_app": conn.get("app_name", target_db),
-                "collection": allowed_col,
-                "record_count": len(sanitized_records),
-                "records": sanitized_records,
-                "generated_sql": gen_sql,
-            }
+                    return {
+                        "source_app": conn.get("app_name", target_db),
+                        "collection": col_name,
+                        "record_count": len(sanitized_records),
+                        "records": sanitized_records,
+                        "generated_sql": gen_sql,
+                    }
+
+            return None
+        except Exception as exc:
+            logger.warning(f"ApplicationMongoAdapter query failed: {exc}")
+            return None
 
         except Exception as exc:
             logger.warning(f"ApplicationMongoAdapter query failed: {exc}")
