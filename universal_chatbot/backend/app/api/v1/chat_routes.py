@@ -114,14 +114,18 @@ def list_conversations(
 
 
 @router.get("/conversations/{conversation_id}", summary="Get conversation history")
-def get_chat_history(conversation_id: str, limit: int = 50):
+def get_chat_history(
+    conversation_id: str,
+    website_id: Optional[str] = Query(None, description="Optional website ID for project database routing"),
+    limit: int = 50,
+):
     """Retrieve full structured message history for a conversation ID."""
-    detail = get_conversation_detail(conversation_id)
+    detail = get_conversation_detail(conversation_id, website_id=website_id)
     if detail:
         return detail
 
     # Fallback to LLM formatted history if metadata document missing
-    history = get_conversation_history(conversation_id, limit=limit)
+    history = get_conversation_history(conversation_id, limit=limit, website_id=website_id)
     return {
         "conversation_id": conversation_id,
         "title": "Conversation",
@@ -131,9 +135,12 @@ def get_chat_history(conversation_id: str, limit: int = 50):
 
 
 @router.delete("/conversations/{conversation_id}", summary="Delete an entire conversation")
-def remove_conversation(conversation_id: str):
+def remove_conversation(
+    conversation_id: str,
+    website_id: Optional[str] = Query(None, description="Optional website ID for project database routing"),
+):
     """Delete a conversation and all its messages."""
-    success = delete_conversation(conversation_id)
+    success = delete_conversation(conversation_id, website_id=website_id)
     if not success:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

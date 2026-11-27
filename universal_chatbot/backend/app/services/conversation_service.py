@@ -216,7 +216,7 @@ def list_user_conversations(
         {"status": {"$ne": "deleted"}},
     ]
     if user_id:
-        clauses.append({"$or": [{"user_id": user_id}, {"session_id": session_id}]})
+        clauses.append({"user_id": user_id})
     elif session_id:
         clauses.append({"session_id": session_id})
 

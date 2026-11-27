@@ -38,19 +38,25 @@
   const apiBase = currentScript && currentScript.src ? (new URL(currentScript.src, window.location.href)).origin : window.location.origin;
 
   let activeLang = "en";
+
+  function getStorageKeys(uid) {
+    const cleanPid = String(websiteId || "site_demo").trim().replace(/[^\w-]/g, "_");
+    const cleanUid = uid ? String(uid).trim().replace(/[^\w-]/g, "_") : "guest";
+    return {
+      sessKey: `chat_sess_${cleanPid}_${cleanUid}`,
+      convKey: `chat_conv_${cleanPid}_${cleanUid}`,
+      lastUserKey: `chat_last_user_${cleanPid}`,
+    };
+  }
+
+  let storageKeys = getStorageKeys(candidateId);
   let activeSessionId = null;
-  try { activeSessionId = localStorage.getItem("chat_session_id"); } catch (_) {}
+  try { activeSessionId = localStorage.getItem(storageKeys.sessKey); } catch (_) {}
   if (!activeSessionId) {
     activeSessionId = "sess_" + Math.random().toString(36).substring(2, 10);
-    try { localStorage.setItem("chat_session_id", activeSessionId); } catch (_) {}
+    try { localStorage.setItem(storageKeys.sessKey, activeSessionId); } catch (_) {}
   }
   let activeConvId = null;
-  if (packageId && candidateId) {
-    activeConvId = "conv_" + String(packageId).trim().replace(/[^\w-]/g, "_") + "_" + String(candidateId).trim().replace(/[^\w-]/g, "_");
-    try { localStorage.setItem("chat_active_conv_id", activeConvId); } catch (_) {}
-  } else {
-    try { activeConvId = localStorage.getItem("chat_active_conv_id"); } catch (_) {}
-  }
   let welcomeSpoken = false;
   let widgetConfig = {
     bot_name: "AI Assistant",
@@ -302,7 +308,7 @@
             <span id="muteIcon" style="font-size: 11px;">🔊</span>
             <span id="muteLabel">Voice</span>
           </button>
-          <button class="header-btn" id="historyBtn" title="View Past Chat History">
+          <button class="header-btn" id="historyBtn" title="View Past Chat History" style="display: none;">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
             <span id="historyBtnLabel">History</span>
           </button>
@@ -499,6 +505,8 @@
     endCallMode();
     removeTawkTo(false);
     activeConvId = null;
+    storageKeys = getStorageKeys(candidateId);
+    try { localStorage.removeItem(storageKeys.convKey); } catch (_) {}
     try { localStorage.removeItem("chat_active_conv_id"); } catch (_) {}
     welcomeSpoken = false;
     if (filePicker) filePicker.value = "";
@@ -507,6 +515,32 @@
       const greeting = welcomeText || (activeLang === "ta" ? (widgetConfig.welcome_message_ta || "வணக்கம்! சொல்லுங்க, உங்களுக்கு நான் எப்படி உதவலாம்?") : (widgetConfig.welcome_message_en || "Hello! How can I help you today?"));
       appendMessage("bot", greeting);
     }
+  }
+
+  function checkAndSyncHistoryVisibility() {
+    if (!historyBtn) return;
+    if (!candidateId) {
+      historyBtn.style.display = "none";
+      return;
+    }
+    const q = new URLSearchParams({
+      website_id: websiteId,
+      user_id: candidateId,
+      limit: "5",
+    });
+    fetch(`${apiBase}/api/v1/chat/conversations?${q.toString()}`)
+      .then(r => r.json())
+      .then(data => {
+        const convs = (data && data.conversations) ? data.conversations : [];
+        if (convs.length > 0) {
+          historyBtn.style.display = "inline-flex";
+        } else {
+          historyBtn.style.display = "none";
+        }
+      })
+      .catch(() => {
+        historyBtn.style.display = "none";
+      });
   }
 
   function toggleHistoryView() {
@@ -529,9 +563,12 @@
 
     const q = new URLSearchParams({
       website_id: websiteId,
-      session_id: activeSessionId,
     });
-    if (candidateId) q.append("user_id", candidateId);
+    if (candidateId) {
+      q.append("user_id", candidateId);
+    } else {
+      q.append("session_id", activeSessionId);
+    }
 
     fetch(`${apiBase}/api/v1/chat/conversations?${q.toString()}`)
       .then(r => r.json())
@@ -600,7 +637,11 @@
 
   function deleteConversationFromHistory(convId, itemElement) {
     if (!convId) return;
-    fetch(`${apiBase}/api/v1/chat/conversations/${convId}`, { method: "DELETE" }).catch(() => {});
+    fetch(`${apiBase}/api/v1/chat/conversations/${convId}?website_id=${encodeURIComponent(websiteId)}`, { method: "DELETE" })
+      .then(() => {
+        checkAndSyncHistoryVisibility();
+      })
+      .catch(() => {});
     if (itemElement) {
       itemElement.style.opacity = "0";
       itemElement.style.transform = "translateX(10px)";
@@ -608,6 +649,7 @@
         itemElement.remove();
         if (historyList && historyList.children.length === 0) {
           historyList.innerHTML = `<div class="history-empty">${activeLang === "ta" ? "முந்தைய உரையாடல்கள் எதுவும் இல்லை." : "No past conversations found."}</div>`;
+          checkAndSyncHistoryVisibility();
         }
       }, 200);
     }
@@ -623,11 +665,12 @@
     closeHistoryView();
 
     activeConvId = convId;
-    try { localStorage.setItem("chat_active_conv_id", convId); } catch (_) {}
+    storageKeys = getStorageKeys(candidateId);
+    try { localStorage.setItem(storageKeys.convKey, convId); } catch (_) {}
 
     msgList.innerHTML = `<div class="msg-group system-note"><div class="msg system-note">⏳ ${activeLang === "ta" ? "உரையாடல் ஏற்றப்படுகிறது..." : "Loading conversation..."}</div></div>`;
 
-    fetch(`${apiBase}/api/v1/chat/conversations/${convId}`)
+    fetch(`${apiBase}/api/v1/chat/conversations/${convId}?website_id=${encodeURIComponent(websiteId)}`)
       .then(r => r.json())
       .then(data => {
         msgList.innerHTML = "";
@@ -1523,7 +1566,10 @@
         isProcessingMessage = false;
         loadingGroup.remove();
         activeConvId = data.conversation_id;
+        storageKeys = getStorageKeys(candidateId);
+        try { localStorage.setItem(storageKeys.convKey, activeConvId); } catch (_) {}
         try { localStorage.setItem("chat_active_conv_id", activeConvId); } catch (_) {}
+        checkAndSyncHistoryVisibility();
 
 
         // Attach message_id to user message group for future delete/edit
@@ -1805,40 +1851,61 @@
     sendMessage();
   };
 
-  // Load existing conversation or render initial welcome message (after all UI & audio handlers are ready)
-  if (activeConvId) {
-    loadConversation(activeConvId);
-  } else {
-    appendMessage("bot", (activeLang === "ta" ? widgetConfig.welcome_message_ta : widgetConfig.welcome_message_en) || "Hello! How can I help you today?");
-  }
+  // Always initialize with a fresh new chat session on startup / user load
+  resetConversation(true);
+  checkAndSyncHistoryVisibility();
 
   // Expose global controller for host application testing & role switching
   window.UniversalChatbot = {
-    setRole: function (role, id = null, name = null, pkgId = null) {
+    setUser: function (userObj) {
       unlockAudioPlayback();
-      candidateRole = (role || "user").toLowerCase();
-      candidateId = id;
-      if (pkgId) packageId = pkgId;
-      if (packageId && candidateId) {
-        activeConvId = "conv_" + String(packageId).trim().replace(/[^\w-]/g, "_") + "_" + String(candidateId).trim().replace(/[^\w-]/g, "_");
-        try { localStorage.setItem("chat_active_conv_id", activeConvId); } catch (_) {}
-        loadConversation(activeConvId);
+      if (!userObj || (!userObj.user_id && !userObj.id)) {
+        window.UniversalChatbot.logout();
         return;
       }
-      const displayName = name || (id ? `${role} (${id})` : role);
-      // Clean previous messages and session context for strict candidate data isolation
+      const newUid = userObj.user_id || userObj.id;
+      const newRole = (userObj.role || "user").toLowerCase();
+      const newPkg = userObj.package_id || userObj.package || packageId;
+
+      candidateId = newUid;
+      candidateRole = newRole;
+      packageId = newPkg;
+      storageKeys = getStorageKeys(candidateId);
+      try { localStorage.setItem(storageKeys.lastUserKey, candidateId); } catch (_) {}
+
+      // Reset messages and session context for strict user data isolation
       resetConversation(true);
+      checkAndSyncHistoryVisibility();
       loadRoleSuggestions();
-      appendMessage(
-        "system-note",
-        activeLang === "ta"
-          ? `🔄 பயனர் கணக்கு மாற்றப்பட்டது: ${displayName}. Strict user isolation active.`
-          : `🔄 Switched user session to: ${displayName}. Strict user data isolation active.`
-      );
+    },
+    setRole: function (role, id = null, name = null, pkgId = null) {
+      window.UniversalChatbot.setUser({
+        user_id: id,
+        role: role,
+        name: name,
+        package_id: pkgId,
+      });
+    },
+    logout: function () {
+      unlockAudioPlayback();
+      candidateId = null;
+      candidateRole = "user";
+      storageKeys = getStorageKeys(null);
+      try { localStorage.removeItem(storageKeys.lastUserKey); } catch (_) {}
+
+      resetConversation(true);
+      checkAndSyncHistoryVisibility();
+      loadRoleSuggestions();
+    },
+    resetSession: function () {
+      unlockAudioPlayback();
+      resetConversation(true);
+      checkAndSyncHistoryVisibility();
     },
     newChat: function () {
       unlockAudioPlayback();
       resetConversation(true);
+      checkAndSyncHistoryVisibility();
       speakWelcomeGreeting();
     },
     removeTawkTo: function () {
@@ -1884,4 +1951,90 @@
       return isVoiceMuted;
     },
   };
+
+  // Storage and Custom Event Listeners for logout / user change in Single Page Applications
+  window.addEventListener("storage", function (e) {
+    if (e.key === "user_id" || e.key === "userId" || e.key === "user" || e.key === "token" || e.key === "auth" || e.key === "currentUser") {
+      syncHostUserFromEnv();
+    }
+  });
+  window.addEventListener("chatbot:logout", () => window.UniversalChatbot.logout());
+  window.addEventListener("user-logout", () => window.UniversalChatbot.logout());
+  window.addEventListener("auth:logout", () => window.UniversalChatbot.logout());
+  window.addEventListener("chatbot:setUser", (e) => {
+    if (e && e.detail) window.UniversalChatbot.setUser(e.detail);
+  });
+  window.addEventListener("chatbot:user-changed", (e) => {
+    if (e && e.detail) window.UniversalChatbot.setUser(e.detail);
+  });
+
+  // Watcher to automatically detect when host SPA (React) logs out or switches accounts
+  let lastObservedUser = candidateId;
+  function syncHostUserFromEnv() {
+    let detectedUid = null;
+    let detectedRole = candidateRole || "user";
+    let detectedPkg = packageId;
+
+    // 1. Check script attributes
+    const scriptEl = document.querySelector("script[src*='widget.js'], script[data-project-id], script#chatbot-widget");
+    if (scriptEl && scriptEl.getAttribute) {
+      const attrUid = scriptEl.getAttribute("data-user-id") || scriptEl.getAttribute("data-candidate-id");
+      if (attrUid) detectedUid = attrUid;
+      const attrRole = scriptEl.getAttribute("data-role");
+      if (attrRole) detectedRole = attrRole.toLowerCase();
+    }
+
+    // 2. Check URL parameters
+    const currentUrlParams = new URLSearchParams(window.location.search);
+    if (!detectedUid && currentUrlParams.get("user_id")) {
+      detectedUid = currentUrlParams.get("user_id");
+    }
+
+    // 3. Check window globals
+    if (!detectedUid && window.__CHATBOT_USER__) {
+      detectedUid = window.__CHATBOT_USER__.user_id || window.__CHATBOT_USER__.id;
+      if (window.__CHATBOT_USER__.role) detectedRole = window.__CHATBOT_USER__.role.toLowerCase();
+      if (window.__CHATBOT_USER__.package_id) detectedPkg = window.__CHATBOT_USER__.package_id;
+    }
+    if (!detectedUid && window.UniversalChatbotUser) {
+      detectedUid = window.UniversalChatbotUser.user_id || window.UniversalChatbotUser.id;
+      if (window.UniversalChatbotUser.role) detectedRole = window.UniversalChatbotUser.role.toLowerCase();
+    }
+    if (!detectedUid && window.currentUser && typeof window.currentUser === "object") {
+      detectedUid = window.currentUser.id || window.currentUser.user_id || window.currentUser.userId;
+    }
+
+    // 4. Check localStorage common keys
+    if (!detectedUid) {
+      try {
+        const directUid = localStorage.getItem("user_id") || localStorage.getItem("userId");
+        if (directUid) {
+          detectedUid = directUid;
+        } else {
+          const userJson = localStorage.getItem("user") || localStorage.getItem("currentUser") || localStorage.getItem("auth");
+          if (userJson) {
+            try {
+              const parsed = JSON.parse(userJson);
+              if (parsed && (parsed.id || parsed.user_id || parsed.userId || parsed.email)) {
+                detectedUid = parsed.id || parsed.user_id || parsed.userId || parsed.email;
+                if (parsed.role) detectedRole = String(parsed.role).toLowerCase();
+              }
+            } catch (_) {}
+          }
+        }
+      } catch (_) {}
+    }
+
+    // If observed user changed (e.g. from usr_demo_123 to null on logout, or from null to usr_priya)
+    if (detectedUid !== lastObservedUser) {
+      lastObservedUser = detectedUid;
+      if (detectedUid) {
+        window.UniversalChatbot.setUser({ user_id: detectedUid, role: detectedRole, package_id: detectedPkg });
+      } else {
+        window.UniversalChatbot.logout();
+      }
+    }
+  }
+
+  setInterval(syncHostUserFromEnv, 800);
 })();

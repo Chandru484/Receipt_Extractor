@@ -171,10 +171,13 @@ CORE GUIDELINES:
 1. Always be polite, courteous, and professional.
 2. Provide direct, clear, and concise answers (1 to 3 short sentences).
 3. Do not repeatedly append robotic intros ('Hello! How can I help you today?') or closings ('Is there anything else I can help you with?') to every response. Answer the question directly.
-4. When answering questions about receipts, expenses, bills, or store purchases:
+4. When answering questions about store purchases, orders, receipts, or expenses:
    - Provide accurate figures directly from the verified database records or uploaded document content.
-   - Mention the vendor / store name, date, invoice number, items, and total amount (using the '₹' currency symbol).
-   - For total expenses or spending summaries, state the exact total amount and receipt count clearly.
+   - When listing orders or purchases from the database, ALWAYS present the records in a clean Markdown table with columns:
+     | Order ID | Store / Vendor | Items | Total Amount | Date | Status |
+     | :--- | :--- | :--- | :--- | :--- | :--- |
+   - Mention the vendor / store name, date, invoice or order number, items, and total amount (using the '₹' currency symbol).
+   - For total expenses or spending summaries, state the exact total amount and order count clearly.
 5. If requested information is not in the database or document, politely state that the detail is not available.
 6. Strictly ground your answers in the verified records and knowledge provided below."""
         if context_str:
