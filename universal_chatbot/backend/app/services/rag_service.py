@@ -248,5 +248,34 @@ class RAGService:
             return user_chunks[:30]
         return kb_chunks[:top_k]
 
+    def list_knowledge_documents(self, website_id: str) -> List[Dict[str, Any]]:
+        """List all permanent knowledge base sources for this website."""
+        know_col = get_knowledge_sources_collection()
+        if know_col is None:
+            return []
+        docs = list(know_col.find({"website_id": website_id}, {"_id": 0}).sort("created_at", -1))
+        return docs
+
+    def delete_document(self, document_id: str) -> bool:
+        """Delete document metadata and all its indexed chunks."""
+        chunks_col = get_document_chunks_collection()
+        know_col = get_knowledge_sources_collection()
+        user_docs_col = get_user_documents_collection()
+
+        deleted = False
+        if chunks_col is not None:
+            res = chunks_col.delete_many({"source_id": document_id})
+            if res.deleted_count > 0:
+                deleted = True
+        if know_col is not None:
+            res = know_col.delete_many({"source_id": document_id})
+            if res.deleted_count > 0:
+                deleted = True
+        if user_docs_col is not None:
+            res = user_docs_col.delete_many({"document_id": document_id})
+            if res.deleted_count > 0:
+                deleted = True
+        return deleted
+
 
 rag_service = RAGService()

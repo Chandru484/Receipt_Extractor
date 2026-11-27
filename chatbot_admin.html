@@ -151,6 +151,38 @@
       </div>
     </div>
 
+    <!-- Project Knowledge Base & Custom Documents Card -->
+    <div class="card">
+      <div style="padding: 20px 24px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+        <div>
+          <h3 style="font-size: 15px; font-weight: 700; color: #0f172a;">📚 Project Knowledge Base Documents</h3>
+          <p style="font-size: 12.5px; color: #64748b; margin-top: 4px;">Upload company policy PDFs, FAQs, product catalogs, or user manuals (.pdf, .docx, .txt, .md, .csv). The chatbot automatically grounds its answers on these documents.</p>
+        </div>
+        <div style="display: flex; gap: 10px;">
+          <input type="file" id="kbFileInput" style="display: none;" accept=".pdf,.docx,.txt,.md,.csv,.xlsx,.json" />
+          <button class="btn-save" id="uploadKbBtn" style="background: #16a34a; font-size: 13px; padding: 8px 16px;">
+            <span>⬆️ Upload Document</span>
+          </button>
+        </div>
+      </div>
+      <div style="padding: 16px 24px; overflow-x: auto;">
+        <table class="candidates-table">
+          <thead>
+            <tr>
+              <th>Document / File Name</th>
+              <th>Chunks Indexed</th>
+              <th>Source Type</th>
+              <th>Date Added (IST)</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="kbTableBody">
+            <tr><td colspan="5" style="text-align: center; color: #94a3b8;">Loading knowledge documents...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
     <!-- Registered Candidates & Profiles Card -->
     <div class="card">
       <div style="padding: 20px 24px; border-bottom: 1px solid var(--border);">
@@ -228,6 +260,7 @@
 
     // 2. Load Project Metrics, Questions, and Candidates
     async function loadProjectData() {
+      loadProjectKnowledge();
       // Load Data Overview & Counts
       try {
         const resData = await fetch(`/api/v1/chatbot-admin/projects/${activeProjectId}/data`);
@@ -338,6 +371,99 @@
         alert(`Network Error: ${err.message}`);
       }
     };
+
+    // 3. Knowledge Base Documents Handler
+    const kbFileInput = document.getElementById("kbFileInput");
+    const uploadKbBtn = document.getElementById("uploadKbBtn");
+    const kbTableBody = document.getElementById("kbTableBody");
+
+    uploadKbBtn.onclick = () => kbFileInput.click();
+
+    kbFileInput.onchange = async () => {
+      const file = kbFileInput.files[0];
+      if (!file) return;
+
+      uploadKbBtn.disabled = true;
+      uploadKbBtn.innerHTML = "<span>⏳ Indexing Document...</span>";
+
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("website_id", activeProjectId);
+
+      try {
+        const res = await fetch("/api/v1/documents/upload", {
+          method: "POST",
+          body: formData
+        });
+        const data = await res.json();
+        uploadKbBtn.disabled = false;
+        uploadKbBtn.innerHTML = "<span>⬆️ Upload Document</span>";
+        kbFileInput.value = "";
+
+        if (res.ok) {
+          showToast(`✅ Successfully indexed '${file.name}' into ${data.chunk_count} knowledge chunks!`);
+          loadProjectKnowledge();
+        } else {
+          alert(`Upload failed: ${data.detail || "Server error"}`);
+        }
+      } catch (err) {
+        uploadKbBtn.disabled = false;
+        uploadKbBtn.innerHTML = "<span>⬆️ Upload Document</span>";
+        kbFileInput.value = "";
+        alert(`Error uploading document: ${err.message}`);
+      }
+    };
+
+    async function loadProjectKnowledge() {
+      if (!kbTableBody) return;
+      try {
+        const res = await fetch(`/api/v1/documents/project/${activeProjectId}`);
+        const data = await res.json();
+        const docs = data.documents || [];
+        if (docs.length === 0) {
+          kbTableBody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: #94a3b8; padding: 20px;">No knowledge documents uploaded yet for this project. Click 'Upload Document' to add policy PDFs, FAQs, or manuals.</td></tr>`;
+          return;
+        }
+
+        kbTableBody.innerHTML = "";
+        docs.forEach(d => {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td><strong>📄 ${d.title || d.filename || "Document"}</strong></td>
+            <td><span style="background: #e0f2fe; color: #0369a1; padding: 2px 8px; border-radius: 999px; font-weight: 600; font-size: 11px;">${d.chunk_count || 1} chunks</span></td>
+            <td><code style="background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 11px;">${d.source_type || "knowledge_base"}</code></td>
+            <td>${d.created_at || "Recent"}</td>
+            <td>
+              <button class="delete-kb-btn" style="background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; border-radius: 6px; padding: 4px 10px; cursor: pointer; font-size: 12px; font-weight: 600;" data-id="${d.source_id}">
+                🗑️ Delete
+              </button>
+            </td>
+          `;
+          kbTableBody.appendChild(tr);
+        });
+
+        // Attach delete events
+        kbTableBody.querySelectorAll(".delete-kb-btn").forEach(btn => {
+          btn.onclick = async () => {
+            const docId = btn.getAttribute("data-id");
+            if (!confirm("Are you sure you want to delete this document from the knowledge base?")) return;
+            try {
+              const delRes = await fetch(`/api/v1/documents/${docId}`, { method: "DELETE" });
+              if (delRes.ok) {
+                showToast("🗑️ Document deleted from knowledge base.");
+                loadProjectKnowledge();
+              } else {
+                alert("Failed to delete document.");
+              }
+            } catch (err) {
+              alert(`Error: ${err.message}`);
+            }
+          };
+        });
+      } catch (e) {
+        kbTableBody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: #ef4444; padding: 14px;">Failed to load knowledge documents.</td></tr>`;
+      }
+    }
 
     loadProjects();
   </script>

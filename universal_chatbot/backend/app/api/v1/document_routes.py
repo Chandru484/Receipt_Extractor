@@ -86,3 +86,22 @@ def list_conversation_documents(conversation_id: str):
         return {"documents": []}
     docs = list(user_docs_col.find({"conversation_id": conversation_id}, {"_id": 0}))
     return {"conversation_id": conversation_id, "documents": docs, "count": len(docs)}
+
+
+@router.get("/project/{website_id}", summary="List project knowledge base documents")
+def list_project_knowledge(website_id: str):
+    """Retrieve all permanent knowledge base documents uploaded for this project."""
+    docs = rag_service.list_knowledge_documents(website_id)
+    return {"website_id": website_id, "documents": docs, "count": len(docs)}
+
+
+@router.delete("/{document_id}", summary="Delete knowledge base document")
+def delete_document(document_id: str):
+    """Remove a knowledge base document and all its indexed chunks from MongoDB."""
+    success = rag_service.delete_document(document_id)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Document '{document_id}' not found or already deleted."
+        )
+    return {"document_id": document_id, "status": "deleted", "message": "Document and all chunks deleted successfully."}
