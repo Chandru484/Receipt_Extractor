@@ -772,40 +772,100 @@
     playSpeech(welcomeVoiceText, activeLang, firstSpeakBtn);
   }
 
-  // Fetch candidate's role-specific package questions (Admin, Worker, User)
+  // Fetch candidate's role-specific package questions (Admin, Worker, User) & initialize session
   const suggBox = shadow.getElementById("suggBox");
   const suggList = shadow.getElementById("suggList");
   const suggTitle = shadow.getElementById("suggTitle");
 
-  function loadRoleSuggestions() {
-    const roleParam = encodeURIComponent(candidateRole || "user");
-    const idParam = candidateId ? `&candidate_id=${encodeURIComponent(candidateId)}` : "";
-    fetch(`${apiBase}/api/v1/projects/${encodeURIComponent(websiteId)}/suggestions?role=${roleParam}${idParam}`)
+  let isInitializingSession = false;
+  function renderSuggestedChips(questions, packageName, role) {
+    if (!questions || questions.length === 0) return;
+    const roleLabels = {
+      admin: activeLang === "ta" ? "👑 நிர்வாகக் கேள்விகள்" : "👑 Admin Questions",
+      worker: activeLang === "ta" ? "🛠️ பணியாளர் கேள்விகள்" : "🛠️ Worker Questions",
+      user: activeLang === "ta" ? "💡 பரிந்துரைக்கப்பட்ட கேள்விகள்" : "💡 Suggested Questions"
+    };
+    suggTitle.textContent = roleLabels[role] || (packageName || "💡 Suggested Questions");
+    suggList.innerHTML = "";
+    questions.forEach(q => {
+      const chip = document.createElement("button");
+      chip.className = "sugg-chip";
+      chip.textContent = q;
+      chip.onclick = () => {
+        unlockAudioPlayback();
+        userInput.value = q;
+        sendMessage();
+      };
+      suggList.appendChild(chip);
+    });
+    suggBox.style.display = "flex";
+  }
+
+  function initUserSession(forceReload = false) {
+    if (isInitializingSession) return;
+    isInitializingSession = true;
+
+    const payload = {
+      website_id: websiteId || "site_demo",
+      user_id: candidateId,
+      package_id: packageId || "default_pkg",
+      role: candidateRole || "user",
+      session_id: activeSessionId,
+    };
+
+    fetch(`${apiBase}/api/v1/chat/init`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    })
       .then(r => r.json())
       .then(data => {
+        isInitializingSession = false;
+        if (!data || data.status !== "success") return;
+
+        // Set deterministic conversation_id (package_id + user_id)
+        if (data.conversation_id) {
+          activeConvId = data.conversation_id;
+          storageKeys = getStorageKeys(candidateId);
+          try { localStorage.setItem(storageKeys.convKey, activeConvId); } catch (_) {}
+          try { localStorage.setItem("chat_active_conv_id", activeConvId); } catch (_) {}
+        }
+
+        // Show/hide History option based on whether they already made conversations
+        if (data.has_history) {
+          historyBtn.style.display = "inline-flex";
+          // If conversation has messages and chat currently has only greeting or is empty,
+          // restore past messages so returning user sees their conversation
+          if (data.messages && data.messages.length > 0 && (forceReload || msgList.querySelectorAll(".msg-group").length <= 1)) {
+            msgList.innerHTML = "";
+            data.messages.forEach(m => {
+              if (m.user_message) {
+                appendMessage("user", m.user_message, [], null, m.message_id, "pair_" + m.message_id);
+              }
+              if (m.bot_reply) {
+                appendMessage("bot", m.bot_reply, m.citations || [], m.action || null, m.message_id, "pair_" + m.message_id);
+              }
+            });
+            msgList.scrollTop = msgList.scrollHeight;
+          }
+        } else {
+          // New user who hasn't made any conversations yet -> hide history button
+          historyBtn.style.display = "none";
+        }
+
+        // Update suggested question chips
         if (data.suggested_questions && data.suggested_questions.length > 0) {
-          const roleLabels = {
-            admin: activeLang === "ta" ? "👑 நிர்வாகக் கேள்விகள்" : "👑 Admin Questions",
-            worker: activeLang === "ta" ? "🛠️ பணியாளர் கேள்விகள்" : "🛠️ Worker Questions",
-            user: activeLang === "ta" ? "💡 பரிந்துரைக்கப்பட்ட கேள்விகள்" : "💡 Suggested Questions"
-          };
-          suggTitle.textContent = roleLabels[data.role] || (data.package_name || "💡 Suggested Questions");
-          suggList.innerHTML = "";
-          data.suggested_questions.forEach(q => {
-            const chip = document.createElement("button");
-            chip.className = "sugg-chip";
-            chip.textContent = q;
-            chip.onclick = () => {
-              unlockAudioPlayback();
-              userInput.value = q;
-              sendMessage();
-            };
-            suggList.appendChild(chip);
-          });
-          suggBox.style.display = "flex";
+          renderSuggestedChips(data.suggested_questions, data.package_name, data.role);
         }
       })
-      .catch(err => console.log("Suggestion package note:", err));
+      .catch(err => {
+        isInitializingSession = false;
+        console.log("Chat init note:", err);
+      });
+  }
+
+  function loadRoleSuggestions() {
+    initUserSession();
   }
   loadRoleSuggestions();
 
@@ -816,6 +876,7 @@
     if (chatWin.classList.contains("open")) {
       userInput.focus();
       speakWelcomeGreeting();
+      initUserSession();
     }
   };
 
@@ -1895,8 +1956,7 @@
 
       // Reset messages and session context for strict user data isolation
       resetConversation(true);
-      checkAndSyncHistoryVisibility();
-      loadRoleSuggestions();
+      initUserSession(true);
 
       // Record candidate profile in MongoDB collection (e.g. apex_portal_admins)
       try {
@@ -1963,6 +2023,7 @@
       chatWin.classList.add("open");
       userInput.focus();
       speakWelcomeGreeting();
+      initUserSession();
     },
     close: function () {
       chatWin.classList.remove("open");

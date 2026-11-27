@@ -56,3 +56,28 @@ class ConversationSummary(BaseModel):
 class EditMessageRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=4000, description="Updated message content")
 
+
+class ChatInitRequest(BaseModel):
+    website_id: Optional[str] = Field(default="site_demo", description="Target website or project ID")
+    project_id: Optional[str] = Field(default=None, description="Optional alias for website_id")
+    user_id: Optional[str] = Field(default=None, description="Logged-in User ID")
+    admin_id: Optional[str] = Field(default=None, description="Logged-in Admin ID")
+    role: Optional[str] = Field(default="user", description="Role: 'admin', 'worker', 'user'")
+    package_id: Optional[str] = Field(default=None, description="Package identifier (e.g. 'pkg_admin_01')")
+    session_id: Optional[str] = Field(default=None, description="Visitor session ID")
+
+
+class ChatInitResponse(BaseModel):
+    status: str = "success"
+    website_id: str
+    user_id: Optional[str] = None
+    role: str = "user"
+    package_id: str = "default_pkg"
+    conversation_id: str
+    is_new_user: bool = True
+    has_history: bool = False
+    message_count: int = 0
+    messages: List[Dict[str, Any]] = Field(default_factory=list)
+    suggested_questions: List[str] = Field(default_factory=list)
+    package_name: Optional[str] = None
+

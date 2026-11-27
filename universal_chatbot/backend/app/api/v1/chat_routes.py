@@ -1,7 +1,13 @@
 import re
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Header, Query, status
-from universal_chatbot.backend.app.schemas.chat_schema import ChatMessageRequest, ChatMessageResponse, EditMessageRequest
+from universal_chatbot.backend.app.schemas.chat_schema import (
+    ChatMessageRequest,
+    ChatMessageResponse,
+    EditMessageRequest,
+    ChatInitRequest,
+    ChatInitResponse,
+)
 from universal_chatbot.backend.app.services.chat_orchestrator import chat_orchestrator
 from universal_chatbot.backend.app.services.conversation_service import (
     get_conversation_history,
@@ -71,6 +77,91 @@ def send_chat_message(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Chatbot failed to process message: {str(exc)}"
         )
+
+
+@router.post("/init", response_model=ChatInitResponse, summary="Initialize or resume chat session on widget open")
+def init_chat_session(payload: ChatInitRequest):
+    """
+    Called when a user opens/clicks the chatbot widget.
+    1. Identifies user_id, package_id, role, website_id.
+    2. Builds deterministic conversation_id = conv_{package_id}_{user_id}.
+    3. Finds if the user is new or has already made conversations.
+    4. Auto-records candidate profile in MongoDB collection.
+    5. Returns conversation status, history visibility flag, messages, and role suggestions.
+    """
+    target_site = payload.website_id or payload.project_id or "site_demo"
+    target_uid = payload.user_id or payload.admin_id
+    target_role = (payload.role or "user").strip().lower()
+    if payload.admin_id and target_role != "admin":
+        target_role = "admin"
+    if target_role not in ("admin", "worker", "user", "guest"):
+        target_role = "user"
+
+    target_pkg = payload.package_id or "default_pkg"
+
+    # Auto-record candidate in the role's collection if user logged in
+    if target_uid:
+        try:
+            package_service.record_candidate(
+                project_id=target_site,
+                role=target_role,
+                candidate_id=target_uid,
+            )
+        except Exception:
+            pass
+
+    # Build deterministic conversation_id
+    if target_uid:
+        clean_pkg = re.sub(r"[^\w\-]", "_", str(target_pkg).strip())
+        clean_uid = re.sub(r"[^\w\-]", "_", str(target_uid).strip())
+        conv_id = f"conv_{clean_pkg}_{clean_uid}"
+    else:
+        clean_sess = re.sub(r"[^\w\-]", "_", str(payload.session_id or "visitor").strip())
+        conv_id = f"conv_guest_{clean_sess}"
+
+    # Check for past conversation messages
+    has_history = False
+    is_new_user = True
+    messages: List[Dict[str, Any]] = []
+
+    detail = get_conversation_detail(conv_id, website_id=target_site)
+    if detail and detail.get("messages") and len(detail["messages"]) > 0:
+        has_history = True
+        is_new_user = False
+        messages = detail["messages"]
+    elif target_uid:
+        past_convs = list_user_conversations(website_id=target_site, user_id=target_uid, limit=5)
+        if past_convs and len(past_convs) > 0:
+            has_history = True
+            is_new_user = False
+            first_conv_id = past_convs[0].get("conversation_id")
+            if first_conv_id:
+                past_detail = get_conversation_detail(first_conv_id, website_id=target_site)
+                if past_detail and past_detail.get("messages") and len(past_detail["messages"]) > 0:
+                    messages = past_detail["messages"]
+                    conv_id = first_conv_id
+
+    # Fetch role suggested questions
+    sugg = package_service.get_candidate_suggestions(
+        project_id=target_site,
+        role=target_role,
+        candidate_id=target_uid,
+    )
+
+    return ChatInitResponse(
+        status="success",
+        website_id=target_site,
+        user_id=target_uid,
+        role=target_role,
+        package_id=target_pkg,
+        conversation_id=conv_id,
+        is_new_user=is_new_user,
+        has_history=has_history,
+        message_count=len(messages),
+        messages=messages,
+        suggested_questions=sugg.suggested_questions if sugg else [],
+        package_name=sugg.package_name if sugg else None,
+    )
 
 
 @router.get("/history", summary="Get conversation history by package_id and user_id")

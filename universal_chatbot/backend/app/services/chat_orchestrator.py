@@ -355,10 +355,13 @@ class ChatOrchestrator:
                 role=request.role,
                 package_id=request.package_id,
             )
-        if request.package_id and target_uid and not request.conversation_id:
-            clean_pkg = re.sub(r"[^\w\-]", "_", str(request.package_id).strip())
+        if target_uid and not request.conversation_id:
+            effective_pkg = request.package_id or "default_pkg"
+            clean_pkg = re.sub(r"[^\w\-]", "_", str(effective_pkg).strip())
             clean_uid = re.sub(r"[^\w\-]", "_", str(target_uid).strip())
             request.conversation_id = f"conv_{clean_pkg}_{clean_uid}"
+            if not request.package_id:
+                request.package_id = effective_pkg
 
         # 4. Get or create conversation in MongoDB
         conv = get_or_create_conversation(
