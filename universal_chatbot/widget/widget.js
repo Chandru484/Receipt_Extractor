@@ -1897,6 +1897,21 @@
       resetConversation(true);
       checkAndSyncHistoryVisibility();
       loadRoleSuggestions();
+
+      // Record candidate profile in MongoDB collection (e.g. apex_portal_admins)
+      try {
+        fetch(`${apiBase}/api/v1/chatbot-admin/login-session`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            project_id: websiteId || "site_demo",
+            role: candidateRole,
+            candidate_id: candidateId,
+            candidate_name: userObj.name || candidateId,
+            candidate_email: userObj.email || (String(candidateId).includes("@") ? candidateId : null),
+          }),
+        }).catch(() => {});
+      } catch (_) {}
     },
     setRole: function (role, id = null, name = null, pkgId = null) {
       window.UniversalChatbot.setUser({

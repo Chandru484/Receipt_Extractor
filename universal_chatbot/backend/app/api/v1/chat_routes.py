@@ -12,6 +12,7 @@ from universal_chatbot.backend.app.services.conversation_service import (
     update_user_message,
 )
 from universal_chatbot.backend.app.services.tenant_service import get_website_by_id
+from universal_chatbot.backend.app.services.package_service import package_service
 from universal_chatbot.backend.app.services.voice_service import prewarm_tts_cache
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
@@ -49,6 +50,17 @@ def send_chat_message(
         effective_user_id = request.admin_id or request.user_id
         if request.admin_id and not request.role:
             request.role = "admin"
+
+        if effective_user_id:
+            try:
+                package_service.record_candidate(
+                    project_id=request.website_id,
+                    role=request.role or "user",
+                    candidate_id=effective_user_id,
+                )
+            except Exception:
+                pass
+
         response = chat_orchestrator.process_message(request, verified_user_id=effective_user_id)
         # Pre-synthesize and warm audio cache in background immediately
         if response and response.reply:

@@ -88,6 +88,40 @@ class PackageService:
         # Candidate collections: e.g. proj_erp_admins, proj_erp_workers, proj_erp_users
         return db[f"{self._sanitize(project_id)}_{self._sanitize(role)}s"]
 
+    def record_candidate(
+        self,
+        project_id: str,
+        role: str,
+        candidate_id: str,
+        name: Optional[str] = None,
+        email: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ):
+        """Auto-records candidate profile in MongoDB collection (e.g. apex_portal_admins or apex_portal_users)."""
+        if not candidate_id or not project_id:
+            return
+        clean_role = (role or "user").strip().lower()
+        if clean_role not in ("admin", "worker", "user", "guest"):
+            clean_role = "user"
+        cand_col = self._get_candidates_col(project_id, clean_role)
+        if cand_col is not None:
+            now_str = get_ist_now_str()
+            doc = {
+                "candidate_id": candidate_id,
+                "project_id": project_id,
+                "role": clean_role,
+                "name": name or candidate_id,
+                "email": email or (candidate_id if "@" in candidate_id else None),
+                "last_active": now_str,
+            }
+            if metadata:
+                doc["metadata"] = metadata
+            cand_col.update_one(
+                {"candidate_id": candidate_id, "project_id": project_id},
+                {"$set": doc, "$setOnInsert": {"created_at": now_str}},
+                upsert=True
+            )
+
     def process_login_session(self, req: CandidateLoginSessionRequest) -> CandidateLoginSessionResponse:
         """
         Invoked when coworker's backend transmits candidate login with dynamic package questions.
@@ -220,6 +254,10 @@ class PackageService:
         Retrieve the 10 package questions customized for the candidate's verified role and ID.
         Strict RBAC: An admin collection is NEVER queried for workers or users.
         """
+        # Auto-record candidate in the role's collection if candidate_id provided
+        if candidate_id:
+            self.record_candidate(project_id, role, candidate_id)
+
         col = self._get_questions_col(project_id, role)
         questions: List[str] = []
         package_name: Optional[str] = None
