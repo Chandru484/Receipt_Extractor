@@ -528,7 +528,7 @@ class ChatOrchestrator:
                 )
 
         # 5. Load past context history (up to last 10 messages)
-        history = get_conversation_history(active_conv_id, limit=10)
+        history = get_conversation_history(active_conv_id, limit=10, website_id=request.website_id)
         history.append({"role": "user", "content": request.message})
 
         # 6. Build prompt & call MultiProvider AI Engine

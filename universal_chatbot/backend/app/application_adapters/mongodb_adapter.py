@@ -52,33 +52,57 @@ class ApplicationMongoAdapter:
         return self._cached_clients[uri]
 
     def get_connection_config(self, website_id: str) -> Optional[Dict[str, Any]]:
-        """Retrieve registered application connection for a website or auto-provision a new project database."""
+        """Retrieve registered application connection for a website or auto-provision a new isolated project database."""
         app_col = get_app_connections_collection()
         if app_col is None:
             return None
+        from universal_chatbot.backend.app.core.config import chatbot_settings
+        from universal_chatbot.backend.app.schemas.tenant_schema import get_ist_now_str
+
+        clean_pid = re.sub(r"[^\w\-]", "_", str(website_id).strip().lower())
+        is_receipt_app = clean_pid in ("receipt_extractor", "receipt_db")
+        expected_db = "receipt_db" if is_receipt_app else f"project_{clean_pid}_db"
+        expected_col = "Receipt_Extraction" if is_receipt_app else "orders"
+        app_name = "Receipt Extractor App" if is_receipt_app else f"{clean_pid.replace('_', ' ').title()} Portal"
+
         conn = app_col.find_one({"website_id": website_id, "status": "active"})
-        if not conn:
-            from universal_chatbot.backend.app.core.config import chatbot_settings
-            from universal_chatbot.backend.app.schemas.tenant_schema import get_ist_now_str
-            clean_pid = re.sub(r"[^\w\-]", "_", str(website_id).strip())
-            target_db = "receipt_db" if clean_pid == "site_demo" else f"project_{clean_pid}_db"
-            conn = {
-                "website_id": website_id,
-                "tenant_id": "ten_default",
-                "app_name": f"{clean_pid.replace('_', ' ').title()} App",
-                "db_type": "mongodb",
-                "target_uri": chatbot_settings.CHATBOT_MONGODB_URI,
-                "target_db": target_db,
-                "allowed_collection": "Receipt_Extraction",
-                "allowed_fields": ["*"],
-                "status": "active",
-                "created_at": get_ist_now_str(),
-            }
-            try:
-                app_col.insert_one(dict(conn))
-                conn.pop("_id", None)
-            except Exception as exc:
-                logger.warning(f"Could not auto-provision app_connection: {exc}")
+        if conn:
+            # Enforce project database isolation: migrate away from receipt_db or mismatched collections
+            if conn.get("target_db") != expected_db or conn.get("allowed_collection") != expected_col:
+                app_col.update_one(
+                    {"website_id": website_id},
+                    {
+                        "$set": {
+                            "target_db": expected_db,
+                            "allowed_collection": expected_col,
+                            "app_name": app_name,
+                            "updated_at": get_ist_now_str(),
+                        }
+                    },
+                )
+                conn["target_db"] = expected_db
+                conn["allowed_collection"] = expected_col
+                conn["app_name"] = app_name
+            return conn
+
+        # Provision new isolated connection for this project
+        conn = {
+            "website_id": website_id,
+            "tenant_id": "ten_default",
+            "app_name": app_name,
+            "db_type": "mongodb",
+            "target_uri": chatbot_settings.CHATBOT_MONGODB_URI,
+            "target_db": expected_db,
+            "allowed_collection": expected_col,
+            "allowed_fields": ["*"],
+            "status": "active",
+            "created_at": get_ist_now_str(),
+        }
+        try:
+            app_col.insert_one(dict(conn))
+            conn.pop("_id", None)
+        except Exception as exc:
+            logger.warning(f"Could not auto-provision app_connection: {exc}")
         return conn
 
     @staticmethod
@@ -146,9 +170,11 @@ class ApplicationMongoAdapter:
                 filter_q = {
                     "$or": [
                         {user_f: user_id},
-                        {f"data.{user_f}": user_id},
                         {"user_id": user_id},
+                        {"customer_id": user_id},
                         {"candidate_id": user_id},
+                        {"email": user_id},
+                        {f"data.{user_f}": user_id},
                     ]
                 }
 
@@ -165,9 +191,9 @@ class ApplicationMongoAdapter:
 
             for doc in docs:
                 data = doc.get("data") or {}
-                amt = self._parse_amount(data.get("grand_total") or doc.get("total_amount"))
-                vendor = data.get("vendor_name") or data.get("seller") or doc.get("vendor_name") or "Unknown"
-                inv_date = data.get("invoice_date") or doc.get("stored_date") or doc.get("date")
+                amt = self._parse_amount(doc.get("amount") or doc.get("total_amount") or doc.get("grand_total") or data.get("grand_total"))
+                vendor = doc.get("vendor") or doc.get("vendor_name") or doc.get("store_name") or data.get("vendor_name") or data.get("seller") or "Unknown"
+                inv_date = doc.get("date") or doc.get("order_date") or doc.get("created_at") or data.get("invoice_date") or doc.get("stored_date")
 
                 total_spent += amt
                 receipt_count += 1
@@ -320,16 +346,20 @@ class ApplicationMongoAdapter:
             conditions: List[Dict[str, Any]] = []
 
             # 1. Strict User Boundary Condition
+            user_cond: Optional[Dict[str, Any]] = None
             if user_id:
                 user_f = conn.get("user_id_field") or "user_id"
-                conditions.append({
+                user_cond = {
                     "$or": [
                         {user_f: user_id},
-                        {f"data.{user_f}": user_id},
                         {"user_id": user_id},
+                        {"customer_id": user_id},
                         {"candidate_id": user_id},
+                        {"email": user_id},
+                        {f"data.{user_f}": user_id},
                     ]
-                })
+                }
+                conditions.append(user_cond)
 
             # 2. Extract search terms from user query
             tokens = re.findall(r"[\w]+", user_query, re.UNICODE)
@@ -344,7 +374,9 @@ class ApplicationMongoAdapter:
                 "செலவு", "செலவுகள்", "மொத்தம்", "எவ்வளவு", "பண்ணியிருக்கேன்", "மாசம்", "மாதம்", "இந்த",
                 "hi", "hello", "hey", "how", "are", "you", "your", "who", "what", "is", "was",
                 "am", "can", "tell", "please", "help", "good", "morning", "afternoon", "evening",
-                "night", "thanks", "thank", "வணக்கம்", "நன்றி", "ஹலோ", "ஹாய்"
+                "night", "thanks", "thank", "வணக்கம்", "நன்றி", "ஹலோ", "ஹாய்",
+                "order", "orders", "recent", "purchases", "purchase", "item", "items", "buy", "bought",
+                "track", "status", "give", "check", "find", "list", "vaangina", "ordersai", "orderkal"
             }
             search_terms = [t for t in tokens if t.lower() not in stop_words and len(t) > 2]
 
@@ -352,13 +384,22 @@ class ApplicationMongoAdapter:
                 regex_pattern = "|".join([re.escape(t) for t in search_terms])
                 conditions.append({
                     "$or": [
+                        {"order_id": {"$regex": regex_pattern, "$options": "i"}},
+                        {"invoice_number": {"$regex": regex_pattern, "$options": "i"}},
+                        {"vendor": {"$regex": regex_pattern, "$options": "i"}},
+                        {"vendor_name": {"$regex": regex_pattern, "$options": "i"}},
+                        {"store_name": {"$regex": regex_pattern, "$options": "i"}},
+                        {"status": {"$regex": regex_pattern, "$options": "i"}},
+                        {"category": {"$regex": regex_pattern, "$options": "i"}},
+                        {"items": {"$regex": regex_pattern, "$options": "i"}},
+                        {"items.name": {"$regex": regex_pattern, "$options": "i"}},
+                        {"items.item_name": {"$regex": regex_pattern, "$options": "i"}},
                         {"data.vendor_name": {"$regex": regex_pattern, "$options": "i"}},
                         {"data.seller": {"$regex": regex_pattern, "$options": "i"}},
                         {"data.buyer": {"$regex": regex_pattern, "$options": "i"}},
                         {"data.invoice_number": {"$regex": regex_pattern, "$options": "i"}},
                         {"data.category": {"$regex": regex_pattern, "$options": "i"}},
                         {"formatted_display": {"$regex": regex_pattern, "$options": "i"}},
-                        {"vendor_name": {"$regex": regex_pattern, "$options": "i"}},
                     ]
                 })
 
@@ -371,48 +412,63 @@ class ApplicationMongoAdapter:
             cursor = collection.find(filter_query).sort("_id", -1).limit(max_results)
             raw_records = list(cursor)
 
-            # Fallback: if search by term yielded no matches, but candidate user_id is provided,
-            # retrieve that user's owned records so broad questions (e.g. "kadayin address ai sollu") can answer from their receipt
-            if not raw_records and user_id and search_terms:
-                user_filter = {
-                    "$or": [
-                        {"user_id": user_id},
-                        {"candidate_id": user_id},
-                    ]
-                }
-                raw_records = list(collection.find(user_filter).sort("_id", -1).limit(max_results))
+            # Fallback: if search by term yielded no matches, but user_cond exists,
+            # retrieve that user's owned records so broad questions can still show their account's items
+            if not raw_records and user_cond and search_terms:
+                raw_records = list(collection.find(user_cond).sort("_id", -1).limit(max_results))
 
             if not raw_records:
-                return None
                 return None
 
             # Sanitize and flatten records
             sanitized_records = []
             for r in raw_records:
                 data_sub = r.get("data") or {}
-                vendor = data_sub.get("vendor_name") or data_sub.get("seller") or r.get("vendor_name")
-                buyer = data_sub.get("buyer") or data_sub.get("customer_name") or r.get("buyer_name")
-                inv_no = data_sub.get("invoice_number") or r.get("invoice_number")
-                inv_date = data_sub.get("invoice_date") or r.get("stored_date")
-                total = data_sub.get("grand_total") or r.get("total_amount")
-                seller_addr = data_sub.get("seller_address") or data_sub.get("vendor_address") or data_sub.get("address") or r.get("seller_address")
+                vendor = (
+                    r.get("vendor")
+                    or r.get("vendor_name")
+                    or r.get("store_name")
+                    or data_sub.get("vendor_name")
+                    or data_sub.get("seller")
+                    or "Store"
+                )
+                buyer = r.get("customer_name") or r.get("buyer") or data_sub.get("buyer") or r.get("buyer_name")
+                inv_no = r.get("order_id") or r.get("invoice_number") or data_sub.get("invoice_number") or str(r.get("_id"))
+                inv_date = r.get("date") or r.get("order_date") or r.get("created_at") or data_sub.get("invoice_date") or r.get("stored_date")
+                total = r.get("amount") or r.get("total_amount") or r.get("grand_total") or data_sub.get("grand_total")
+                status_str = r.get("status") or "Completed"
+                seller_addr = r.get("vendor_address") or r.get("address") or data_sub.get("seller_address") or data_sub.get("address")
+
+                items_raw = r.get("items") or data_sub.get("items") or []
+                items_list = []
+                if isinstance(items_raw, list):
+                    for it in items_raw:
+                        if isinstance(it, dict):
+                            items_list.append({
+                                "name": it.get("name") or it.get("item_name") or it.get("product_name"),
+                                "qty": it.get("qty") or it.get("quantity") or 1,
+                                "amount": it.get("amount") or it.get("price") or it.get("total_price"),
+                            })
+                        elif isinstance(it, str):
+                            items_list.append({"name": it, "qty": 1, "amount": 0.0})
+
                 sanitized_records.append({
-                    "vendor_or_seller": vendor,
+                    "order_id": inv_no,
+                    "vendor": vendor,
                     "vendor_name": vendor,
                     "vendor_address": seller_addr,
                     "address": seller_addr,
                     "seller_phone": data_sub.get("seller_phone"),
                     "buyer": buyer,
                     "invoice_number": inv_no,
-                    "invoice_date": inv_date,
+                    "invoice_date": str(inv_date) if inv_date else "N/A",
+                    "date": str(inv_date) if inv_date else "N/A",
                     "grand_total": total,
                     "total_amount": total,
-                    "date": inv_date,
-                    "currency": data_sub.get("currency", "INR"),
-                    "items": [
-                        {"name": it.get("item_name"), "qty": it.get("quantity"), "amount": it.get("total_price")}
-                        for it in data_sub.get("items", [])[:5]
-                    ] if isinstance(data_sub.get("items"), list) else [],
+                    "amount": total,
+                    "status": status_str,
+                    "currency": r.get("currency") or data_sub.get("currency", "INR"),
+                    "items": items_list,
                 })
 
             if search_terms:

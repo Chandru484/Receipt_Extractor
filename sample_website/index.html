@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Apex Global Retail & Operations Portal</title>
+  <style>
+    :root {
+      --primary: #2563eb;
+      --primary-dark: #1d4ed8;
+      --primary-light: #eff6ff;
+      --slate-900: #0f172a;
+      --slate-800: #1e293b;
+      --slate-700: #334155;
+      --slate-600: #475569;
+      --slate-100: #f1f5f9;
+      --slate-50: #f8fafc;
+      --border: #e2e8f0;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+    body { background: var(--slate-50); color: var(--slate-800); line-height: 1.5; padding-bottom: 60px; }
+
+    /* Top Nav */
+    .navbar { background: #ffffff; border-bottom: 1px solid var(--border); padding: 14px 28px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; box-shadow: 0 1px 3px rgba(0,0,0,0.02); }
+    .brand { display: flex; align-items: center; gap: 10px; font-size: 17px; font-weight: 800; color: var(--slate-900); text-decoration: none; }
+    .brand-icon { background: linear-gradient(135deg, #2563eb, #7c3aed); color: #fff; width: 34px; height: 34px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 18px; }
+    
+    .nav-links { display: flex; align-items: center; gap: 20px; font-size: 14px; font-weight: 500; color: var(--slate-600); }
+    .nav-links a { color: inherit; text-decoration: none; transition: color 0.15s; }
+    .nav-links a:hover { color: var(--primary); }
+    
+    .auth-section { display: flex; align-items: center; gap: 12px; }
+    .user-pill { display: flex; align-items: center; gap: 8px; background: var(--slate-100); border: 1px solid var(--border); padding: 6px 12px; border-radius: 999px; font-size: 13px; font-weight: 600; color: var(--slate-800); }
+    .role-tag { font-size: 11px; padding: 2px 7px; border-radius: 999px; text-transform: uppercase; font-weight: 700; }
+    .role-tag.admin { background: #fef3c7; color: #92400e; }
+    .role-tag.user { background: #dbeafe; color: #1e40af; }
+    .role-tag.worker { background: #ccfbf1; color: #115e59; }
+
+    .btn { padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; transition: all 0.2s; display: inline-flex; align-items: center; gap: 6px; }
+    .btn-primary { background: var(--primary); color: #fff; }
+    .btn-primary:hover { background: var(--primary-dark); }
+    .btn-outline { background: #fff; border: 1px solid var(--border); color: var(--slate-700); }
+    .btn-outline:hover { background: var(--slate-100); }
+
+    /* Layout */
+    .container { max-width: 1140px; margin: 32px auto; padding: 0 20px; }
+
+    /* Hero / Banner */
+    .hero-card { background: linear-gradient(135deg, #1e3a8a, #2563eb); color: #ffffff; border-radius: 14px; padding: 32px; margin-bottom: 24px; box-shadow: 0 10px 25px -5px rgba(37,99,235,0.25); display: flex; justify-content: space-between; align-items: center; }
+    .hero-title { font-size: 24px; font-weight: 800; margin-bottom: 8px; }
+    .hero-desc { font-size: 14px; opacity: 0.9; max-width: 600px; line-height: 1.6; }
+
+    /* Login Switcher Bar */
+    .login-bar { background: #ffffff; border: 1px solid var(--border); border-radius: 12px; padding: 20px 24px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.03); }
+    .login-bar-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+    .login-bar-title { font-size: 14px; font-weight: 700; color: var(--slate-900); text-transform: uppercase; letter-spacing: 0.5px; }
+    .account-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
+    .account-btn { border: 1px solid var(--border); background: #ffffff; border-radius: 10px; padding: 12px 14px; text-align: left; cursor: pointer; transition: all 0.2s; display: flex; flex-direction: column; gap: 3px; }
+    .account-btn:hover { border-color: var(--primary); transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+    .account-btn.active { border-color: var(--primary); background: var(--primary-light); }
+    .account-name { font-weight: 700; font-size: 13.5px; color: var(--slate-900); }
+    .account-meta { font-size: 11.5px; color: var(--slate-600); }
+
+    /* Dashboard Grid */
+    .grid-2 { display: grid; grid-template-columns: 2fr 1fr; gap: 24px; margin-bottom: 24px; }
+    @media (max-width: 900px) { .grid-2 { grid-template-columns: 1fr; } }
+
+    .card { background: #ffffff; border: 1px solid var(--border); border-radius: 12px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.03); }
+    .card-title { font-size: 16px; font-weight: 700; color: var(--slate-900); margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; }
+
+    /* Table */
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { padding: 10px 12px; border-bottom: 1px solid var(--border); text-align: left; }
+    th { background: #f8fafc; font-weight: 600; color: var(--slate-600); }
+    .status-badge { display: inline-block; padding: 3px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+    .status-badge.paid { background: #dcfce7; color: #15803d; }
+    .status-badge.pending { background: #fef9c3; color: #a16207; }
+
+    /* Code Snippet Display */
+    pre { background: #0f172a; color: #f8fafc; padding: 16px; border-radius: 10px; font-size: 12.5px; overflow-x: auto; line-height: 1.5; margin-top: 10px; }
+    code { font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace; }
+
+    .callout { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 10px; padding: 14px 18px; font-size: 13px; color: #1e40af; line-height: 1.6; margin-top: 14px; }
+  </style>
+</head>
+<body>
+
+  <!-- Top Navigation Bar -->
+  <nav class="navbar">
+    <a href="#" class="brand">
+      <div class="brand-icon">⚡</div>
+      <span>Apex Commerce Portal</span>
+    </a>
+    <div class="nav-links">
+      <a href="#orders">My Orders</a>
+      <a href="#catalog">Product Catalog</a>
+      <a href="#policy">Return & Warranty Policy</a>
+      <a href="#support">Customer Support</a>
+    </div>
+    <div class="auth-section">
+      <div class="user-pill">
+        <span id="navRoleTag" class="role-tag user">User</span>
+        <span id="navUserName">Priya Sharma</span>
+      </div>
+      <button class="btn btn-outline" onclick="openChatbot()">💬 Chat with AI</button>
+    </div>
+  </nav>
+
+  <div class="container">
+
+    <!-- Hero Card -->
+    <div class="hero-card">
+      <div>
+        <h1 class="hero-title">Welcome to Apex Global Commerce</h1>
+        <p class="hero-desc">
+          This sample external application demonstrates embedding the <strong>Universal AI Chatbot Widget</strong>.
+          Log in below as an <strong>Admin</strong>, <strong>Customer User</strong>, or <strong>Warehouse Worker</strong> to test user data isolation, role-specific question chips, and multi-user chat sessions.
+        </p>
+      </div>
+      <div>
+        <button class="btn" style="background:#fff; color:#1e40af; font-size:14px; padding:12px 20px; font-weight:700;" onclick="openChatbot()">
+          Launch Chatbot ↗
+        </button>
+      </div>
+    </div>
+
+    <!-- Quick User / Admin Login Switcher -->
+    <div class="login-bar">
+      <div class="login-bar-header">
+        <div class="login-bar-title">👥 Simulate User / Admin Login Session</div>
+        <span style="font-size: 12px; color: var(--slate-600);">Click an account to switch login session in real-time</span>
+      </div>
+      <div class="account-grid">
+        <div class="account-btn" id="acc_admin" onclick="simulateLogin('admin', 'adm_apex_01', 'Rajesh Kumar (Operations Admin)', 'pkg_admin_01')">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span class="account-name">👑 Rajesh Kumar</span>
+            <span class="role-tag admin">Admin</span>
+          </div>
+          <div class="account-meta">ID: adm_apex_01 • Full Organization Access</div>
+        </div>
+
+        <div class="account-btn active" id="acc_user1" onclick="simulateLogin('user', 'usr_priya_101', 'Priya Sharma (Customer 1)', 'pkg_retail_01')">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span class="account-name">👤 Priya Sharma</span>
+            <span class="role-tag user">User 1</span>
+          </div>
+          <div class="account-meta">ID: usr_priya_101 • Orders: Tech Supplies (₹300)</div>
+        </div>
+
+        <div class="account-btn" id="acc_user2" onclick="simulateLogin('user', 'usr_arun_202', 'Arun Vijay (Customer 2)', 'pkg_retail_01')">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span class="account-name">👤 Arun Vijay</span>
+            <span class="role-tag user">User 2</span>
+          </div>
+          <div class="account-meta">ID: usr_arun_202 • Orders: Appliances (₹1,850)</div>
+        </div>
+
+        <div class="account-btn" id="acc_worker" onclick="simulateLogin('worker', 'wrk_murugan_99', 'Murugan (Warehouse Ops)', 'pkg_ops_01')">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span class="account-name">🛠️ Murugan</span>
+            <span class="role-tag worker">Worker</span>
+          </div>
+          <div class="account-meta">ID: wrk_murugan_99 • Logistics & Dispatch</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Active Session Dashboard View -->
+    <div class="grid-2">
+      <!-- Main Content Area -->
+      <div class="card" id="ordersCard">
+        <div class="card-title">
+          <span id="contentSectionTitle">📦 My Recent Purchases & Orders</span>
+          <span style="font-size:12px; color:var(--slate-600); font-weight:normal;" id="sessionIdLabel">Session: usr_priya_101</span>
+        </div>
+        <div id="contentTableWrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Order / Invoice #</th>
+                <th>Store / Vendor</th>
+                <th>Items Purchased</th>
+                <th>Total Amount</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="ordersTableBody">
+              <!-- Dynamically populated based on logged-in user -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Live Chatbot Inspection Details -->
+      <div class="card">
+        <div class="card-title">
+          <span>🤖 Active Chatbot State</span>
+        </div>
+        <div style="font-size: 13px; line-height: 1.6; color: var(--slate-700);">
+          <div style="margin-bottom: 8px;"><strong>Project ID:</strong> <code>apex_portal</code></div>
+          <div style="margin-bottom: 8px;"><strong>Logged In User:</strong> <code id="lblUserId">usr_priya_101</code></div>
+          <div style="margin-bottom: 8px;"><strong>Active Role:</strong> <span id="lblRoleBadge" class="role-tag user">User</span></div>
+          <div style="margin-bottom: 8px;"><strong>Conversation ID:</strong> <code id="lblConvId">conv_pkg_retail_01_usr_priya_101</code></div>
+          <div><strong>Data Boundary:</strong> <span id="lblBoundary" style="color:#15803d; font-weight:600;">Strict Customer Isolation</span></div>
+        </div>
+
+        <div class="callout" id="roleBehaviorNote">
+          💡 <strong>What to test as User (Priya):</strong>
+          <ul style="margin: 6px 0 0 16px;">
+            <li>Ask: <em>"Show my receipts"</em> ➔ Shows Vikram Tech (₹300).</li>
+            <li>Ask: <em>"Show Arun's LIMRAS receipts"</em> ➔ Blocked (0 records).</li>
+            <li>Ask: <em>"What is the return policy?"</em> ➔ Answers from uploaded policy document!</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- How the Widget Code Snippet Works -->
+    <div class="card">
+      <div class="card-title">
+        <span>💻 How this Website Embeds the Chatbot Widget</span>
+        <button class="btn btn-outline" style="font-size:12px;" onclick="copySnippet()">📋 Copy Snippet</button>
+      </div>
+      <p style="font-size: 13px; color: var(--slate-600); margin-bottom: 10px;">
+        To add the Universal AI Chatbot to any external website or portal, your developers simply drop this script tag into the page HTML. It automatically inherits the logged-in user's credentials and package:
+      </p>
+      <pre><code id="embedSnippetDisplay">&lt;!-- Universal AI Chatbot Embed Snippet --&gt;
+&lt;script
+  src="http://localhost:8080/widget.js"
+  data-project-id="apex_portal"
+  data-user-id="usr_priya_101"
+  data-role="user"
+  data-package-id="pkg_retail_01"
+  data-voice="muted"
+  async&gt;
+&lt;/script&gt;</code></pre>
+    </div>
+
+  </div>
+
+  <!-- EMBED CHATBOT WIDGET FROM SERVER -->
+  <script
+    id="apexChatbotScript"
+    src="/widget.js"
+    data-project-id="apex_portal"
+    data-user-id="usr_priya_101"
+    data-role="user"
+    data-package-id="pkg_retail_01"
+    data-voice="muted"
+    async>
+  </script>
+
+  <!-- Interactive Demo Application Script -->
+  <script>
+    const userOrdersData = {
+      usr_priya_101: [
+        { id: "APX-501", vendor: "Vikram Technologies", items: "HP Wireless Mouse & Keyboard", total: "₹300.00", status: "paid" },
+        { id: "APX-492", vendor: "S.K. Stationery", items: "A4 Copier Paper & Notebooks", total: "₹185.00", status: "paid" }
+      ],
+      usr_arun_202: [
+        { id: "APX-782", vendor: "LIMRAS ELECTRICAL AGENCY", items: "Crompton High-Speed Ceiling Fan", total: "₹1,850.00", status: "paid" },
+        { id: "APX-760", vendor: "Premier Appliances", items: "Modular Switch Box (12-way)", total: "₹450.00", status: "pending" }
+      ],
+      adm_apex_01: [
+        { id: "APX-501", vendor: "Vikram Technologies (Priya)", items: "HP Mouse & Keyboard", total: "₹300.00", status: "paid" },
+        { id: "APX-782", vendor: "LIMRAS Electrical (Arun)", items: "Crompton Ceiling Fan", total: "₹1,850.00", status: "paid" },
+        { id: "APX-901", vendor: "Erode Paints Wholesale", items: "Emulsion Primer 20L", total: "₹2,290.00", status: "paid" }
+      ],
+      wrk_murugan_99: [
+        { id: "DSP-101", vendor: "Warehouse Bay 4", items: "Inspect inbound supplier deliveries", total: "24 Cartons", status: "pending" },
+        { id: "DSP-102", vendor: "Outbound Logistics", items: "Dispatch package to Erode Hub", total: "Completed", status: "paid" }
+      ]
+    };
+
+    let currentSession = {
+      role: "user",
+      id: "usr_priya_101",
+      name: "Priya Sharma",
+      packageId: "pkg_retail_01"
+    };
+
+    function renderDashboard() {
+      // Update Top Nav
+      document.getElementById("navUserName").textContent = currentSession.name;
+      const navRoleTag = document.getElementById("navRoleTag");
+      navRoleTag.textContent = currentSession.role.toUpperCase();
+      navRoleTag.className = `role-tag ${currentSession.role}`;
+
+      // Update Inspector Card
+      document.getElementById("lblUserId").textContent = currentSession.id;
+      const roleBadge = document.getElementById("lblRoleBadge");
+      roleBadge.textContent = currentSession.role.toUpperCase();
+      roleBadge.className = `role-tag ${currentSession.role}`;
+      document.getElementById("lblConvId").textContent = `conv_${currentSession.packageId}_${currentSession.id}`;
+      
+      const boundaryEl = document.getElementById("lblBoundary");
+      if (currentSession.role === "admin") {
+        boundaryEl.textContent = "Full Organization Scope (All Receipts Accessible)";
+        boundaryEl.style.color = "#b45309";
+      } else if (currentSession.role === "worker") {
+        boundaryEl.textContent = "Warehouse Operations & Dispatch Boundary";
+        boundaryEl.style.color = "#0f766e";
+      } else {
+        boundaryEl.textContent = `Strict Customer Isolation (${currentSession.name} only)`;
+        boundaryEl.style.color = "#15803d";
+      }
+
+      // Update Table Content
+      const orders = userOrdersData[currentSession.id] || [];
+      const tbody = document.getElementById("ordersTableBody");
+      tbody.innerHTML = "";
+      orders.forEach(o => {
+        tbody.innerHTML += `
+          <tr>
+            <td><strong>#${o.id}</strong></td>
+            <td>${o.vendor}</td>
+            <td>${o.items}</td>
+            <td><strong>${o.total}</strong></td>
+            <td><span class="status-badge ${o.status}">${o.status.toUpperCase()}</span></td>
+          </tr>
+        `;
+      });
+
+      // Update Role Behavior Note
+      const noteEl = document.getElementById("roleBehaviorNote");
+      if (currentSession.role === "admin") {
+        noteEl.innerHTML = `
+          👑 <strong>Logged in as Admin (Rajesh):</strong>
+          <ul style="margin: 6px 0 0 16px;">
+            <li>Ask: <em>"What is the total revenue generated this month?"</em></li>
+            <li>Ask: <em>"List all receipts across projects"</em> ➔ Bot accesses records across all customers!</li>
+            <li>Ask: <em>"What is the warranty period on Crompton fans?"</em> ➔ Retrieves from Knowledge Base!</li>
+          </ul>
+        `;
+      } else if (currentSession.role === "worker") {
+        noteEl.innerHTML = `
+          🛠️ <strong>Logged in as Worker (Murugan):</strong>
+          <ul style="margin: 6px 0 0 16px;">
+            <li>Ask: <em>"What are my assigned tasks today?"</em></li>
+            <li>Ask: <em>"Show pending receipts waiting for verification"</em></li>
+            <li>Ask: <em>"What are the store operating hours?"</em> ➔ Answered from Company Policy!</li>
+          </ul>
+        `;
+      } else if (currentSession.id === "usr_arun_202") {
+        noteEl.innerHTML = `
+          👤 <strong>Logged in as User 2 (Arun):</strong>
+          <ul style="margin: 6px 0 0 16px;">
+            <li>Ask: <em>"Show my receipts"</em> ➔ Shows LIMRAS Electricals (₹1,850).</li>
+            <li>Ask: <em>"Show Priya's receipts"</em> ➔ Strictly blocked!</li>
+            <li>Ask: <em>"What is the refund policy?"</em> ➔ Explains 15-day refund window!</li>
+          </ul>
+        `;
+      } else {
+        noteEl.innerHTML = `
+          💡 <strong>Logged in as User 1 (Priya):</strong>
+          <ul style="margin: 6px 0 0 16px;">
+            <li>Ask: <em>"Show my receipts"</em> ➔ Shows Vikram Tech (₹300).</li>
+            <li>Ask: <em>"Show LIMRAS Electricals"</em> ➔ Blocked (0 records, belongs to Arun).</li>
+            <li>Ask: <em>"Can corporate clients claim GST ITC?"</em> ➔ Answers 100% ITC from Policy!</li>
+          </ul>
+        `;
+      }
+
+      // Update Snippet Display
+      document.getElementById("embedSnippetDisplay").textContent = `<!-- Universal AI Chatbot Embed Snippet -->
+<script
+  src="http://localhost:8080/widget.js"
+  data-project-id="apex_portal"
+  data-user-id="${currentSession.id}"
+  data-role="${currentSession.role}"
+  data-package-id="${currentSession.packageId}"
+  data-voice="muted"
+  async>
+</script>`;
+    }
+
+    function simulateLogin(role, id, name, packageId) {
+      currentSession = { role, id, name, packageId };
+
+      // Update active button state
+      document.querySelectorAll(".account-btn").forEach(b => b.classList.remove("active"));
+      const btnId = role === "admin" ? "acc_admin" : (role === "worker" ? "acc_worker" : (id.includes("priya") ? "acc_user1" : "acc_user2"));
+      const btn = document.getElementById(btnId);
+      if (btn) btn.classList.add("active");
+
+      renderDashboard();
+
+      // Transmit new candidate credentials to the embedded Chatbot Widget
+      if (window.UniversalChatbot) {
+        window.UniversalChatbot.setRole(role, id, name, packageId);
+        window.UniversalChatbot.open();
+      }
+    }
+
+    function openChatbot() {
+      if (window.UniversalChatbot) {
+        window.UniversalChatbot.open();
+      }
+    }
+
+    function copySnippet() {
+      const code = document.getElementById("embedSnippetDisplay").textContent;
+      navigator.clipboard.writeText(code);
+      alert("✅ Snippet copied to clipboard!");
+    }
+
+    // Initialize initial render
+    renderDashboard();
+  </script>
+
+</body>
+</html>

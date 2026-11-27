@@ -15,6 +15,7 @@ from universal_chatbot.backend.app.api.v1.document_routes import router as docum
 from universal_chatbot.backend.app.api.v1.voice_routes import router as voice_router
 from universal_chatbot.backend.app.api.v1.package_routes import router as package_router
 from universal_chatbot.backend.app.api.v1.chatbot_admin_routes import router as chatbot_admin_router
+from universal_chatbot.backend.app.api.v1.project_data_routes import router as project_data_router
 
 
 @asynccontextmanager
@@ -52,6 +53,7 @@ app.include_router(document_router, prefix="/api/v1")
 app.include_router(voice_router, prefix="/api/v1")
 app.include_router(package_router, prefix="/api/v1")
 app.include_router(chatbot_admin_router, prefix="/api/v1")
+app.include_router(project_data_router, prefix="/api/v1")
 
 
 @app.get("/health", summary="Platform Health Check")
@@ -82,6 +84,7 @@ def serve_widget_script():
 # Demo page
 DEMO_PATH = Path(__file__).resolve().parent.parent.parent / "widget" / "index.html"
 CHATBOT_ADMIN_PATH = Path(__file__).resolve().parent.parent.parent.parent / "chatbot_admin.html"
+SAMPLE_SITE_PATH = Path(__file__).resolve().parent.parent.parent.parent / "sample_website" / "index.html"
 
 
 @app.get("/demo", include_in_schema=False)
@@ -90,6 +93,14 @@ def serve_demo_page():
     if DEMO_PATH.exists():
         return FileResponse(DEMO_PATH, media_type="text/html")
     return JSONResponse(status_code=404, content={"detail": "Demo page not found."})
+
+
+@app.get("/sample-site", include_in_schema=False)
+def serve_sample_website():
+    """Serve the independent sample website testing user/admin login with embedded chatbot widget."""
+    if SAMPLE_SITE_PATH.exists():
+        return FileResponse(SAMPLE_SITE_PATH, media_type="text/html")
+    return JSONResponse(status_code=404, content={"detail": "sample_website/index.html not found."})
 
 
 @app.get("/chatbot-admin", include_in_schema=False)

@@ -72,7 +72,7 @@ class RAGService:
         # 1. Store metadata
         is_user_doc = bool(conversation_id or session_id)
         if is_user_doc:
-            user_docs_col = get_user_documents_collection()
+            user_docs_col = get_user_documents_collection(website_id=website_id)
             if user_docs_col is not None:
                 user_docs_col.insert_one({
                     "document_id": source_id,
@@ -87,7 +87,7 @@ class RAGService:
                     "created_at": now_str,
                 })
         else:
-            know_col = get_knowledge_sources_collection()
+            know_col = get_knowledge_sources_collection(website_id=website_id)
             if know_col is not None:
                 know_col.insert_one({
                     "source_id": source_id,
@@ -101,7 +101,7 @@ class RAGService:
                 })
 
         # 2. Store chunks
-        chunks_col = get_document_chunks_collection()
+        chunks_col = get_document_chunks_collection(website_id=website_id)
         chunk_docs = []
         for c in chunks:
             chunk_doc = {
@@ -151,7 +151,7 @@ class RAGService:
         if is_greeting:
             return []
 
-        chunks_col = get_document_chunks_collection()
+        chunks_col = get_document_chunks_collection(website_id=website_id)
         if chunks_col is None:
             return []
 
@@ -250,17 +250,17 @@ class RAGService:
 
     def list_knowledge_documents(self, website_id: str) -> List[Dict[str, Any]]:
         """List all permanent knowledge base sources for this website."""
-        know_col = get_knowledge_sources_collection()
+        know_col = get_knowledge_sources_collection(website_id=website_id)
         if know_col is None:
             return []
         docs = list(know_col.find({"website_id": website_id}, {"_id": 0}).sort("created_at", -1))
         return docs
 
-    def delete_document(self, document_id: str) -> bool:
+    def delete_document(self, document_id: str, website_id: Optional[str] = None) -> bool:
         """Delete document metadata and all its indexed chunks."""
-        chunks_col = get_document_chunks_collection()
-        know_col = get_knowledge_sources_collection()
-        user_docs_col = get_user_documents_collection()
+        chunks_col = get_document_chunks_collection(website_id=website_id)
+        know_col = get_knowledge_sources_collection(website_id=website_id)
+        user_docs_col = get_user_documents_collection(website_id=website_id)
 
         deleted = False
         if chunks_col is not None:

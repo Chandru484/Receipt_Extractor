@@ -1,4 +1,5 @@
 import logging
+import re
 from typing import Optional
 from pymongo import MongoClient
 from pymongo.database import Database
@@ -33,6 +34,23 @@ def get_chatbot_db() -> Optional[Database]:
     if client is None:
         return None
     return client[chatbot_settings.CHATBOT_MONGODB_DB_NAME]
+
+
+def get_project_db(project_id: Optional[str] = None) -> Optional[Database]:
+    """
+    Get or create an isolated, dedicated MongoDB database for a specific project/website.
+    Each website/project gets its OWN distinct database in MongoDB:
+    e.g. 'project_apex_portal_db', 'project_site_demo_db', etc.
+    All data for that website is strictly contained inside that project's database.
+    """
+    client = get_mongo_client()
+    if client is None:
+        return None
+    if not project_id:
+        return client[chatbot_settings.CHATBOT_MONGODB_DB_NAME]
+    clean_id = re.sub(r"[^\w\-]", "_", str(project_id).strip().lower())
+    db_name = f"project_{clean_id}_db"
+    return client[db_name]
 
 
 def check_mongo_health() -> dict:

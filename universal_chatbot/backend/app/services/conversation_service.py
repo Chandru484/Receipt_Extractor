@@ -17,7 +17,7 @@ def get_or_create_conversation(
     language: str = "en",
 ) -> Dict[str, Any]:
     """Retrieve an active conversation or initialize a new one in MongoDB."""
-    convs = collections.get_conversations_collection()
+    convs = collections.get_conversations_collection(website_id=website_id)
     now_str = get_ist_now_str()
 
     if conversation_id and convs is not None:
@@ -72,8 +72,8 @@ def save_message_interaction(
     meta: Optional[Dict[str, Any]] = None,
 ) -> str:
     """Save both user message and bot reply persistently into the messages collection."""
-    messages = collections.get_messages_collection()
-    convs = collections.get_conversations_collection()
+    messages = collections.get_messages_collection(website_id=website_id)
+    convs = collections.get_conversations_collection(website_id=website_id)
     now_str = get_ist_now_str()
 
     message_id = f"msg_{uuid.uuid4().hex[:12]}"
@@ -109,9 +109,9 @@ def save_message_interaction(
     return message_id
 
 
-def get_conversation_history(conversation_id: str, limit: int = 6) -> List[Dict[str, str]]:
+def get_conversation_history(conversation_id: str, limit: int = 6, website_id: Optional[str] = None) -> List[Dict[str, str]]:
     """Retrieve the most recent message history formatted for LLM context (role: user, role: assistant)."""
-    messages = collections.get_messages_collection()
+    messages = collections.get_messages_collection(website_id=website_id)
     if messages is None:
         return []
 
@@ -207,7 +207,7 @@ def list_user_conversations(
     limit: int = 30,
 ) -> List[Dict[str, Any]]:
     """Retrieve past conversations for a user or visitor session, newest first."""
-    convs = collections.get_conversations_collection()
+    convs = collections.get_conversations_collection(website_id=website_id)
     if convs is None:
         return []
 
@@ -228,10 +228,10 @@ def list_user_conversations(
     return [c for c in conv_list if c.get("message_count", 0) > 0]
 
 
-def get_conversation_detail(conversation_id: str) -> Optional[Dict[str, Any]]:
+def get_conversation_detail(conversation_id: str, website_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """Retrieve conversation metadata and full structured message history."""
-    convs = collections.get_conversations_collection()
-    messages = collections.get_messages_collection()
+    convs = collections.get_conversations_collection(website_id=website_id)
+    messages = collections.get_messages_collection(website_id=website_id)
     if convs is None or messages is None:
         return None
 
@@ -249,10 +249,10 @@ def get_conversation_detail(conversation_id: str) -> Optional[Dict[str, Any]]:
     return conv
 
 
-def delete_conversation(conversation_id: str) -> bool:
+def delete_conversation(conversation_id: str, website_id: Optional[str] = None) -> bool:
     """Delete a conversation and all its messages permanently."""
-    convs = collections.get_conversations_collection()
-    messages = collections.get_messages_collection()
+    convs = collections.get_conversations_collection(website_id=website_id)
+    messages = collections.get_messages_collection(website_id=website_id)
     if convs is None or messages is None:
         return False
 
@@ -271,7 +271,7 @@ def record_support_handoff(
     user_id: Optional[str] = None,
 ) -> str:
     """Log a Tawk.to human escalation event in MongoDB."""
-    support = collections.get_support_handoffs_collection()
+    support = collections.get_support_handoffs_collection(website_id=website_id)
     now_str = get_ist_now_str()
     handoff_id = f"sup_{uuid.uuid4().hex[:12]}"
 
@@ -300,7 +300,7 @@ def ensure_user_record(
     """Store or update user profile and activity timestamp in the MongoDB users collection."""
     if not user_id:
         return
-    users_col = collections.get_collection("users")
+    users_col = collections.get_users_collection(website_id=website_id)
     if users_col is not None:
         now_str = get_ist_now_str()
         users_col.update_one(
