@@ -106,6 +106,8 @@ def init_chat_session(payload: ChatInitRequest):
                 project_id=target_site,
                 role=target_role,
                 candidate_id=target_uid,
+                name=payload.name,
+                email=payload.email,
             )
         except Exception:
             pass

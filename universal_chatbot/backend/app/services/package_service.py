@@ -104,23 +104,52 @@ class PackageService:
         if clean_role not in ("admin", "worker", "user", "guest"):
             clean_role = "user"
         cand_col = self._get_candidates_col(project_id, clean_role)
+        now_str = get_ist_now_str()
+        resolved_name = name or (candidate_id if not str(candidate_id).isdigit() else f"{clean_role.capitalize()} {candidate_id}")
+        resolved_email = email or (candidate_id if "@" in str(candidate_id) else None)
+        doc = {
+            "candidate_id": candidate_id,
+            "project_id": project_id,
+            "role": clean_role,
+            "name": resolved_name,
+            "email": resolved_email,
+            "last_active": now_str,
+        }
+        if metadata:
+            doc["metadata"] = metadata
         if cand_col is not None:
-            now_str = get_ist_now_str()
-            doc = {
-                "candidate_id": candidate_id,
-                "project_id": project_id,
-                "role": clean_role,
-                "name": name or candidate_id,
-                "email": email or (candidate_id if "@" in candidate_id else None),
-                "last_active": now_str,
-            }
-            if metadata:
-                doc["metadata"] = metadata
             cand_col.update_one(
                 {"candidate_id": candidate_id, "project_id": project_id},
                 {"$set": doc, "$setOnInsert": {"created_at": now_str}},
                 upsert=True
             )
+
+        # Also sync to the project's dedicated database: project_{project_id}_db.users
+        try:
+            from universal_chatbot.backend.app.database.mongodb import get_project_db
+            proj_db = get_project_db(project_id)
+            if proj_db is not None:
+                proj_user_doc = {
+                    "user_id": candidate_id,
+                    "website_id": project_id,
+                    "name": resolved_name,
+                    "email": resolved_email,
+                    "role": clean_role,
+                    "last_active_at": now_str,
+                }
+                proj_db["users"].update_one(
+                    {"website_id": project_id, "user_id": candidate_id},
+                    {
+                        "$setOnInsert": {
+                            "created_at": now_str,
+                            "interaction_count": 0,
+                        },
+                        "$set": proj_user_doc,
+                    },
+                    upsert=True,
+                )
+        except Exception as e:
+            logger.warning(f"Failed to sync user to project db: {e}")
 
     def process_login_session(self, req: CandidateLoginSessionRequest) -> CandidateLoginSessionResponse:
         """

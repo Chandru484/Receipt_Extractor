@@ -37,6 +37,8 @@
   );
   const apiBase = currentScript && currentScript.src ? (new URL(currentScript.src, window.location.href)).origin : window.location.origin;
 
+  let candidateName = null;
+  let candidateEmail = null;
   let activeLang = "en";
 
   function getStorageKeys(uid) {
@@ -810,6 +812,8 @@
       user_id: candidateId,
       package_id: packageId || "default_pkg",
       role: candidateRole || "user",
+      name: candidateName,
+      email: candidateEmail,
       session_id: activeSessionId,
     };
 
@@ -1937,18 +1941,25 @@
     },
     setUser: function (userObj) {
       unlockAudioPlayback();
-      if (!userObj || (!userObj.user_id && !userObj.id)) {
+      if (!userObj) {
         window.UniversalChatbot.logout();
         return;
       }
       if (userObj.project_id || userObj.projectId || userObj.website_id) {
         websiteId = userObj.project_id || userObj.projectId || userObj.website_id;
       }
-      const newUid = userObj.user_id || userObj.id;
+      // Prioritize explicit userId / user_id over numeric auto-increment database id
+      const newUid = userObj.userId || userObj.user_id || userObj.candidate_id || userObj.candidateId || userObj.email || userObj.id;
+      if (!newUid) {
+        window.UniversalChatbot.logout();
+        return;
+      }
       const newRole = (userObj.role || "user").toLowerCase();
-      const newPkg = userObj.package_id || userObj.package || packageId;
+      const newPkg = userObj.packageId || userObj.package_id || userObj.package || packageId || "pkg_default_01";
+      candidateName = userObj.name || userObj.fullName || userObj.userName || String(newUid);
+      candidateEmail = userObj.email || userObj.userEmail || (String(newUid).includes("@") ? String(newUid) : null);
 
-      candidateId = newUid;
+      candidateId = String(newUid);
       candidateRole = newRole;
       packageId = newPkg;
       storageKeys = getStorageKeys(candidateId);
@@ -1958,7 +1969,7 @@
       resetConversation(true);
       initUserSession(true);
 
-      // Record candidate profile in MongoDB collection (e.g. apex_portal_admins)
+      // Record candidate profile in MongoDB collections (both apex_portal_users AND project_apex_portal_db.users)
       try {
         fetch(`${apiBase}/api/v1/chatbot-admin/login-session`, {
           method: "POST",
@@ -1967,8 +1978,8 @@
             project_id: websiteId || "site_demo",
             role: candidateRole,
             candidate_id: candidateId,
-            candidate_name: userObj.name || candidateId,
-            candidate_email: userObj.email || (String(candidateId).includes("@") ? candidateId : null),
+            candidate_name: candidateName,
+            candidate_email: candidateEmail,
           }),
         }).catch(() => {});
       } catch (_) {}

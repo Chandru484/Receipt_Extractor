@@ -62,6 +62,8 @@ class ChatInitRequest(BaseModel):
     project_id: Optional[str] = Field(default=None, description="Optional alias for website_id")
     user_id: Optional[str] = Field(default=None, description="Logged-in User ID")
     admin_id: Optional[str] = Field(default=None, description="Logged-in Admin ID")
+    name: Optional[str] = Field(default=None, description="Logged-in user full name")
+    email: Optional[str] = Field(default=None, description="Logged-in user email address")
     role: Optional[str] = Field(default="user", description="Role: 'admin', 'worker', 'user'")
     package_id: Optional[str] = Field(default=None, description="Package identifier (e.g. 'pkg_admin_01')")
     session_id: Optional[str] = Field(default=None, description="Visitor session ID")
