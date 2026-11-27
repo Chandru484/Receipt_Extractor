@@ -11,7 +11,7 @@
   } catch (_) {}
   const urlParams = new URLSearchParams(window.location.search);
 
-  const websiteId = (
+  let websiteId = (
     (scriptUrlParams && (scriptUrlParams.get("project_id") || scriptUrlParams.get("website_id") || scriptUrlParams.get("id"))) ||
     (currentScript && currentScript.getAttribute ? (currentScript.getAttribute("data-project-id") || currentScript.getAttribute("data-website-id")) : null) ||
     "site_demo"
@@ -1867,11 +1867,21 @@
 
   // Expose global controller for host application testing & role switching
   window.UniversalChatbot = {
+    setProject: function (newProjId) {
+      if (!newProjId) return;
+      websiteId = newProjId;
+      resetConversation(true);
+      checkAndSyncHistoryVisibility();
+      loadRoleSuggestions();
+    },
     setUser: function (userObj) {
       unlockAudioPlayback();
       if (!userObj || (!userObj.user_id && !userObj.id)) {
         window.UniversalChatbot.logout();
         return;
+      }
+      if (userObj.project_id || userObj.projectId || userObj.website_id) {
+        websiteId = userObj.project_id || userObj.projectId || userObj.website_id;
       }
       const newUid = userObj.user_id || userObj.id;
       const newRole = (userObj.role || "user").toLowerCase();
